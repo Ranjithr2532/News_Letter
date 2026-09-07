@@ -1,0 +1,12 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+.env
+
+# Node
+frontend/node_modules/
+frontend/.env
+
+# Uploads (photos)
+backend/uploads/
