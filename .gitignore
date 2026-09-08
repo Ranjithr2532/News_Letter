@@ -1,12 +1,69 @@
-# Python
+# ==========================================
+# Python / Backend Ignores
+# ==========================================
+# Virtual environments
 venv/
-__pycache__/
-*.pyc
-.env
+.venv/
+ENV/
+env/
 
-# Node
+# Python compiled bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# User upload & generated files
+backend/uploads/
+backend/generated_docs/
+generated_docs/
+uploads/
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Database files
+*.sqlite3
+*.db
+
+# Python testing & coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+
+# ==========================================
+# Node.js / React Frontend Ignores
+# ==========================================
+# Dependency directories
+node_modules/
 frontend/node_modules/
+
+# Production build outputs
+frontend/build/
+frontend/dist/
+build/
+dist/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local environment settings
+frontend/.env*.local
 frontend/.env
 
-# Uploads (photos)
-backend/uploads/
+
+# ==========================================
+# IDE & System Files
+# ==========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Operating System files
+.DS_Store
+Thumbs.db

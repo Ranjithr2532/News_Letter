@@ -4,10 +4,14 @@ from app.database import engine, Base
 from app import models
 from app.routers import users, periods, categories, entries, photos
 
+from fastapi.staticfiles import StaticFiles
+
 # Creates all tables in Postgres if they don't already exist
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Newsletter Builder API")
+
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 app.add_middleware(
     CORSMiddleware,

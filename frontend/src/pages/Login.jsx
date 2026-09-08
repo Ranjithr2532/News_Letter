@@ -20,7 +20,7 @@ const Login = () => {
     try {
       const response = await api.post('/users/login', { email, password });
       login(response.data);
-      navigate('/welcome');
+      navigate('/periods');
     } catch (err) {
       if (err.response && err.response.data && err.response.data.detail) {
         setError(err.response.data.detail);
