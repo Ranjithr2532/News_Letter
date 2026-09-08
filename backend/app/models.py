@@ -1,0 +1,90 @@
+from sqlalchemy import Column, Integer, String, Text, Date, DateTime, ForeignKey, Boolean
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
+from app.database import Base
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    email = Column(String(150), unique=True, nullable=False, index=True)
+    password = Column(String(255), nullable=False)
+    designation = Column(String(100))
+    role = Column(String(50), nullable=False)
+    center = Column(String(100))
+    group_name = Column(String(100), nullable=False, index=True)
+
+
+class CategoryStage(Base):
+    __tablename__ = "category_stage"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    stage_number = Column(Integer, nullable=False, default=0)
+    is_active = Column(Boolean, default=True)
+
+    entries = relationship("NewsletterEntry", back_populates="category")
+
+
+class NewsletterPeriod(Base):
+    __tablename__ = "newsletter_periods"
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_name = Column(String(100), nullable=False, index=True)
+    title = Column(String(255), nullable=False)
+    start_date = Column(Date, nullable=False)
+    end_date = Column(Date, nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    entries = relationship("NewsletterEntry", back_populates="period", cascade="all, delete-orphan")
+
+
+class NewsletterEntry(Base):
+    __tablename__ = "newsletter_entries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    period_id = Column(Integer, ForeignKey("newsletter_periods.id"), nullable=False)
+    group_name = Column(String(100), nullable=False, index=True)
+    category_id = Column(Integer, ForeignKey("category_stage.id"), nullable=False)
+    title = Column(String(255), nullable=False)
+    description = Column(Text)
+    display_order = Column(Integer, default=0)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    updated_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    period = relationship("NewsletterPeriod", back_populates="entries")
+    category = relationship("CategoryStage", back_populates="entries")
+    photos = relationship("EntryPhoto", back_populates="entry", cascade="all, delete-orphan")
+    history = relationship("EntryEditHistory", back_populates="entry", cascade="all, delete-orphan")
+
+
+class EntryPhoto(Base):
+    __tablename__ = "entry_photos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    entry_id = Column(Integer, ForeignKey("newsletter_entries.id", ondelete="CASCADE"), nullable=False)
+    file_path = Column(String(500), nullable=False)
+    original_filename = Column(String(255))
+    uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    display_order = Column(Integer, default=0)
+    uploaded_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    entry = relationship("NewsletterEntry", back_populates="photos")
+
+
+class EntryEditHistory(Base):
+    __tablename__ = "entry_edit_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    entry_id = Column(Integer, ForeignKey("newsletter_entries.id", ondelete="CASCADE"), nullable=False)
+    edited_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    old_title = Column(String(255))
+    old_description = Column(Text)
+    edited_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    entry = relationship("NewsletterEntry", back_populates="history")
