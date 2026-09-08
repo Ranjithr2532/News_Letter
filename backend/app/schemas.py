@@ -108,6 +108,7 @@ class EntryRead(BaseModel):
     display_order: int
     created_by: int
     updated_by: int
+    updated_by_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     photos: List[PhotoRead] = []

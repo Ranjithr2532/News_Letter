@@ -24,6 +24,7 @@ const Entries = () => {
 
   const [editingEntryId, setEditingEntryId] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [formError, setFormError] = useState('');
 
   useEffect(() => {
@@ -33,6 +34,35 @@ const Entries = () => {
     }
     fetchEntries();
   }, [user, periodId, categoryId, navigate]);
+
+  const handleDownloadCategoryDocx = async () => {
+    setDownloading(true);
+    try {
+      const response = await api.get(
+        `/periods/${periodId}/categories/${categoryId}/generate-docx`,
+        { responseType: 'blob' }
+      );
+      const blob = new Blob([response.data], {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const filename = categoryName
+        ? `${categoryName.replace(/\s+/g, '_')}_event.docx`
+        : `category_${categoryId}_event.docx`;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to download category docx:', err);
+      alert('Failed to download category document.');
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const fetchEntries = async () => {
     setLoading(true);
@@ -214,9 +244,18 @@ const Entries = () => {
             {periodTitle ? `| Period: ${periodTitle}` : `| Period ID: ${periodId}`}
           </span>
         </div>
-        <button onClick={handleLogout} className="btn-secondary">
-          Logout
-        </button>
+        <div className="header-actions">
+          <button
+            onClick={handleDownloadCategoryDocx}
+            className="btn-download"
+            disabled={downloading}
+          >
+            {downloading ? 'Generating...' : 'Download Category (.docx)'}
+          </button>
+          <button onClick={handleLogout} className="btn-secondary">
+            Logout
+          </button>
+        </div>
       </header>
 
       <main className="content">
@@ -262,7 +301,7 @@ const Entries = () => {
                         entry.photos.map((photo) => (
                           <div key={photo.id} className="photo-thumbnail-wrapper">
                             <img
-                              src={`http://localhost:8000/${photo.file_path}`}
+                              src={`http://${window.location.hostname || 'localhost'}:8000/${photo.file_path}`}
                               alt={photo.original_filename || 'Entry photo'}
                               className="photo-thumbnail"
                             />
@@ -297,7 +336,7 @@ const Entries = () => {
 
                   {/* Last Updated Metadata */}
                   <div className="entry-meta">
-                    Last updated by User #{entry.updated_by ?? entry.created_by} on{' '}
+                    Last updated by {entry.updated_by_name || `User #${entry.updated_by}`} on{' '}
                     {entry.updated_at
                       ? new Date(entry.updated_at).toLocaleString('en-US', {
                           month: 'short',

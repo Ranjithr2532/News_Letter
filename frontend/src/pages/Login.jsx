@@ -35,7 +35,7 @@ const Login = () => {
   return (
     <div className="login-container">
       <div className="login-card">
-        <h2>Group Newsletter Builder</h2>
+        <h2> Newsletter</h2>
         <h3>Login</h3>
         {error && <div className="error-message">{error}</div>}
         <form onSubmit={handleSubmit}>

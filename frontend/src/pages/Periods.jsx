@@ -69,6 +69,20 @@ const Periods = () => {
     }
   };
 
+  const handleDeletePeriod = async (e, periodId) => {
+    e.stopPropagation();
+    if (!window.confirm('Are you sure you want to delete this period and all its entries?')) {
+      return;
+    }
+    try {
+      await api.delete(`/periods/${periodId}`);
+      fetchPeriods();
+    } catch (err) {
+      console.error('Failed to delete period:', err);
+      alert('Failed to delete period.');
+    }
+  };
+
   const handleLogout = () => {
     logout();
     navigate('/');
@@ -153,8 +167,18 @@ const Periods = () => {
                     })
                   }
                 >
-                  <h4>{period.title}</h4>
-                  <p className="date-range">
+                  <div className="card-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <h4 style={{ margin: 0 }}>{period.title}</h4>
+                    <button
+                      className="btn-action delete-btn"
+                      onClick={(e) => handleDeletePeriod(e, period.id)}
+                      title="Delete period"
+                      style={{ marginLeft: '10px' }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                  <p className="date-range" style={{ marginTop: '8px' }}>
                     {period.start_date} &rarr; {period.end_date}
                   </p>
                 </div>

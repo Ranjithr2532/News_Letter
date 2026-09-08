@@ -33,7 +33,7 @@ class NewsletterPeriod(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     group_name = Column(String(100), nullable=False, index=True)
-    title = Column(String(255), nullable=False)
+    title = Column(Text, nullable=False)
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=False)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
@@ -49,7 +49,7 @@ class NewsletterEntry(Base):
     period_id = Column(Integer, ForeignKey("newsletter_periods.id"), nullable=False)
     group_name = Column(String(100), nullable=False, index=True)
     category_id = Column(Integer, ForeignKey("category_stage.id"), nullable=False)
-    title = Column(String(255), nullable=False)
+    title = Column(Text, nullable=False)
     description = Column(Text)
     display_order = Column(Integer, default=0)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
@@ -61,6 +61,11 @@ class NewsletterEntry(Base):
     category = relationship("CategoryStage", back_populates="entries")
     photos = relationship("EntryPhoto", back_populates="entry", cascade="all, delete-orphan")
     history = relationship("EntryEditHistory", back_populates="entry", cascade="all, delete-orphan")
+    updater = relationship("User", foreign_keys=[updated_by])
+
+    @property
+    def updated_by_name(self) -> str:
+        return self.updater.name if self.updater else f"User #{self.updated_by}"
 
 
 class EntryPhoto(Base):
@@ -83,7 +88,7 @@ class EntryEditHistory(Base):
     id = Column(Integer, primary_key=True, index=True)
     entry_id = Column(Integer, ForeignKey("newsletter_entries.id", ondelete="CASCADE"), nullable=False)
     edited_by = Column(Integer, ForeignKey("users.id"), nullable=False)
-    old_title = Column(String(255))
+    old_title = Column(Text)
     old_description = Column(Text)
     edited_at = Column(DateTime(timezone=True), server_default=func.now())
 
