@@ -23,9 +23,20 @@ class UserRead(BaseModel):
 
 
 # ---------- Category ----------
+class UserCreate(BaseModel):
+    name: str
+    email: EmailStr
+    password: str
+    designation: Optional[str] = None
+    role: str
+    center: str
+    group_name: str
+
+
 class CategoryCreate(BaseModel):
     name: str
     stage_number: int = 0
+    period_id: Optional[int] = None
 
 
 class CategoryUpdate(BaseModel):
@@ -39,6 +50,7 @@ class CategoryRead(BaseModel):
     name: str
     stage_number: int
     is_active: bool
+    period_id: Optional[int] = None
 
     class Config:
         from_attributes = True

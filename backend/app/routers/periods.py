@@ -12,6 +12,21 @@ router = APIRouter()
 
 @router.post("/", response_model=schemas.PeriodRead)
 def create_period(payload: schemas.PeriodCreate, db: Session = Depends(get_db)):
+    existing = (
+        db.query(models.NewsletterPeriod)
+        .filter(
+            models.NewsletterPeriod.group_name == payload.group_name,
+            models.NewsletterPeriod.start_date == payload.start_date,
+            models.NewsletterPeriod.end_date == payload.end_date,
+        )
+        .first()
+    )
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail="A newsletter period for this date range already exists in your group.",
+        )
+
     period = models.NewsletterPeriod(**payload.model_dump())
     db.add(period)
     db.commit()
@@ -163,4 +178,4 @@ def generate_category_docx(period_id: int, category_id: int, db: Session = Depen
         path=file_path,
         filename=clean_filename,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    )
+    )

@@ -24,8 +24,10 @@ class CategoryStage(Base):
     name = Column(String(100), nullable=False)
     stage_number = Column(Integer, nullable=False, default=0)
     is_active = Column(Boolean, default=True)
+    period_id = Column(Integer, ForeignKey("newsletter_periods.id", ondelete="CASCADE"), nullable=True)
 
     entries = relationship("NewsletterEntry", back_populates="category")
+    period = relationship("NewsletterPeriod", backref="custom_categories")
 
 
 class NewsletterPeriod(Base):
