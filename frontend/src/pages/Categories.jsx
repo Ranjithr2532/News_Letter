@@ -2,10 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import api from '../api/api';
 import { useUser } from '../context/UserContext';
+import {
+  IconArrowLeft,
+  IconDownload,
+  IconPlus,
+  IconTrash,
+  IconFolder,
+  IconChevronRight,
+} from '@tabler/icons-react';
 
 const Categories = () => {
   const { periodId } = useParams();
-  const { user, logout } = useUser();
+  const { user } = useUser();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -111,136 +119,184 @@ const Categories = () => {
     }
   };
 
-  const handleLogout = () => {
-    logout();
-    navigate('/');
-  };
-
   if (!user) return null;
 
   return (
-    <div className="page-container">
-      <header className="header-bar">
-        <div>
-          <button onClick={() => navigate('/periods')} className="btn-link">
-            &larr; Back to Periods
-          </button>
-          <h2>Categories</h2>
-          <span className="user-badge">
-            {periodTitle ? `Period: ${periodTitle}` : `Period ID: ${periodId}`}
-          </span>
-        </div>
-        <div className="header-actions">
-          {user.role?.toLowerCase() === 'gh' && (
-            <button
-              onClick={() => navigate('/admin')}
-              className="btn-primary"
-            >
-              Admin Panel
-            </button>
-          )}
-          <button
-            onClick={handleDownload}
-            className="btn-download"
-            disabled={downloading}
+    <div
+      className="categories-page"
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: 'calc(100vh - 120px)',
+      }}
+    >
+      {/* Top Header Action Bar */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <button onClick={() => navigate('/periods')} className="btn-link-back">
+          <IconArrowLeft size={18} />
+          <span>Back to newsletters</span>
+        </button>
+
+        <button
+          onClick={handleDownload}
+          className="btn-action-green"
+          disabled={downloading}
+        >
+          <IconDownload size={18} />
+          <span>{downloading ? 'Generating...' : 'Download Newsletter (.docx)'}</span>
+        </button>
+      </div>
+
+      {/* Main Categories Card Section */}
+      <section
+        className="card-section"
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          marginBottom: 0,
+        }}
+      >
+        <h3>Categories</h3>
+        <p style={{ fontSize: '0.88rem', color: '#64748b', marginBottom: '1.4rem', marginTop: '-0.5rem' }}>
+          Select a category to view or add entry details for this newsletter period.
+        </p>
+
+        {loading ? (
+          <p className="loading-text">Loading categories...</p>
+        ) : error ? (
+          <div className="error-message">{error}</div>
+        ) : (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, 1fr)',
+              gap: '16px',
+              alignContent: 'start',
+            }}
           >
-            {downloading ? 'Generating...' : 'Download Newsletter (.docx)'}
-          </button>
-          <button onClick={handleLogout} className="btn-secondary">
-            Logout
-          </button>
-        </div>
-      </header>
-
-      <main className="content">
-        <section className="card-section">
-          <h3>Select a Category</h3>
-          {loading ? (
-            <p className="loading-text">Loading categories...</p>
-          ) : error ? (
-            <div className="error-message">{error}</div>
-          ) : (
-            <div className="grid-list">
-              {categories.map((category) => (
-                <div
-                  key={category.id}
-                  className="clickable-card"
-                  onClick={() =>
-                    navigate(`/entries/${periodId}/${category.id}`, {
-                      state: {
-                        categoryName: category.name,
-                        periodTitle,
-                      },
-                    })
-                  }
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <h4 style={{ margin: 0 }}>{category.name}</h4>
-                    {category.period_id && (
-                      <button
-                        className="btn-action delete-btn"
-                        onClick={(e) => handleDeleteCustomCategory(e, category.id)}
-                        title="Delete custom category"
-                        style={{ marginLeft: '8px' }}
-                      >
-                        Delete
-                      </button>
-                    )}
-                  </div>
-                  <div style={{ marginTop: '8px', display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <span className="stage-tag">
-                      {category.period_id ? 'Custom (This Period)' : `Stage ${category.stage_number}`}
-                    </span>
-                  </div>
-                </div>
-              ))}
-
-              {/* "Other Category" Card */}
+            {categories.map((category) => (
               <div
-                className="clickable-card add-other-card"
-                onClick={() => {
-                  setOtherTitle('');
-                  setOtherError('');
-                  setShowOtherModal(true);
-                }}
+                key={category.id}
+                className="clickable-card"
+                onClick={() =>
+                  navigate(`/entries/${periodId}/${category.id}`, {
+                    state: {
+                      categoryName: category.name,
+                      periodTitle,
+                    },
+                  })
+                }
                 style={{
-                  border: '2px dashed #94a3b8',
+                  background: '#ffffff',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '10px',
+                  padding: '16px 18px',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
                   display: 'flex',
-                  flexDirection: 'column',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  minHeight: '110px',
-                  background: '#f8fafc',
+                  justifyContent: 'space-between',
                   cursor: 'pointer',
+                  transition: 'all 0.18s ease-in-out',
+                  minHeight: '76px',
                 }}
               >
-                <div style={{ fontSize: '1.8rem', color: '#2563eb', fontWeight: 'bold', lineHeight: '1' }}>
-                  +
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div
+                    style={{
+                      width: '38px',
+                      height: '38px',
+                      borderRadius: '8px',
+                      backgroundColor: '#eff6ff',
+                      color: 'var(--primary-btn)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <IconFolder size={20} />
+                  </div>
+                  <div>
+                    <h4
+                      style={{
+                        margin: 0,
+                        fontSize: '0.96rem',
+                        color: 'var(--text-heading)',
+                        fontWeight: '700',
+                        lineHeight: '1.3',
+                      }}
+                    >
+                      {category.name}
+                    </h4>
+                    {category.period_id && (
+                      <span style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: '500' }}>
+                        Custom Category
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <h4 style={{ margin: '6px 0 0 0', color: '#1e293b' }}>Other</h4>
-                <span style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '2px' }}>
-                  Add title for this period
-                </span>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  {category.period_id && (
+                    <button
+                      className="btn-ghost-danger"
+                      style={{ padding: '4px 6px', border: 'none' }}
+                      onClick={(e) => handleDeleteCustomCategory(e, category.id)}
+                      title="Delete custom category"
+                    >
+                      <IconTrash size={14} />
+                    </button>
+                  )}
+                  <IconChevronRight size={18} style={{ color: '#94a3b8' }} />
+                </div>
               </div>
+            ))}
+
+            {/* "+ Add Custom Category" Card */}
+            <div
+              className="clickable-card"
+              onClick={() => {
+                setOtherTitle('');
+                setOtherError('');
+                setShowOtherModal(true);
+              }}
+              style={{
+                background: 'rgba(241, 245, 249, 0.5)',
+                border: '1.5px dashed #cbd5e1',
+                borderRadius: '10px',
+                padding: '16px 18px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                cursor: 'pointer',
+                minHeight: '76px',
+                color: 'var(--primary-btn)',
+                fontWeight: '700',
+                fontSize: '0.92rem',
+                transition: 'all 0.18s ease-in-out',
+              }}
+            >
+              <IconPlus size={20} />
+              <span>Others</span>
             </div>
-          )}
-        </section>
-      </main>
+          </div>
+        )}
+      </section>
 
       {/* Modal for adding custom "Other" category */}
       {showOtherModal && (
         <div className="modal-backdrop" onClick={() => setShowOtherModal(false)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ marginTop: 0 }}>Add Custom Category for this Period</h3>
+            <h3 style={{ marginTop: 0 }}>Add Custom Category for this Newsletter</h3>
             <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '1.2rem' }}>
-              This category will be created <strong>only for this period</strong> and will not be added to standard categories.
+              This category will be created <strong>only for this Newsletter.</strong>
             </p>
             {otherError && <div className="error-message">{otherError}</div>}
             <form onSubmit={handleAddOtherCategory}>
               <div className="form-field" style={{ marginBottom: '1.2rem' }}>
-                <label style={{ fontWeight: '600', marginBottom: '6px', display: 'block' }}>
-                  Category Title *
-                </label>
+                <label>Category Title *</label>
                 <input
                   type="text"
                   placeholder="e.g. Special Workshop, Guest Lecture, Exhibition"
@@ -250,7 +306,7 @@ const Categories = () => {
                   required
                 />
               </div>
-              <div className="form-buttons" style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <div className="form-buttons" style={{ justifyContent: 'flex-end', gap: '10px' }}>
                 <button
                   type="button"
                   onClick={() => setShowOtherModal(false)}

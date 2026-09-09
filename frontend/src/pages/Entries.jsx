@@ -2,10 +2,23 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import api from '../api/api';
 import { useUser } from '../context/UserContext';
+import {
+  IconArrowLeft,
+  IconDownload,
+  IconPlus,
+  IconEdit,
+  IconTrash,
+  IconUpload,
+  IconX,
+  IconCheck,
+  IconClock,
+  IconCamera,
+  IconChevronUp,
+} from '@tabler/icons-react';
 
 const Entries = () => {
   const { periodId, categoryId } = useParams();
-  const { user, logout } = useUser();
+  const { user } = useUser();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -16,7 +29,8 @@ const Entries = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Form states
+  // Form toggle & states
+  const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
@@ -110,7 +124,7 @@ const Entries = () => {
           created_by: user.id,
         });
 
-        // If a file was selected, upload it for the newly created entry
+        // Upload initial photo if selected
         if (selectedFile && res.data && res.data.id) {
           const formData = new FormData();
           formData.append('entry_id', res.data.id);
@@ -148,6 +162,7 @@ const Entries = () => {
       fileInputRef.current.value = '';
     }
     setFormError('');
+    setShowForm(true);
   };
 
   const handleDeleteClick = async (entryId) => {
@@ -167,7 +182,6 @@ const Entries = () => {
     }
   };
 
-  // Upload an additional photo to an existing entry
   const handleAddPhotoToEntry = async (entryId, file) => {
     if (!file) return;
 
@@ -191,7 +205,6 @@ const Entries = () => {
     }
   };
 
-  // Delete a photo
   const handleDeletePhoto = async (photoId) => {
     if (!window.confirm('Are you sure you want to delete this photo?')) {
       return;
@@ -215,128 +228,400 @@ const Entries = () => {
     }
     setEditingEntryId(null);
     setFormError('');
-  };
-
-  const handleLogout = () => {
-    logout();
-    navigate('/');
+    setShowForm(false);
   };
 
   if (!user) return null;
 
   return (
-    <div className="page-container">
-      <header className="header-bar">
-        <div>
+    <div className="entries-page">
+      {/* Top Header Bar */}
+      <div
+        style={{
+          display: 'flex',
+          justify: 'space-between',
+          alignItems: 'center',
+          marginBottom: '20px',
+          flexWrap: 'wrap',
+          gap: '12px',
+        }}
+      >
+        <button
+          onClick={() =>
+            navigate(`/categories/${periodId}`, {
+              state: { periodTitle },
+            })
+          }
+          className="btn-link-back"
+          style={{ marginBottom: 0 }}
+        >
+          <IconArrowLeft size={18} />
+          <span>Back to categories</span>
+        </button>
+
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
           <button
-            onClick={() =>
-              navigate(`/categories/${periodId}`, {
-                state: { periodTitle },
-              })
-            }
-            className="btn-link"
+            onClick={() => {
+              if (showForm && !editingEntryId) {
+                setShowForm(false);
+              } else {
+                resetForm();
+                setShowForm(true);
+              }
+            }}
+            className="btn-primary"
           >
-            &larr; Back to Categories
+            {showForm ? <IconChevronUp size={18} /> : <IconPlus size={18} />}
+            <span>{showForm ? 'Close Form' : 'Add New Entry'}</span>
           </button>
-          <h2>Entries</h2>
-          <span className="user-badge">
-            {categoryName ? `Category: ${categoryName}` : `Category ID: ${categoryId}`}{' '}
-            {periodTitle ? `| Period: ${periodTitle}` : `| Period ID: ${periodId}`}
-          </span>
-        </div>
-        <div className="header-actions">
+
           <button
             onClick={handleDownloadCategoryDocx}
-            className="btn-download"
+            className="btn-action-green"
             disabled={downloading}
           >
-            {downloading ? 'Generating...' : 'Download Category (.docx)'}
-          </button>
-          <button onClick={handleLogout} className="btn-secondary">
-            Logout
+            <IconDownload size={18} />
+            <span>{downloading ? 'Generating...' : 'Download (.docx)'}</span>
           </button>
         </div>
-      </header>
+      </div>
 
-      <main className="content">
-        {/* Entries List */}
-        <section className="card-section">
-          <h3>Existing Entries</h3>
-          {loading ? (
-            <p className="loading-text">Loading entries...</p>
-          ) : error ? (
-            <div className="error-message">{error}</div>
-          ) : entries.length === 0 ? (
-            <p className="empty-state">No entries yet — add one below</p>
-          ) : (
-            <div className="entries-list">
-              {entries.map((entry) => (
-                <div key={entry.id} className="entry-card">
-                  <div className="entry-header">
-                    <h4>{entry.title}</h4>
-                    <div className="entry-actions">
-                      <button
-                        onClick={() => handleEditClick(entry)}
-                        className="btn-action edit-btn"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleDeleteClick(entry.id)}
-                        className="btn-action delete-btn"
-                      >
-                        Delete
-                      </button>
-                    </div>
+      {/* Collapsible Form Card Section */}
+      {showForm && (
+        <section
+          style={{
+            backgroundColor: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderRadius: '12px',
+            padding: '22px 24px',
+            marginBottom: '24px',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.04)',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h3
+              style={{
+                fontSize: '1.1rem',
+                fontWeight: '700',
+                color: 'var(--primary-btn)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                margin: 0,
+              }}
+            >
+              {editingEntryId ? <IconEdit size={20} /> : <IconPlus size={20} />}
+              <span>{editingEntryId ? 'Edit Entry' : 'Create New Entry'}</span>
+            </h3>
+            <button
+              type="button"
+              onClick={resetForm}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#64748b',
+                cursor: 'pointer',
+                padding: '4px',
+              }}
+              title="Close form"
+            >
+              <IconX size={20} />
+            </button>
+          </div>
+
+          {formError && <div className="error-message">{formError}</div>}
+
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* Title Field */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ fontSize: '0.88rem', fontWeight: '600', color: 'var(--text-heading)' }}>
+                Title *
+              </label>
+              <input
+                type="text"
+                placeholder="Enter entry title..."
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                required
+                style={{
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '6px',
+                  padding: '10px 14px',
+                  fontSize: '0.95rem',
+                  color: 'var(--text-body)',
+                  outline: 'none',
+                }}
+              />
+            </div>
+
+            {/* Description Field */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ fontSize: '0.88rem', fontWeight: '600', color: 'var(--text-heading)' }}>
+                Description
+              </label>
+              <textarea
+                rows="4"
+                placeholder="Enter entry details / description..."
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                style={{
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '6px',
+                  padding: '10px 14px',
+                  fontSize: '0.95rem',
+                  color: 'var(--text-body)',
+                  outline: 'none',
+                  resize: 'vertical',
+                }}
+              />
+            </div>
+
+            {/* Photo Attachment (for new entries) */}
+            {!editingEntryId && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '0.88rem', fontWeight: '600', color: 'var(--text-heading)' }}>
+                  Attach Photo (Optional)
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  ref={fileInputRef}
+                  style={{ display: 'none' }}
+                  onChange={(e) => setSelectedFile(e.target.files ? e.target.files[0] : null)}
+                />
+                <div
+                  onClick={() => fileInputRef.current && fileInputRef.current.click()}
+                  style={{
+                    border: '1.5px dashed #cbd5e1',
+                    borderRadius: '8px',
+                    padding: '12px 16px',
+                    backgroundColor: '#f8fafc',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    width: 'fit-content',
+                  }}
+                >
+                  <IconCamera size={20} style={{ color: 'var(--primary-btn)' }} />
+                  <span style={{ fontSize: '0.88rem', color: 'var(--primary-btn)', fontWeight: '600' }}>
+                    {selectedFile ? selectedFile.name : 'Choose Photo'}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Form Buttons */}
+            <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+              <button type="submit" className="btn-primary" disabled={submitting}>
+                {editingEntryId ? <IconCheck size={18} /> : <IconPlus size={18} />}
+                <span>{submitting ? 'Saving...' : editingEntryId ? 'Update Entry' : 'Save Entry'}</span>
+              </button>
+              <button type="button" onClick={resetForm} className="btn-secondary">
+                Cancel
+              </button>
+            </div>
+          </form>
+        </section>
+      )}
+
+      {/* Main Entries List Section */}
+      <section className="card-section">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <h3 style={{ margin: 0 }}>
+            {categoryName ? `${categoryName} Entries` : 'Entries'}
+          </h3>
+          <span className="kanban-count-badge">{entries.length}</span>
+        </div>
+
+        {loading ? (
+          <p className="loading-text">Loading entries...</p>
+        ) : error ? (
+          <div className="error-message">{error}</div>
+        ) : entries.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '32px 16px' }}>
+            <p className="empty-state" style={{ marginBottom: '16px' }}>
+              No entries found for this category.
+            </p>
+            <button
+              onClick={() => {
+                resetForm();
+                setShowForm(true);
+              }}
+              className="btn-primary"
+            >
+              <IconPlus size={18} />
+              <span>Add First Entry</span>
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {entries.map((entry) => (
+              <div
+                key={entry.id}
+                style={{
+                  backgroundColor: '#ffffff',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '10px',
+                  padding: '16px 18px',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.02)',
+                  transition: 'all 0.18s ease-in-out',
+                }}
+              >
+                {/* Header */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+                  <h4
+                    style={{
+                      fontSize: '1rem',
+                      fontWeight: '700',
+                      color: 'var(--text-heading)',
+                      margin: 0,
+                      lineHeight: '1.35',
+                    }}
+                  >
+                    {entry.title}
+                  </h4>
+                  <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                    <button
+                      onClick={() => handleEditClick(entry)}
+                      className="btn-secondary"
+                      style={{ padding: '4px 8px', fontSize: '0.78rem' }}
+                      title="Edit entry"
+                    >
+                      <IconEdit size={15} />
+                      <span>Edit</span>
+                    </button>
+                    <button
+                      onClick={() => handleDeleteClick(entry.id)}
+                      className="btn-ghost-danger"
+                      style={{ padding: '4px 8px', border: 'none', fontSize: '0.78rem' }}
+                      title="Delete entry"
+                    >
+                      <IconTrash size={15} />
+                    </button>
                   </div>
+                </div>
 
-                  {entry.description && (
-                    <p className="entry-description">{entry.description}</p>
-                  )}
+                {/* Description */}
+                {entry.description && (
+                  <p
+                    style={{
+                      color: 'var(--text-body)',
+                      fontSize: '0.88rem',
+                      lineHeight: '1.5',
+                      marginTop: '8px',
+                      marginBottom: 0,
+                      whiteSpace: 'pre-wrap',
+                    }}
+                  >
+                    {entry.description}
+                  </p>
+                )}
 
-                  {/* Photos Section on Entry Card */}
-                  <div className="photos-section">
-                    <div className="photos-grid">
-                      {entry.photos &&
-                        entry.photos.map((photo) => (
-                          <div key={photo.id} className="photo-thumbnail-wrapper">
-                            <img
-                              src={`http://${window.location.hostname || 'localhost'}:8000/${photo.file_path}`}
-                              alt={photo.original_filename || 'Entry photo'}
-                              className="photo-thumbnail"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => handleDeletePhoto(photo.id)}
-                              className="photo-delete-btn"
-                              title="Delete photo"
-                            >
-                              &times;
-                            </button>
-                          </div>
-                        ))}
-
-                      {/* Add Photo Button for Existing Entry */}
-                      <label className="add-photo-label" title="Upload additional photo">
-                        <span>+ Photo</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          style={{ display: 'none' }}
-                          onChange={(e) => {
-                            if (e.target.files && e.target.files[0]) {
-                              handleAddPhotoToEntry(entry.id, e.target.files[0]);
-                              e.target.value = '';
-                            }
+                {/* Photos Grid */}
+                <div style={{ marginTop: '12px' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px' }}>
+                    {entry.photos &&
+                      entry.photos.map((photo) => (
+                        <div
+                          key={photo.id}
+                          style={{
+                            position: 'relative',
+                            width: '80px',
+                            height: '80px',
+                            flexShrink: 0,
                           }}
-                        />
-                      </label>
-                    </div>
-                  </div>
+                        >
+                          <img
+                            src={`http://${window.location.hostname || 'localhost'}:8000/${photo.file_path}`}
+                            alt={photo.original_filename || 'Entry photo'}
+                            style={{
+                              width: '80px',
+                              height: '80px',
+                              objectFit: 'cover',
+                              borderRadius: '6px',
+                              border: '1px solid #e2e8f0',
+                              display: 'block',
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleDeletePhoto(photo.id)}
+                            title="Delete photo"
+                            style={{
+                              position: 'absolute',
+                              top: '-4px',
+                              right: '-4px',
+                              width: '20px',
+                              height: '20px',
+                              borderRadius: '50%',
+                              backgroundColor: '#dc2626',
+                              color: '#ffffff',
+                              border: 'none',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                          >
+                            <IconX size={12} />
+                          </button>
+                        </div>
+                      ))}
 
-                  {/* Last Updated Metadata */}
-                  <div className="entry-meta">
-                    Last updated by {entry.updated_by_name || `User #${entry.updated_by}`} on{' '}
+                    {/* Inline Add Photo Button */}
+                    <label
+                      title="Upload photo"
+                      style={{
+                        width: '80px',
+                        height: '80px',
+                        border: '1.5px dashed #cbd5e1',
+                        borderRadius: '6px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '2px',
+                        cursor: 'pointer',
+                        backgroundColor: '#f8fafc',
+                        color: '#64748b',
+                        fontSize: '0.72rem',
+                        fontWeight: '600',
+                      }}
+                    >
+                      <IconUpload size={16} />
+                      <span>+ Photo</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files[0]) {
+                            handleAddPhotoToEntry(entry.id, e.target.files[0]);
+                            e.target.value = '';
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                {/* Footer Metadata */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    marginTop: '12px',
+                    paddingTop: '8px',
+                    borderTop: '1px dashed #f1f5f9',
+                    color: '#94a3b8',
+                    fontSize: '0.75rem',
+                  }}
+                >
+                  <IconClock size={13} />
+                  <span>
+                    Updated by {entry.updated_by_name || `User #${entry.updated_by}`} on{' '}
                     {entry.updated_at
                       ? new Date(entry.updated_at).toLocaleString('en-US', {
                           month: 'short',
@@ -347,73 +632,13 @@ const Entries = () => {
                           hour12: true,
                         })
                       : 'N/A'}
-                  </div>
+                  </span>
                 </div>
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* Add / Edit Entry Form */}
-        <section className="card-section">
-          <h3>{editingEntryId ? 'Edit Entry' : 'Add New Entry'}</h3>
-          {formError && <div className="error-message">{formError}</div>}
-          <form onSubmit={handleSubmit} className="vertical-form">
-            <div className="form-field">
-              <label>Title</label>
-              <input
-                type="text"
-                placeholder="Entry title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                required
-              />
-            </div>
-            <div className="form-field">
-              <label>Description</label>
-              <textarea
-                rows="4"
-                placeholder="Entry details / description..."
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-              />
-            </div>
-
-            {!editingEntryId && (
-              <div className="form-field">
-                <label>Photo (optional)</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  ref={fileInputRef}
-                  onChange={(e) =>
-                    setSelectedFile(e.target.files ? e.target.files[0] : null)
-                  }
-                />
               </div>
-            )}
-
-            <div className="form-buttons">
-              <button type="submit" className="btn-primary" disabled={submitting}>
-                {submitting
-                  ? 'Saving...'
-                  : editingEntryId
-                  ? 'Update Entry'
-                  : 'Add Entry'}
-              </button>
-              {editingEntryId && (
-                <button
-                  type="button"
-                  onClick={resetForm}
-                  className="btn-secondary"
-                >
-                  Cancel
-                </button>
-              )}
-            </div>
-          </form>
-        </section>
-      </main>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 };

@@ -34,14 +34,43 @@ def create_period(payload: schemas.PeriodCreate, db: Session = Depends(get_db)):
     return period
 
 
+from typing import List, Optional
+from datetime import date, timedelta
+from sqlalchemy import extract
+
 @router.get("/", response_model=List[schemas.PeriodRead])
-def list_periods(group_name: str, db: Session = Depends(get_db)):
-    return (
-        db.query(models.NewsletterPeriod)
+def list_periods(
+    group_name: str,
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+    months: Optional[float] = None,
+    db: Session = Depends(get_db)
+):
+    query = db.query(models.NewsletterPeriod).filter(models.NewsletterPeriod.group_name == group_name)
+
+    if year is not None:
+        query = query.filter(extract('year', models.NewsletterPeriod.start_date) == year)
+
+    if month is not None:
+        query = query.filter(extract('month', models.NewsletterPeriod.start_date) == month)
+
+    if months is not None and months > 0:
+        cutoff = date.today() - timedelta(days=int(months * 30))
+        query = query.filter(models.NewsletterPeriod.start_date >= cutoff)
+
+    return query.order_by(models.NewsletterPeriod.start_date.desc()).all()
+
+
+@router.get("/years/", response_model=List[int])
+def list_period_years(group_name: str, db: Session = Depends(get_db)):
+    results = (
+        db.query(extract('year', models.NewsletterPeriod.start_date))
         .filter(models.NewsletterPeriod.group_name == group_name)
-        .order_by(models.NewsletterPeriod.start_date.desc())
+        .distinct()
         .all()
     )
+    years = sorted([int(r[0]) for r in results if r[0] is not None], reverse=True)
+    return years
 
 
 @router.get("/{period_id}", response_model=schemas.PeriodRead)

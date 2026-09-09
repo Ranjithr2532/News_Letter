@@ -2,14 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/api';
 import { useUser } from '../context/UserContext';
-import Sidebar from '../components/Sidebar';
+import {
+  IconArrowLeft,
+  IconUserPlus,
+  IconListNumbers,
+  IconPlus,
+  IconEdit,
+  IconTrash,
+  IconCheck,
+} from '@tabler/icons-react';
 
 const Customize = () => {
   const { user } = useUser();
   const navigate = useNavigate();
-
-  // Tab inside Customize page: 'user' or 'stages'
-  const [activeSection, setActiveSection] = useState('user');
 
   // Role Guard: Redirect non-GH users immediately
   useEffect(() => {
@@ -161,273 +166,252 @@ const Customize = () => {
   if (!user || user.role?.toLowerCase() !== 'gh') return null;
 
   return (
-    <div className="dashboard-container">
-      <Sidebar activePage="customize" />
+    <div className="customize-page">
+      {/* Back button */}
+      <button onClick={() => navigate('/periods')} className="btn-link-back">
+        <IconArrowLeft size={18} />
+        <span>Back to periods</span>
+      </button>
 
-      <main className="dashboard-main">
-        <header className="header-bar" style={{ marginBottom: '24px' }}>
-          <div>
-            <h2>GH Customization Panel</h2>
-            <span className="user-badge">
-              Group: <strong>{user.group_name}</strong> | Center: <strong>{user.center}</strong>
-            </span>
+      {/* CARD 1: ADD NEW USER */}
+      <section className="card-section">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+          <IconUserPlus size={22} style={{ color: 'var(--primary-btn)' }} />
+          <h3 style={{ margin: 0 }}>Add New User</h3>
+        </div>
+        <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '1.5rem' }}>
+          Create a new scientist or GH user. Center (<strong>{user.center}</strong>) and Group Name (<strong>{user.group_name}</strong>) are automatically locked to your group.
+        </p>
+
+        {userSuccessMsg && <div className="success-message">{userSuccessMsg}</div>}
+        {userErrorMsg && <div className="error-message">{userErrorMsg}</div>}
+
+        <form onSubmit={handleAddUser} className="vertical-form" style={{ maxWidth: '550px' }}>
+          <div className="form-field">
+            <label>Full Name *</label>
+            <input
+              type="text"
+              placeholder="e.g. Dr. John Doe"
+              value={userName}
+              onChange={(e) => setUserName(e.target.value)}
+              required
+            />
           </div>
-          <div className="header-actions">
-            <button
-              className={`btn-action ${activeSection === 'user' ? 'edit-btn' : 'btn-secondary'}`}
-              onClick={() => setActiveSection('user')}
+
+          <div className="form-field">
+            <label>Email *</label>
+            <input
+              type="email"
+              placeholder="user@example.com"
+              value={userEmail}
+              onChange={(e) => setUserEmail(e.target.value)}
+              required
+            />
+          </div>
+
+          <div className="form-field">
+            <label>Password *</label>
+            <input
+              type="password"
+              placeholder="Temporary password"
+              value={userPassword}
+              onChange={(e) => setUserPassword(e.target.value)}
+              required
+            />
+          </div>
+
+          <div className="form-field">
+            <label>Designation</label>
+            <input
+              type="text"
+              placeholder="e.g. Scientist B"
+              value={userDesignation}
+              onChange={(e) => setUserDesignation(e.target.value)}
+            />
+          </div>
+
+          <div className="form-field">
+            <label>Role *</label>
+            <select
+              value={userRole}
+              onChange={(e) => setUserRole(e.target.value)}
             >
-              👤 Add User
-            </button>
-            <button
-              className={`btn-action ${activeSection === 'stages' ? 'edit-btn' : 'btn-secondary'}`}
-              onClick={() => setActiveSection('stages')}
-            >
-              🏷️ Category Stages
+              <option value="scientist">Scientist</option>
+              <option value="gh">Group Head (GH)</option>
+            </select>
+          </div>
+
+          <div className="form-field">
+            <label>Center (Locked)</label>
+            <input
+              type="text"
+              value={user.center || ''}
+              disabled
+              readOnly
+              style={{ backgroundColor: '#f1f5f9', cursor: 'not-allowed' }}
+            />
+          </div>
+
+          <div className="form-field">
+            <label>Group Name (Locked)</label>
+            <input
+              type="text"
+              value={user.group_name || ''}
+              disabled
+              readOnly
+              style={{ backgroundColor: '#f1f5f9', cursor: 'not-allowed' }}
+            />
+          </div>
+
+          <div className="form-buttons" style={{ marginTop: '10px' }}>
+            <button type="submit" className="btn-primary" disabled={userSubmitting}>
+              <IconUserPlus size={18} />
+              <span>{userSubmitting ? 'Creating User...' : 'Add User'}</span>
             </button>
           </div>
-        </header>
+        </form>
+      </section>
 
-        {/* SECTION 1: ADD USER */}
-        {activeSection === 'user' && (
-          <section className="card-section">
-            <h3>Add New User</h3>
-            <p className="section-subtitle" style={{ marginBottom: '1.5rem', color: '#64748b' }}>
-              Create a new user. Center (<strong>{user.center}</strong>) and Group Name (<strong>{user.group_name}</strong>) are automatically locked to your group.
-            </p>
+      {/* CARD 2: MANAGE CATEGORY STAGES */}
+      <section className="card-section">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+          <IconListNumbers size={22} style={{ color: 'var(--primary-btn)' }} />
+          <h3 style={{ margin: 0 }}>Manage Category Stages</h3>
+        </div>
+        <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '1.5rem' }}>
+          Add, modify, or delete standard global category stages for your newsletter builder.
+        </p>
 
-            {userSuccessMsg && (
-              <div className="success-message" style={{ color: '#16a34a', backgroundColor: '#f0fdf4', padding: '12px', borderRadius: '6px', marginBottom: '1rem', border: '1px solid #bbf7d0', fontWeight: '600' }}>
-                {userSuccessMsg}
-              </div>
-            )}
-            {userErrorMsg && (
-              <div className="error-message" style={{ color: '#dc2626', backgroundColor: '#fef2f2', padding: '12px', borderRadius: '6px', marginBottom: '1rem', border: '1px solid #fecaca' }}>
-                {userErrorMsg}
-              </div>
-            )}
+        {/* Add Category Stage Form */}
+        <form
+          onSubmit={handleAddCategory}
+          className="horizontal-form"
+          style={{ marginBottom: '2rem', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}
+        >
+          <div className="form-field">
+            <label>Stage Name</label>
+            <input
+              type="text"
+              placeholder="e.g. Workshop"
+              value={newCatName}
+              onChange={(e) => setNewCatName(e.target.value)}
+              required
+            />
+          </div>
+          <div className="form-field">
+            <label>Stage Number</label>
+            <input
+              type="number"
+              value={newCatStage}
+              onChange={(e) => setNewCatStage(e.target.value)}
+              required
+            />
+          </div>
+          <div className="form-field form-field-btn">
+            <button type="submit" className="btn-primary" disabled={catSubmitting}>
+              <IconPlus size={18} />
+              <span>{catSubmitting ? 'Adding...' : 'Add Stage'}</span>
+            </button>
+          </div>
+        </form>
 
-            <form onSubmit={handleAddUser} className="vertical-form" style={{ maxWidth: '550px' }}>
-              <div className="form-field">
-                <label>Full Name *</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Dr. John Doe"
-                  value={userName}
-                  onChange={(e) => setUserName(e.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="form-field">
-                <label>Email *</label>
-                <input
-                  type="email"
-                  placeholder="user@example.com"
-                  value={userEmail}
-                  onChange={(e) => setUserEmail(e.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="form-field">
-                <label>Password *</label>
-                <input
-                  type="password"
-                  placeholder="Temporary password"
-                  value={userPassword}
-                  onChange={(e) => setUserPassword(e.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="form-field">
-                <label>Designation</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Scientist B"
-                  value={userDesignation}
-                  onChange={(e) => setUserDesignation(e.target.value)}
-                />
-              </div>
-
-              <div className="form-field">
-                <label>Role *</label>
-                <select
-                  value={userRole}
-                  onChange={(e) => setUserRole(e.target.value)}
-                  style={{ padding: '10px 12px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '0.95rem' }}
-                >
-                  <option value="scientist">Scientist</option>
-                  <option value="gh">Group Head (GH)</option>
-                </select>
-              </div>
-
-              <div className="form-field">
-                <label>Center (Locked)</label>
-                <input
-                  type="text"
-                  value={user.center || ''}
-                  disabled
-                  readOnly
-                  style={{ backgroundColor: '#f1f5f9', cursor: 'not-allowed' }}
-                />
-              </div>
-
-              <div className="form-field">
-                <label>Group Name (Locked)</label>
-                <input
-                  type="text"
-                  value={user.group_name || ''}
-                  disabled
-                  readOnly
-                  style={{ backgroundColor: '#f1f5f9', cursor: 'not-allowed' }}
-                />
-              </div>
-
-              <div className="form-buttons" style={{ marginTop: '10px' }}>
-                <button type="submit" className="btn-primary" disabled={userSubmitting}>
-                  {userSubmitting ? 'Creating User...' : 'Add User'}
-                </button>
-              </div>
-            </form>
-          </section>
+        {/* Categories Table */}
+        {catLoading ? (
+          <p className="loading-text">Loading stages...</p>
+        ) : catError ? (
+          <div className="error-message">{catError}</div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #e2e8f0', color: '#475569' }}>
+                  <th style={{ padding: '12px' }}>Stage #</th>
+                  <th style={{ padding: '12px' }}>Stage Name</th>
+                  <th style={{ padding: '12px' }}>Status</th>
+                  <th style={{ padding: '12px' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {categories.map((cat) => (
+                  <tr key={cat.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '12px', fontWeight: '600' }}>
+                      {editingCatId === cat.id ? (
+                        <input
+                          type="number"
+                          style={{ width: '70px', padding: '6px' }}
+                          value={editCatStage}
+                          onChange={(e) => setEditCatStage(e.target.value)}
+                        />
+                      ) : (
+                        `Stage ${cat.stage_number}`
+                      )}
+                    </td>
+                    <td style={{ padding: '12px', fontSize: '1rem', color: '#1e293b' }}>
+                      {editingCatId === cat.id ? (
+                        <input
+                          type="text"
+                          style={{ padding: '6px' }}
+                          value={editCatName}
+                          onChange={(e) => setEditCatName(e.target.value)}
+                        />
+                      ) : (
+                        cat.name
+                      )}
+                    </td>
+                    <td style={{ padding: '12px' }}>
+                      <span className={`status-badge ${cat.is_active ? 'active' : 'inactive'}`}>
+                        {cat.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td style={{ padding: '12px' }}>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        {editingCatId === cat.id ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveCategoryEdit(cat.id)}
+                              className="btn-ghost-primary"
+                            >
+                              <IconCheck size={16} />
+                              <span>Save</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingCatId(null)}
+                              className="btn-secondary"
+                            >
+                              Cancel
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditCategory(cat)}
+                              className="btn-ghost-primary"
+                            >
+                              <IconEdit size={16} />
+                              <span>Edit</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteCategory(cat.id)}
+                              className="btn-ghost-danger"
+                            >
+                              <IconTrash size={16} />
+                              <span>Delete</span>
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
-
-        {/* SECTION 2: CATEGORY STAGES */}
-        {activeSection === 'stages' && (
-          <section className="card-section">
-            <h3>Manage Category Stages</h3>
-            <p className="section-subtitle" style={{ marginBottom: '1.5rem', color: '#64748b' }}>
-              Add, modify, or delete category stages.
-            </p>
-
-            {/* Add Category Stage Form */}
-            <form
-              onSubmit={handleAddCategory}
-              className="horizontal-form"
-              style={{ marginBottom: '2rem', display: 'flex', gap: '1rem', alignItems: 'flex-end', flexWrap: 'wrap', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}
-            >
-              <div className="form-field">
-                <label>Stage Name</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Workshop"
-                  value={newCatName}
-                  onChange={(e) => setNewCatName(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="form-field">
-                <label>Stage Number</label>
-                <input
-                  type="number"
-                  value={newCatStage}
-                  onChange={(e) => setNewCatStage(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="form-field form-field-btn">
-                <button type="submit" className="btn-primary" disabled={catSubmitting}>
-                  {catSubmitting ? 'Adding...' : 'Add Stage'}
-                </button>
-              </div>
-            </form>
-
-            {/* Categories Table */}
-            {catLoading ? (
-              <p className="loading-text">Loading stages...</p>
-            ) : catError ? (
-              <div className="error-message">{catError}</div>
-            ) : (
-              <div className="table-responsive">
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '2px solid #e2e8f0', color: '#475569' }}>
-                      <th style={{ padding: '12px' }}>Stage #</th>
-                      <th style={{ padding: '12px' }}>Stage Name</th>
-                      <th style={{ padding: '12px' }}>Status</th>
-                      <th style={{ padding: '12px' }}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {categories.map((cat) => (
-                      <tr key={cat.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '12px', fontWeight: '600' }}>
-                          {editingCatId === cat.id ? (
-                            <input
-                              type="number"
-                              style={{ width: '70px', padding: '6px' }}
-                              value={editCatStage}
-                              onChange={(e) => setEditCatStage(e.target.value)}
-                            />
-                          ) : (
-                            `Stage ${cat.stage_number}`
-                          )}
-                        </td>
-                        <td style={{ padding: '12px', fontSize: '1rem', color: '#1e293b' }}>
-                          {editingCatId === cat.id ? (
-                            <input
-                              type="text"
-                              style={{ padding: '6px' }}
-                              value={editCatName}
-                              onChange={(e) => setEditCatName(e.target.value)}
-                            />
-                          ) : (
-                            cat.name
-                          )}
-                        </td>
-                        <td style={{ padding: '12px' }}>
-                          <span className={`status-badge ${cat.is_active ? 'active' : 'inactive'}`}>
-                            {cat.is_active ? 'Active' : 'Inactive'}
-                          </span>
-                        </td>
-                        <td style={{ padding: '12px', display: 'flex', gap: '8px' }}>
-                          {editingCatId === cat.id ? (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => handleSaveCategoryEdit(cat.id)}
-                                className="btn-action edit-btn"
-                              >
-                                Save
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setEditingCatId(null)}
-                                className="btn-secondary"
-                              >
-                                Cancel
-                              </button>
-                            </>
-                          ) : (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => handleStartEditCategory(cat)}
-                                className="btn-action edit-btn"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteCategory(cat.id)}
-                                className="btn-action delete-btn"
-                              >
-                                Delete
-                              </button>
-                            </>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-        )}
-      </main>
+      </section>
     </div>
   );
 };
