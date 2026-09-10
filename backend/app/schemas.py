@@ -14,9 +14,11 @@ class UserRead(BaseModel):
     name: str
     email: str
     designation: Optional[str] = None
-    role: str
+    role: Optional[str] = None
     center: Optional[str] = None
-    group_name: str
+    group: Optional[str] = None
+    group_name: Optional[str] = None
+    type: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -28,9 +30,11 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str
     designation: Optional[str] = None
-    role: str
-    center: str
-    group_name: str
+    role: Optional[str] = None
+    center: Optional[str] = None
+    group: Optional[str] = None
+    group_name: Optional[str] = None
+    type: Optional[str] = None
 
 
 class CategoryCreate(BaseModel):

@@ -21,7 +21,13 @@ def create_user(payload: schemas.UserCreate, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(status_code=400, detail="Email already exists")
 
-    user = models.User(**payload.model_dump())
+    data = payload.model_dump()
+    group_val = data.get("group") or data.get("group_name")
+    data["group"] = group_val
+    if "group_name" in data:
+        del data["group_name"]
+
+    user = models.User(**data)
     db.add(user)
     db.commit()
     db.refresh(user)

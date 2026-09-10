@@ -41,7 +41,7 @@ const Categories = () => {
   // Add Entry mini-form state (inside expanded category)
   const [newTitle, setNewTitle] = useState('');
   const [newDescription, setNewDescription] = useState('');
-  const [newFile, setNewFile] = useState(null);
+  const [newFiles, setNewFiles] = useState([]);
   const [submittingNew, setSubmittingNew] = useState(false);
   const [addError, setAddError] = useState('');
   const fileInputRef = useRef(null);
@@ -113,7 +113,7 @@ const Categories = () => {
   const resetAddForm = () => {
     setNewTitle('');
     setNewDescription('');
-    setNewFile(null);
+    setNewFiles([]);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -142,20 +142,34 @@ const Categories = () => {
         created_by: user.id,
       });
 
-      // Upload initial photo if selected
-      if (newFile && res.data && res.data.id) {
-        const formData = new FormData();
-        formData.append('entry_id', res.data.id);
-        formData.append('uploaded_by', user.id);
-        formData.append('display_order', 0);
-        formData.append('file', newFile);
-
+      // Upload initial photos if selected
+      if (newFiles && newFiles.length > 0 && res.data && res.data.id) {
         try {
-          await api.post('/photos/', formData, {
+          const formData = new FormData();
+          formData.append('entry_id', res.data.id);
+          formData.append('uploaded_by', user.id);
+          newFiles.forEach((file) => {
+            formData.append('files', file);
+          });
+          await api.post('/photos/batch', formData, {
             headers: { 'Content-Type': 'multipart/form-data' },
           });
-        } catch (photoErr) {
-          console.error('Failed to upload initial photo:', photoErr);
+        } catch (batchErr) {
+          console.warn('Batch photo upload fallback triggered:', batchErr);
+          for (let i = 0; i < newFiles.length; i++) {
+            const formData = new FormData();
+            formData.append('entry_id', res.data.id);
+            formData.append('uploaded_by', user.id);
+            formData.append('display_order', i);
+            formData.append('file', newFiles[i]);
+            try {
+              await api.post('/photos/', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+              });
+            } catch (singleErr) {
+              console.error('Failed to upload photo:', singleErr);
+            }
+          }
         }
       }
 
@@ -212,27 +226,41 @@ const Categories = () => {
   };
 
   // Entry photo handlers inside accordion
-  const handleAddPhotoToEntry = async (entryId, catId, file) => {
-    if (!file) return;
-
-    const entry = categoryEntries.find((e) => e.id === entryId);
-    const displayOrder = entry && entry.photos ? entry.photos.length : 0;
-
-    const formData = new FormData();
-    formData.append('entry_id', entryId);
-    formData.append('uploaded_by', user.id);
-    formData.append('display_order', displayOrder);
-    formData.append('file', file);
+  const handleAddPhotoToEntry = async (entryId, catId, files) => {
+    if (!files) return;
+    const fileList = Array.from(files.length !== undefined ? files : [files]);
+    if (fileList.length === 0) return;
 
     try {
-      await api.post('/photos/', formData, {
+      const formData = new FormData();
+      formData.append('entry_id', entryId);
+      formData.append('uploaded_by', user.id);
+      fileList.forEach((file) => {
+        formData.append('files', file);
+      });
+      await api.post('/photos/batch', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      fetchCategoryEntries(catId);
-    } catch (err) {
-      console.error('Failed to upload photo:', err);
-      alert('Failed to upload photo.');
+    } catch (batchErr) {
+      console.warn('Batch upload fallback triggered:', batchErr);
+      const entry = categoryEntries.find((e) => e.id === entryId);
+      let startOrder = entry && entry.photos ? entry.photos.length : 0;
+      for (let i = 0; i < fileList.length; i++) {
+        const formData = new FormData();
+        formData.append('entry_id', entryId);
+        formData.append('uploaded_by', user.id);
+        formData.append('display_order', startOrder + i);
+        formData.append('file', fileList[i]);
+        try {
+          await api.post('/photos/', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          });
+        } catch (singleErr) {
+          console.error('Failed to upload photo:', singleErr);
+        }
+      }
     }
+    fetchCategoryEntries(catId);
   };
 
   const handleDeletePhoto = async (photoId, catId) => {
@@ -470,8 +498,8 @@ const Categories = () => {
                             width: '38px',
                             height: '38px',
                             borderRadius: '8px',
-                            backgroundColor: '#eff6ff',
-                            color: 'var(--primary-btn)',
+                            backgroundColor: '#f1f5f9',
+                            color: '#475569',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
@@ -857,16 +885,17 @@ const Categories = () => {
                                         <input
                                           type="file"
                                           accept="image/*"
+                                          multiple
                                           style={{ display: 'none' }}
                                           onChange={(e) => {
                                             if (
                                               e.target.files &&
-                                              e.target.files[0]
+                                              e.target.files.length > 0
                                             ) {
                                               handleAddPhotoToEntry(
                                                 entry.id,
                                                 category.id,
-                                                e.target.files[0]
+                                                e.target.files
                                               );
                                               e.target.value = '';
                                             }
@@ -917,24 +946,37 @@ const Categories = () => {
                       {/* b. Add New Entry Mini-Form Box */}
                       <div
                         style={{
-                          backgroundColor: '#eff6ff',
-                          border: '1.5px dashed #93c5fd',
+                          backgroundColor: '#f8fafc',
+                          border: '1px solid #e2e8f0',
                           borderRadius: '10px',
-                          padding: '16px',
+                          padding: '18px 20px',
                         }}
                       >
                         <h5
                           style={{
-                            margin: '0 0 12px 0',
-                            fontSize: '0.9rem',
+                            margin: '0 0 14px 0',
+                            fontSize: '0.92rem',
                             fontWeight: '700',
-                            color: '#1e40af',
+                            color: '#0f172a',
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '6px',
+                            gap: '8px',
                           }}
                         >
-                          <IconPlus size={16} />
+                          <div
+                            style={{
+                              width: '24px',
+                              height: '24px',
+                              borderRadius: '6px',
+                              backgroundColor: '#e2e8f0',
+                              color: '#334155',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                          >
+                            <IconPlus size={14} />
+                          </div>
                           <span>Add New Entry for {category.name}</span>
                         </h5>
 
@@ -964,12 +1006,13 @@ const Categories = () => {
                             onChange={(e) => setNewTitle(e.target.value)}
                             required
                             style={{
-                              padding: '8px 12px',
-                              borderRadius: '6px',
+                              padding: '10px 14px',
+                              borderRadius: '8px',
                               border: '1px solid #cbd5e1',
                               fontSize: '0.88rem',
                               outline: 'none',
                               backgroundColor: '#ffffff',
+                              color: '#0f172a',
                             }}
                           />
 
@@ -979,12 +1022,13 @@ const Categories = () => {
                             onChange={(e) => setNewDescription(e.target.value)}
                             rows="3"
                             style={{
-                              padding: '8px 12px',
-                              borderRadius: '6px',
+                              padding: '10px 14px',
+                              borderRadius: '8px',
                               border: '1px solid #cbd5e1',
                               fontSize: '0.88rem',
                               outline: 'none',
                               backgroundColor: '#ffffff',
+                              color: '#0f172a',
                               resize: 'vertical',
                             }}
                           />
@@ -1000,13 +1044,18 @@ const Categories = () => {
                             <input
                               type="file"
                               accept="image/*"
+                              multiple
                               ref={fileInputRef}
                               style={{ display: 'none' }}
-                              onChange={(e) =>
-                                setNewFile(
-                                  e.target.files ? e.target.files[0] : null
-                                )
-                              }
+                              onChange={(e) => {
+                                if (e.target.files && e.target.files.length > 0) {
+                                  setNewFiles((prev) => [
+                                    ...prev,
+                                    ...Array.from(e.target.files),
+                                  ]);
+                                  e.target.value = '';
+                                }
+                              }}
                             />
                             <button
                               type="button"
@@ -1015,12 +1064,12 @@ const Categories = () => {
                                 fileInputRef.current.click()
                               }
                               style={{
-                                padding: '6px 12px',
+                                padding: '7px 14px',
                                 borderRadius: '6px',
-                                border: '1px dashed #93c5fd',
+                                border: '1px solid #cbd5e1',
                                 backgroundColor: '#ffffff',
-                                color: '#1e40af',
-                                fontSize: '0.8rem',
+                                color: '#475569',
+                                fontSize: '0.82rem',
                                 fontWeight: '600',
                                 cursor: 'pointer',
                                 display: 'inline-flex',
@@ -1028,29 +1077,77 @@ const Categories = () => {
                                 gap: '6px',
                               }}
                             >
-                              <IconCamera size={15} />
+                              <IconCamera size={16} style={{ color: '#64748b' }} />
                               <span>
-                                {newFile
-                                  ? newFile.name
-                                  : 'Attach Photo (Optional)'}
+                                {newFiles.length > 0
+                                  ? `Attach Photos (${newFiles.length} selected)`
+                                  : 'Attach Photos (Optional)'}
                               </span>
                             </button>
 
-                            {newFile && (
-                              <button
-                                type="button"
-                                onClick={() => setNewFile(null)}
+                            {newFiles.length > 0 && (
+                              <div
                                 style={{
-                                  background: 'none',
-                                  border: 'none',
-                                  color: '#dc2626',
-                                  cursor: 'pointer',
-                                  fontSize: '0.78rem',
-                                  fontWeight: '600',
+                                  display: 'flex',
+                                  flexWrap: 'wrap',
+                                  gap: '6px',
+                                  marginTop: '6px',
                                 }}
                               >
-                                Remove photo
-                              </button>
+                                {newFiles.map((file, idx) => (
+                                  <span
+                                    key={idx}
+                                    style={{
+                                      fontSize: '0.75rem',
+                                      backgroundColor: '#ffffff',
+                                      color: '#334155',
+                                      padding: '3px 8px',
+                                      borderRadius: '4px',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '6px',
+                                      border: '1px solid #cbd5e1',
+                                    }}
+                                  >
+                                    📷 {file.name}
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setNewFiles((prev) =>
+                                          prev.filter((_, i) => i !== idx)
+                                        )
+                                      }
+                                      style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        color: '#dc2626',
+                                        cursor: 'pointer',
+                                        fontWeight: 'bold',
+                                        fontSize: '0.85rem',
+                                        lineHeight: 1,
+                                        padding: 0,
+                                      }}
+                                    >
+                                      ×
+                                    </button>
+                                  </span>
+                                ))}
+                                <button
+                                  type="button"
+                                  onClick={() => setNewFiles([])}
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: '#dc2626',
+                                    cursor: 'pointer',
+                                    fontSize: '0.78rem',
+                                    fontWeight: '600',
+                                    marginLeft: '4px',
+                                  }}
+                                >
+                                  Clear all
+                                </button>
+                              </div>
                             )}
                           </div>
 
@@ -1058,16 +1155,11 @@ const Categories = () => {
                             <button
                               type="submit"
                               disabled={submittingNew}
+                              className="btn-primary"
                               style={{
-                                backgroundColor: '#1e40af',
-                                color: '#ffffff',
-                                border: 'none',
-                                padding: '8px 16px',
-                                borderRadius: '6px',
-                                fontWeight: '700',
-                                fontSize: '0.85rem',
-                                cursor: submittingNew ? 'not-allowed' : 'pointer',
-                                opacity: submittingNew ? 0.6 : 1,
+                                padding: '8px 18px',
+                                fontSize: '0.86rem',
+                                fontWeight: '600',
                                 display: 'inline-flex',
                                 alignItems: 'center',
                                 gap: '6px',
@@ -1075,7 +1167,7 @@ const Categories = () => {
                             >
                               <IconPlus size={16} />
                               <span>
-                                {submittingNew ? 'Adding...' : 'Add Entry'}
+                                {submittingNew ? 'Saving Entry...' : 'Add Entry'}
                               </span>
                             </button>
                           </div>

@@ -88,8 +88,8 @@ const Customize = () => {
         password: userPassword,
         designation: userDesignation || null,
         role: userRole,
-        center: user.center,
-        group_name: user.group_name,
+        group: user.group || user.group_name,
+        group_name: user.group || user.group_name,
       });
 
       setUserSuccessMsg(`User "${userName}" created successfully!`);

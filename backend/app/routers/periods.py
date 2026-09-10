@@ -97,6 +97,8 @@ def delete_period(period_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"detail": "Period deleted"}
 
+from PIL import Image
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Inches, Pt, RGBColor
 
 GENERATED_DIR = "generated_docs"
@@ -116,8 +118,7 @@ def build_newsletter_docx(period_title: str, entries: list) -> Document:
         r.font.size = Pt(10)
         r.font.color.rgb = RGBColor(0, 0, 0)
 
-
-    # 3. Add entries sequentially
+    # 2. Add entries sequentially
     entry_counter = 1
     for entry in entries:
         entry_p = doc.add_paragraph()
@@ -134,7 +135,23 @@ def build_newsletter_docx(period_title: str, entries: list) -> Document:
         for photo in entry.photos:
             if photo.file_path and os.path.exists(photo.file_path):
                 try:
-                    doc.add_picture(photo.file_path, width=Inches(5.5))
+                    img_p = doc.add_paragraph()
+                    img_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+                    # Uniform standardized bounding box: Max Width 4.8", Max Height 3.2"
+                    with Image.open(photo.file_path) as img:
+                        w, h = img.size
+
+                    max_w = 4.8  # inches
+                    max_h = 3.2  # inches
+
+                    aspect = (w / h) if h > 0 else 1.0
+
+                    if aspect >= (max_w / max_h):
+                        img_p.add_run().add_picture(photo.file_path, width=Inches(max_w))
+                    else:
+                        img_p.add_run().add_picture(photo.file_path, height=Inches(max_h))
+
                 except Exception as e:
                     print(f"Error adding picture {photo.file_path}: {e}")
 
