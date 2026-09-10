@@ -53,10 +53,11 @@ def test_user(db_session):
         name="Test User",
         email="testuser@example.com",
         password="hashedpassword123",
-        designation="Tester",
         role="Admin",
         center="Test Center",
-        group_name="SMC",
+        group="SMC",
+        designation="Tester",
+        type="admin",
     )
     db_session.add(user)
     db_session.commit()

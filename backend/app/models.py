@@ -10,20 +10,12 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     name = Column(String, nullable=False)
     email = Column(String, unique=True, nullable=False, index=True)
+    designation = Column(String, nullable=True)
     role = Column(String, nullable=True)
     center = Column(String, nullable=True)
     group = Column(String, nullable=True)
-    designation = Column(String, nullable=True)
     password = Column(String, nullable=False)
     type = Column(String, nullable=True)
-
-    @property
-    def group_name(self) -> str:
-        return self.group or ""
-
-    @group_name.setter
-    def group_name(self, value: str) -> None:
-        self.group = value
 
 
 class CategoryStage(Base):

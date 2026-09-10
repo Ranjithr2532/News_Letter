@@ -258,6 +258,9 @@ def ensure_current_period(group_name: str, created_by: int, db: Session = Depend
     today = date.today()
     start, end = get_current_period_bounds()
 
+    if not group_name or group_name.strip().lower() in ("", "undefined", "null", "none"):
+        raise HTTPException(status_code=400, detail="Invalid group name provided")
+
     # Safety guard — never create a period outside the current year
     if start.year != today.year or end.year != today.year:
         raise HTTPException(status_code=400, detail="Cannot create period outside current year")

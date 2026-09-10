@@ -34,16 +34,20 @@ const Periods = () => {
       return;
     }
 
+    const userGroup = user.group || user.group_name || '';
+
     const initPeriods = async () => {
       // 1. Silently auto-ensure today's real half-month period exists
-      try {
-        await api.post(
-          `/periods/ensure-current?group_name=${encodeURIComponent(
-            user.group_name
-          )}&created_by=${user.id}`
-        );
-      } catch (err) {
-        console.error('Failed to ensure current period:', err);
+      if (userGroup) {
+        try {
+          await api.post(
+            `/periods/ensure-current?group_name=${encodeURIComponent(
+              userGroup
+            )}&created_by=${user.id}`
+          );
+        } catch (err) {
+          console.error('Failed to ensure current period:', err);
+        }
       }
 
       // 2. Fetch available years and load current year's periods by default
@@ -55,9 +59,11 @@ const Periods = () => {
   }, [user, navigate]);
 
   const fetchAvailableYears = async () => {
+    const userGroup = user?.group || user?.group_name || '';
+    if (!userGroup) return;
     try {
       const res = await api.get(
-        `/periods/years/?group_name=${encodeURIComponent(user.group_name)}`
+        `/periods/years/?group_name=${encodeURIComponent(userGroup)}`
       );
       setAvailableYears(res.data);
     } catch (err) {
@@ -73,8 +79,13 @@ const Periods = () => {
     setLoading(true);
     setError('');
     setFilterMode(mode);
+    const userGroup = user?.group || user?.group_name || '';
+    if (!userGroup) {
+      setLoading(false);
+      return;
+    }
     try {
-      let url = `/periods/?group_name=${encodeURIComponent(user.group_name)}`;
+      let url = `/periods/?group_name=${encodeURIComponent(userGroup)}`;
       if (filterYear || filterMonth) {
         if (filterYear) url += `&year=${filterYear}`;
         if (filterMonth) url += `&month=${filterMonth}`;
@@ -397,7 +408,7 @@ const Periods = () => {
             Newsletter Overview
           </h3>
           <p style={{ fontSize: '0.85rem', color: '#64748b', margin: '4px 0 0 0' }}>
-            Group: <strong>{user.group_name}</strong> | View your group's newsletter periods
+            Group: <strong>{user.group || user.group_name}</strong> | View your group's newsletter periods
           </p>
         </div>
       </div>

@@ -88,6 +88,7 @@ const Customize = () => {
         password: userPassword,
         designation: userDesignation || null,
         role: userRole,
+        center: user.center,
         group: user.group || user.group_name,
         group_name: user.group || user.group_name,
       });
@@ -180,7 +181,7 @@ const Customize = () => {
           <h3 style={{ margin: 0 }}>Add New User</h3>
         </div>
         <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '1.5rem' }}>
-          Create a new scientist or GH user. Center (<strong>{user.center}</strong>) and Group Name (<strong>{user.group_name}</strong>) are automatically locked to your group.
+          Create a new scientist or GH user. Center (<strong>{user.center}</strong>) and Group (<strong>{user.group || user.group_name}</strong>) are automatically locked to your group.
         </p>
 
         {userSuccessMsg && <div className="success-message">{userSuccessMsg}</div>}
@@ -253,10 +254,10 @@ const Customize = () => {
           </div>
 
           <div className="form-field">
-            <label>Group Name (Locked)</label>
+            <label>Group (Locked)</label>
             <input
               type="text"
-              value={user.group_name || ''}
+              value={user.group || user.group_name || ''}
               disabled
               readOnly
               style={{ backgroundColor: '#f1f5f9', cursor: 'not-allowed' }}

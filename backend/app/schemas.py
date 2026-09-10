@@ -17,26 +17,35 @@ class UserRead(BaseModel):
     role: Optional[str] = None
     center: Optional[str] = None
     group: Optional[str] = None
-    group_name: Optional[str] = None
     type: Optional[str] = None
 
     class Config:
         from_attributes = True
 
 
-# ---------- Category ----------
 class UserCreate(BaseModel):
     name: str
     email: EmailStr
-    password: str
     designation: Optional[str] = None
     role: Optional[str] = None
     center: Optional[str] = None
     group: Optional[str] = None
-    group_name: Optional[str] = None
+    password: str
     type: Optional[str] = None
 
 
+class UserUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    designation: Optional[str] = None
+    role: Optional[str] = None
+    center: Optional[str] = None
+    group: Optional[str] = None
+    password: Optional[str] = None
+    type: Optional[str] = None
+
+
+# ---------- Category ----------
 class CategoryCreate(BaseModel):
     name: str
     stage_number: int = 0

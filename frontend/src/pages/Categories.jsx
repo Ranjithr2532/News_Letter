@@ -134,7 +134,7 @@ const Categories = () => {
     try {
       const res = await api.post('/entries/', {
         period_id: parseInt(periodId, 10),
-        group_name: user.group_name,
+        group_name: user.group || user.group_name,
         category_id: parseInt(catId, 10),
         title: newTitle.trim(),
         description: newDescription.trim(),
@@ -142,34 +142,21 @@ const Categories = () => {
         created_by: user.id,
       });
 
-      // Upload initial photos if selected
+      // Upload initial photos if selected via batch endpoint
       if (newFiles && newFiles.length > 0 && res.data && res.data.id) {
+        const formData = new FormData();
+        formData.append('entry_id', res.data.id);
+        formData.append('uploaded_by', user.id);
+        newFiles.forEach((file) => {
+          formData.append('files', file);
+        });
+
         try {
-          const formData = new FormData();
-          formData.append('entry_id', res.data.id);
-          formData.append('uploaded_by', user.id);
-          newFiles.forEach((file) => {
-            formData.append('files', file);
-          });
           await api.post('/photos/batch', formData, {
             headers: { 'Content-Type': 'multipart/form-data' },
           });
-        } catch (batchErr) {
-          console.warn('Batch photo upload fallback triggered:', batchErr);
-          for (let i = 0; i < newFiles.length; i++) {
-            const formData = new FormData();
-            formData.append('entry_id', res.data.id);
-            formData.append('uploaded_by', user.id);
-            formData.append('display_order', i);
-            formData.append('file', newFiles[i]);
-            try {
-              await api.post('/photos/', formData, {
-                headers: { 'Content-Type': 'multipart/form-data' },
-              });
-            } catch (singleErr) {
-              console.error('Failed to upload photo:', singleErr);
-            }
-          }
+        } catch (photoErr) {
+          console.error('Failed to upload initial photos:', photoErr);
         }
       }
 
@@ -231,34 +218,21 @@ const Categories = () => {
     const fileList = Array.from(files.length !== undefined ? files : [files]);
     if (fileList.length === 0) return;
 
+    const formData = new FormData();
+    formData.append('entry_id', entryId);
+    formData.append('uploaded_by', user.id);
+    fileList.forEach((file) => {
+      formData.append('files', file);
+    });
+
     try {
-      const formData = new FormData();
-      formData.append('entry_id', entryId);
-      formData.append('uploaded_by', user.id);
-      fileList.forEach((file) => {
-        formData.append('files', file);
-      });
       await api.post('/photos/batch', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-    } catch (batchErr) {
-      console.warn('Batch upload fallback triggered:', batchErr);
-      const entry = categoryEntries.find((e) => e.id === entryId);
-      let startOrder = entry && entry.photos ? entry.photos.length : 0;
-      for (let i = 0; i < fileList.length; i++) {
-        const formData = new FormData();
-        formData.append('entry_id', entryId);
-        formData.append('uploaded_by', user.id);
-        formData.append('display_order', startOrder + i);
-        formData.append('file', fileList[i]);
-        try {
-          await api.post('/photos/', formData, {
-            headers: { 'Content-Type': 'multipart/form-data' },
-          });
-        } catch (singleErr) {
-          console.error('Failed to upload photo:', singleErr);
-        }
-      }
+      fetchCategoryEntries(catId);
+    } catch (err) {
+      console.error('Failed to upload photo(s):', err);
+      alert('Failed to upload photo(s).');
     }
     fetchCategoryEntries(catId);
   };
@@ -815,10 +789,9 @@ const Categories = () => {
                                             }}
                                           >
                                             <img
-                                              src={`http://${
-                                                window.location.hostname ||
+                                              src={`http://${window.location.hostname ||
                                                 'localhost'
-                                              }:8000/${photo.file_path}`}
+                                                }:8000/${photo.file_path}`}
                                               alt={
                                                 photo.original_filename ||
                                                 'Entry photo'
@@ -924,15 +897,15 @@ const Categories = () => {
                                       on{' '}
                                       {entry.updated_at
                                         ? new Date(
-                                            entry.updated_at
-                                          ).toLocaleString('en-US', {
-                                            month: 'short',
-                                            day: 'numeric',
-                                            year: 'numeric',
-                                            hour: 'numeric',
-                                            minute: '2-digit',
-                                            hour12: true,
-                                          })
+                                          entry.updated_at
+                                        ).toLocaleString('en-US', {
+                                          month: 'short',
+                                          day: 'numeric',
+                                          year: 'numeric',
+                                          hour: 'numeric',
+                                          minute: '2-digit',
+                                          hour12: true,
+                                        })
                                         : 'N/A'}
                                     </span>
                                   </div>
