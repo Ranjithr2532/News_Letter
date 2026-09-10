@@ -438,19 +438,19 @@ const Categories = () => {
                     style={{
                       width: '100%',
                       backgroundColor: '#ffffff',
-                      border: '2px solid #2563eb',
-                      borderRadius: '12px',
-                      boxShadow: '0 4px 16px rgba(37, 99, 235, 0.08)',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '10px',
+                      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.04)',
                       overflow: 'hidden',
-                      transition: 'all 0.2s ease-in-out',
+                      transition: 'opacity 0.15s ease-in-out',
                     }}
                   >
                     {/* Header Row */}
                     <div
                       onClick={() => handleToggleExpand(category.id)}
                       style={{
-                        backgroundColor: '#eff6ff',
-                        padding: '14px 20px',
+                        backgroundColor: '#f8fafc',
+                        padding: '16px 18px',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
@@ -467,11 +467,11 @@ const Categories = () => {
                       >
                         <div
                           style={{
-                            width: '36px',
-                            height: '36px',
+                            width: '38px',
+                            height: '38px',
                             borderRadius: '8px',
-                            backgroundColor: '#dbeafe',
-                            color: '#1e40af',
+                            backgroundColor: '#eff6ff',
+                            color: 'var(--primary-btn)',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
@@ -485,47 +485,28 @@ const Categories = () => {
                             style={{
                               display: 'flex',
                               alignItems: 'center',
-                              gap: '8px',
+                              gap: '6px',
                             }}
                           >
                             <h4
                               style={{
                                 margin: 0,
-                                fontSize: '1.05rem',
-                                color: '#1e40af',
+                                fontSize: '0.96rem',
+                                color: 'var(--text-heading)',
                                 fontWeight: '700',
+                                lineHeight: '1.3',
                               }}
                             >
                               {category.name}
                             </h4>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleToggleExpand(category.id);
-                              }}
-                              style={{
-                                background: 'none',
-                                border: 'none',
-                                color: '#2563eb',
-                                fontWeight: '700',
-                                fontSize: '0.82rem',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                              }}
-                            >
-                              <IconChevronUp size={16} />
-                              <span>▲ collapse</span>
-                            </button>
+                            <IconChevronUp size={18} style={{ color: '#94a3b8' }} />
                           </div>
                           {category.period_id && (
                             <span
                               style={{
                                 fontSize: '0.72rem',
-                                color: '#60a5fa',
-                                fontWeight: '600',
+                                color: '#94a3b8',
+                                fontWeight: '500',
                               }}
                             >
                               Custom Category
@@ -534,7 +515,7 @@ const Categories = () => {
                         </div>
                       </div>
 
-                      {/* Far Right: Download Button */}
+                      {/* Far Right: Delete & Download Icon */}
                       <div
                         style={{
                           display: 'flex',
@@ -543,13 +524,25 @@ const Categories = () => {
                           marginLeft: 'auto',
                         }}
                       >
+                        {category.period_id && (
+                          <button
+                            className="btn-ghost-danger"
+                            style={{ padding: '4px 6px', border: 'none' }}
+                            onClick={(e) =>
+                              handleDeleteCustomCategory(e, category.id)
+                            }
+                            title="Delete custom category"
+                          >
+                            <IconTrash size={14} />
+                          </button>
+                        )}
+
                         <button
                           type="button"
                           className="btn-secondary"
                           style={{
                             padding: '6px 10px',
                             fontSize: '0.75rem',
-                            backgroundColor: '#ffffff',
                             display: 'flex',
                             alignItems: 'center',
                             gap: '4px',
@@ -569,7 +562,7 @@ const Categories = () => {
                     <div
                       style={{
                         padding: '18px 20px',
-                        borderTop: '1px solid #dbeafe',
+                        borderTop: '1px solid #e2e8f0',
                       }}
                     >
                       {/* Entries List */}
@@ -1110,7 +1103,7 @@ const Categories = () => {
                     justify: 'space-between',
                     width: '100%',
                     cursor: 'pointer',
-                    transition: 'all 0.18s ease-in-out',
+                    transition: 'opacity 0.15s ease-in-out, border-color 0.15s ease-in-out',
                     minHeight: '76px',
                     opacity: hasActiveExpanded ? 0.7 : 1,
                   }}
