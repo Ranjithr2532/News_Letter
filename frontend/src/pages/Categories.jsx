@@ -131,9 +131,6 @@ const Categories = () => {
     setNewTitle('');
     setNewDescription('');
     setNewFiles([]);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
     setAddError('');
   };
 
@@ -161,19 +158,32 @@ const Categories = () => {
 
       // Upload initial photos if selected via batch endpoint
       if (newFiles && newFiles.length > 0 && res.data && res.data.id) {
-        const formData = new FormData();
-        formData.append('entry_id', res.data.id);
-        formData.append('uploaded_by', user.id);
-        newFiles.forEach((file) => {
-          formData.append('files', file);
-        });
-
         try {
+          const formData = new FormData();
+          formData.append('entry_id', res.data.id);
+          formData.append('uploaded_by', user.id);
+          newFiles.forEach((file) => {
+            formData.append('files', file);
+          });
           await api.post('/photos/batch', formData, {
             headers: { 'Content-Type': 'multipart/form-data' },
           });
-        } catch (photoErr) {
-          console.error('Failed to upload initial photos:', photoErr);
+        } catch (batchErr) {
+          console.warn('Batch photo upload failed, attempting single upload fallback:', batchErr);
+          for (let i = 0; i < newFiles.length; i++) {
+            const formData = new FormData();
+            formData.append('entry_id', res.data.id);
+            formData.append('uploaded_by', user.id);
+            formData.append('display_order', i);
+            formData.append('file', newFiles[i]);
+            try {
+              await api.post('/photos/', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+              });
+            } catch (singleErr) {
+              console.error('Failed to upload photo:', singleErr);
+            }
+          }
         }
       }
 
@@ -235,21 +245,34 @@ const Categories = () => {
     const fileList = Array.from(files.length !== undefined ? files : [files]);
     if (fileList.length === 0) return;
 
-    const formData = new FormData();
-    formData.append('entry_id', entryId);
-    formData.append('uploaded_by', user.id);
-    fileList.forEach((file) => {
-      formData.append('files', file);
-    });
-
     try {
+      const formData = new FormData();
+      formData.append('entry_id', entryId);
+      formData.append('uploaded_by', user.id);
+      fileList.forEach((file) => {
+        formData.append('files', file);
+      });
       await api.post('/photos/batch', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      fetchCategoryEntries(catId);
-    } catch (err) {
-      console.error('Failed to upload photo(s):', err);
-      alert('Failed to upload photo(s).');
+    } catch (batchErr) {
+      console.warn('Batch upload failed, attempting single upload fallback:', batchErr);
+      const entry = categoryEntries.find((e) => e.id === entryId);
+      let startOrder = entry && entry.photos ? entry.photos.length : 0;
+      for (let i = 0; i < fileList.length; i++) {
+        const formData = new FormData();
+        formData.append('entry_id', entryId);
+        formData.append('uploaded_by', user.id);
+        formData.append('display_order', startOrder + i);
+        formData.append('file', fileList[i]);
+        try {
+          await api.post('/photos/', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          });
+        } catch (singleErr) {
+          console.error('Failed to upload photo:', singleErr);
+        }
+      }
     }
     fetchCategoryEntries(catId);
   };
@@ -643,11 +666,8 @@ const Categories = () => {
                             textAlign: 'left',
                           }}
                         >
-                          {isGhUser
-                            ? 'No entries have been added for this category yet.'
-                            : isViewOnly
-                            ? 'No entries were submitted by you for this category.'
-                            : 'You haven\'t added any entries to this category yet. Add one below.'}
+                          No entries found for this category yet. Add one
+                          below.
                         </p>
                       ) : (
                         <div
@@ -1158,93 +1178,137 @@ const Categories = () => {
                                     : 'Attach Photos (Optional)'}
                                 </span>
                               </button>
-
-                              {newFiles.length > 0 && (
-                                <div
-                                  style={{
-                                    display: 'flex',
-                                    flexWrap: 'wrap',
-                                    gap: '6px',
-                                    marginTop: '6px',
-                                  }}
-                                >
-                                  {newFiles.map((file, idx) => (
-                                    <span
-                                      key={idx}
-                                      style={{
-                                        fontSize: '0.75rem',
-                                        backgroundColor: '#ffffff',
-                                        color: '#334155',
-                                        padding: '3px 8px',
-                                        borderRadius: '4px',
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: '6px',
-                                        border: '1px solid #cbd5e1',
-                                      }}
-                                    >
-                                      📷 {file.name}
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          setNewFiles((prev) =>
-                                            prev.filter((_, i) => i !== idx)
-                                          )
-                                        }
-                                        style={{
-                                          background: 'none',
-                                          border: 'none',
-                                          color: '#dc2626',
-                                          cursor: 'pointer',
-                                          fontWeight: 'bold',
-                                          fontSize: '0.85rem',
-                                          lineHeight: 1,
-                                          padding: 0,
-                                        }}
-                                      >
-                                        ×
-                                      </button>
-                                    </span>
-                                  ))}
-                                  <button
-                                    type="button"
-                                    onClick={() => setNewFiles([])}
-                                    style={{
-                                      background: 'none',
-                                      border: 'none',
-                                      color: '#dc2626',
-                                      cursor: 'pointer',
-                                      fontSize: '0.78rem',
-                                      fontWeight: '600',
-                                      marginLeft: '4px',
-                                    }}
-                                  >
-                                    Clear all
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-
-                            <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-                              <button
-                                type="submit"
-                                disabled={submittingNew}
-                                className="btn-primary"
+                              {/* Optional Photo Attachment */}
+                              <div
                                 style={{
-                                  padding: '8px 18px',
-                                  fontSize: '0.86rem',
-                                  fontWeight: '600',
-                                  display: 'inline-flex',
+                                  display: 'flex',
                                   alignItems: 'center',
-                                  gap: '6px',
+                                  gap: '10px',
                                 }}
                               >
-                                <IconPlus size={16} />
-                                <span>
-                                  {submittingNew ? 'Saving Entry...' : 'Add Entry'}
-                                </span>
-                              </button>
-                            </div>
+                                <input
+                                  id={`file-input-new-${category.id}`}
+                                  type="file"
+                                  accept="image/*"
+                                  multiple
+                                  style={{ display: 'none' }}
+                                  onChange={(e) => {
+                                    if (e.target.files && e.target.files.length > 0) {
+                                      const selectedFiles = Array.from(e.target.files);
+                                      setNewFiles((prev) => [...prev, ...selectedFiles]);
+                                    }
+                                  }}
+                                />
+                                <label
+                                  htmlFor={`file-input-new-${category.id}`}
+                                  style={{
+                                    padding: '7px 14px',
+                                    borderRadius: '6px',
+                                    border: '1px solid #cbd5e1',
+                                    backgroundColor: '#ffffff',
+                                    color: '#475569',
+                                    fontSize: '0.82rem',
+                                    fontWeight: '600',
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                  }}
+                                >
+                                  <IconCamera size={16} style={{ color: '#64748b' }} />
+                                  <span>
+                                    {newFiles.length > 0
+                                      ? `Attach Photos (${newFiles.length} selected)`
+                                      : 'Attach Photos (Optional)'}
+                                  </span>
+                                </label>
+
+                                {newFiles.length > 0 && (
+                                  <div
+                                    style={{
+                                      display: 'flex',
+                                      flexWrap: 'wrap',
+                                      gap: '6px',
+                                      marginTop: '6px',
+                                    }}
+                                  >
+                                    {newFiles.map((file, idx) => (
+                                      <span
+                                        key={idx}
+                                        style={{
+                                          fontSize: '0.75rem',
+                                          backgroundColor: '#ffffff',
+                                          color: '#334155',
+                                          padding: '3px 8px',
+                                          borderRadius: '4px',
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '6px',
+                                          border: '1px solid #cbd5e1',
+                                        }}
+                                      >
+                                        📷 {file.name}
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setNewFiles((prev) =>
+                                              prev.filter((_, i) => i !== idx)
+                                            )
+                                          }
+                                          style={{
+                                            background: 'none',
+                                            border: 'none',
+                                            color: '#dc2626',
+                                            cursor: 'pointer',
+                                            fontWeight: 'bold',
+                                            fontSize: '0.85rem',
+                                            lineHeight: 1,
+                                            padding: 0,
+                                          }}
+                                        >
+                                          ×
+                                        </button>
+                                      </span>
+                                    ))}
+                                    <button
+                                      type="button"
+                                      onClick={() => setNewFiles([])}
+                                      style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        color: '#dc2626',
+                                        cursor: 'pointer',
+                                        fontSize: '0.78rem',
+                                        fontWeight: '600',
+                                        marginLeft: '4px',
+                                      }}
+                                    >
+                                      Clear all
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+
+                              <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                                <button
+                                  type="submit"
+                                  disabled={submittingNew}
+                                  className="btn-primary"
+                                  style={{
+                                    padding: '8px 18px',
+                                    fontSize: '0.86rem',
+                                    fontWeight: '600',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                  }}
+                                >
+                                  <IconPlus size={16} />
+                                  <span>
+                                    {submittingNew ? 'Saving Entry...' : 'Add Entry'}
+                                  </span>
+                                </button>
+                              </div>
                           </form>
                         </div>
                       )}

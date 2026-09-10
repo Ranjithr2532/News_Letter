@@ -25,10 +25,8 @@ def upload_photo(
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
 
-    if entry.period and entry.period.edit is False:
-        raise HTTPException(status_code=400, detail="This newsletter period has been finalized and is read-only.")
-
-    file_path = os.path.join(UPLOAD_DIR, f"{entry_id}_{datetime.utcnow().timestamp()}_{file.filename}")
+    timestamp_prefix = int(datetime.utcnow().timestamp() * 1000)
+    file_path = os.path.join(UPLOAD_DIR, f"{entry_id}_{timestamp_prefix}_{file.filename}")
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
