@@ -88,6 +88,32 @@ def get_period(period_id: int, db: Session = Depends(get_db)):
     return period
 
 
+@router.put("/{period_id}", response_model=schemas.PeriodRead)
+def update_period(period_id: int, payload: schemas.PeriodUpdate, db: Session = Depends(get_db)):
+    period = db.query(models.NewsletterPeriod).filter(models.NewsletterPeriod.id == period_id).first()
+    if not period:
+        raise HTTPException(status_code=404, detail="Period not found")
+
+    update_data = payload.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(period, key, value)
+
+    db.commit()
+    db.refresh(period)
+    return period
+
+
+@router.post("/{period_id}/finalize", response_model=schemas.PeriodRead)
+def finalize_period(period_id: int, db: Session = Depends(get_db)):
+    period = db.query(models.NewsletterPeriod).filter(models.NewsletterPeriod.id == period_id).first()
+    if not period:
+        raise HTTPException(status_code=404, detail="Period not found")
+    period.edit = False
+    db.commit()
+    db.refresh(period)
+    return period
+
+
 @router.delete("/{period_id}")
 def delete_period(period_id: int, db: Session = Depends(get_db)):
     period = db.query(models.NewsletterPeriod).filter(models.NewsletterPeriod.id == period_id).first()
@@ -162,7 +188,7 @@ def build_newsletter_docx(period_title: str, entries: list) -> Document:
 
 
 @router.get("/{period_id}/generate-docx")
-def generate_docx(period_id: int, db: Session = Depends(get_db)):
+def generate_docx(period_id: int, created_by: Optional[int] = None, db: Session = Depends(get_db)):
     period = db.query(models.NewsletterPeriod).filter(models.NewsletterPeriod.id == period_id).first()
     if not period:
         raise HTTPException(status_code=404, detail="Period not found")
@@ -176,15 +202,16 @@ def generate_docx(period_id: int, db: Session = Depends(get_db)):
 
     all_entries = []
     for category in categories:
-        entries = (
+        query = (
             db.query(models.NewsletterEntry)
             .filter(
                 models.NewsletterEntry.period_id == period_id,
                 models.NewsletterEntry.category_id == category.id,
             )
-            .order_by(models.NewsletterEntry.display_order.asc())
-            .all()
         )
+        if created_by is not None:
+            query = query.filter(models.NewsletterEntry.created_by == created_by)
+        entries = query.order_by(models.NewsletterEntry.display_order.asc()).all()
         all_entries.extend(entries)
 
     doc = build_newsletter_docx(period.title, all_entries)
@@ -201,7 +228,7 @@ def generate_docx(period_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{period_id}/categories/{category_id}/generate-docx")
-def generate_category_docx(period_id: int, category_id: int, db: Session = Depends(get_db)):
+def generate_category_docx(period_id: int, category_id: int, created_by: Optional[int] = None, db: Session = Depends(get_db)):
     period = db.query(models.NewsletterPeriod).filter(models.NewsletterPeriod.id == period_id).first()
     if not period:
         raise HTTPException(status_code=404, detail="Period not found")
@@ -210,15 +237,16 @@ def generate_category_docx(period_id: int, category_id: int, db: Session = Depen
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
 
-    entries = (
+    query = (
         db.query(models.NewsletterEntry)
         .filter(
             models.NewsletterEntry.period_id == period_id,
             models.NewsletterEntry.category_id == category_id,
         )
-        .order_by(models.NewsletterEntry.display_order.asc())
-        .all()
     )
+    if created_by is not None:
+        query = query.filter(models.NewsletterEntry.created_by == created_by)
+    entries = query.order_by(models.NewsletterEntry.display_order.asc()).all()
 
     doc = build_newsletter_docx(period.title, entries)
 

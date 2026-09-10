@@ -6,12 +6,17 @@ import {
   IconChevronRight,
   IconDownload,
   IconCalendarEvent,
+  IconCheck,
+  IconLock,
+  IconAlertTriangle,
+  IconX,
 } from '@tabler/icons-react';
 
 const Periods = () => {
   const { user } = useUser();
   const navigate = useNavigate();
 
+  const isGhUser = user?.role?.toLowerCase() === 'gh';
   const currentYearStr = String(new Date().getFullYear());
 
   const [periods, setPeriods] = useState([]);
@@ -19,6 +24,10 @@ const Periods = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [downloadingId, setDownloadingId] = useState(null);
+
+  // Finalize popup state (for GH role)
+  const [finalizeModalPeriod, setFinalizeModalPeriod] = useState(null);
+  const [submittingFinalize, setSubmittingFinalize] = useState(false);
 
   // Defaults to current year (e.g. '2026') on mount
   const [filterMode, setFilterMode] = useState(currentYearStr);
@@ -127,6 +136,25 @@ const Periods = () => {
       alert('Failed to download newsletter.');
     } finally {
       setDownloadingId(null);
+    }
+  };
+
+  const handleConfirmFinalize = async () => {
+    if (!finalizeModalPeriod) return;
+    setSubmittingFinalize(true);
+    try {
+      await api.post(`/periods/${finalizeModalPeriod.id}/finalize`);
+      setPeriods((prev) =>
+        prev.map((p) =>
+          p.id === finalizeModalPeriod.id ? { ...p, edit: false } : p
+        )
+      );
+      setFinalizeModalPeriod(null);
+    } catch (err) {
+      console.error('Failed to finalize period:', err);
+      alert(err.response?.data?.detail || 'Failed to finalize newsletter.');
+    } finally {
+      setSubmittingFinalize(false);
     }
   };
 
@@ -277,6 +305,57 @@ const Periods = () => {
             }}
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Finalized Badge */}
+            {period.edit === false && (
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  fontSize: '0.72rem',
+                  fontWeight: '700',
+                  color: '#15803d',
+                  backgroundColor: '#dcfce7',
+                  border: '1px solid #bbf7d0',
+                  padding: '2px 7px',
+                  borderRadius: '12px',
+                  whiteSpace: 'nowrap',
+                }}
+                title="Newsletter Finalized (View-only for all users)"
+              >
+                <IconLock size={12} />
+                Finalized
+              </span>
+            )}
+
+            {/* Tick Button for Role GH to Finalize */}
+            {isGhUser && period.edit !== false && (
+              <button
+                type="button"
+                className="btn-secondary"
+                style={{
+                  padding: '4px 7px',
+                  fontSize: '0.75rem',
+                  backgroundColor: '#ecfdf5',
+                  border: '1px solid #a7f3d0',
+                  color: '#059669',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  borderRadius: '6px',
+                  transition: 'all 0.15s ease',
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setFinalizeModalPeriod(period);
+                }}
+                title="Finalize newsletter (Group Head only)"
+              >
+                <IconCheck size={14} style={{ color: '#059669', strokeWidth: 2.5 }} />
+              </button>
+            )}
+
             <button
               type="button"
               className="btn-secondary"
@@ -756,6 +835,159 @@ const Periods = () => {
           </>
         )}
       </section>
+
+      {/* Finalize Confirmation Modal for GH */}
+      {finalizeModalPeriod && (
+        <div
+          className="modal-backdrop"
+          onClick={() => !submittingFinalize && setFinalizeModalPeriod(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.55)',
+            backdropFilter: 'blur(3px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '20px',
+          }}
+        >
+          <div
+            className="modal-card"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: '#ffffff',
+              borderRadius: '12px',
+              maxWidth: '420px',
+              width: '100%',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.05)',
+              overflow: 'hidden',
+              border: '1px solid #e2e8f0',
+            }}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid #f1f5f9',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div
+                  style={{
+                    width: '30px',
+                    height: '30px',
+                    borderRadius: '8px',
+                    backgroundColor: '#ecfdf5',
+                    color: '#059669',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <IconCheck size={18} strokeWidth={2.5} />
+                </div>
+                <h3 style={{ margin: 0, fontSize: '1rem', color: '#0f172a', fontWeight: '700' }}>
+                  Finalize Newsletter
+                </h3>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => !submittingFinalize && setFinalizeModalPeriod(null)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: '#94a3b8',
+                  padding: '4px',
+                  borderRadius: '6px',
+                  display: 'flex',
+                }}
+              >
+                <IconX size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '20px' }}>
+              <p style={{ margin: '0 0 8px 0', fontSize: '0.92rem', color: '#1e293b', lineHeight: '1.4' }}>
+                Are you sure you want to finalize <strong>{finalizeModalPeriod.title}</strong>?
+              </p>
+              <p style={{ margin: 0, fontSize: '0.84rem', color: '#64748b', lineHeight: '1.4' }}>
+                Once finalized, this newsletter will be locked in <strong>View-Only</strong> mode for all users. No further changes can be made.
+              </p>
+            </div>
+
+            {/* Modal Footer */}
+            <div
+              style={{
+                padding: '14px 20px',
+                borderTop: '1px solid #f1f5f9',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                gap: '10px',
+                backgroundColor: '#f8fafc',
+              }}
+            >
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setFinalizeModalPeriod(null)}
+                disabled={submittingFinalize}
+                style={{
+                  padding: '7px 16px',
+                  fontSize: '0.85rem',
+                  fontWeight: '600',
+                  borderRadius: '6px',
+                  backgroundColor: '#ffffff',
+                  border: '1px solid #cbd5e1',
+                  color: '#475569',
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={handleConfirmFinalize}
+                disabled={submittingFinalize}
+                style={{
+                  padding: '7px 16px',
+                  fontSize: '0.85rem',
+                  fontWeight: '600',
+                  borderRadius: '6px',
+                  backgroundColor: '#059669',
+                  border: 'none',
+                  color: '#ffffff',
+                  cursor: submittingFinalize ? 'not-allowed' : 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: '0 2px 4px rgba(5, 150, 105, 0.25)',
+                  opacity: submittingFinalize ? 0.7 : 1,
+                }}
+              >
+                {submittingFinalize ? (
+                  'Finalizing...'
+                ) : (
+                  <>
+                    <IconCheck size={15} strokeWidth={2.5} />
+                    Make it Finalize
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

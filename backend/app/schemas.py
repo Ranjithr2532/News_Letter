@@ -76,6 +76,14 @@ class PeriodCreate(BaseModel):
     end_date: date
     created_by: int   # user id — sent from frontend since no JWT yet
     group_name: str    # sent from frontend (from logged-in user object) since no JWT yet
+    edit: Optional[bool] = True
+
+
+class PeriodUpdate(BaseModel):
+    title: Optional[str] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    edit: Optional[bool] = None
 
 
 class PeriodRead(BaseModel):
@@ -86,6 +94,7 @@ class PeriodRead(BaseModel):
     end_date: date
     created_by: int
     created_at: datetime
+    edit: Optional[bool] = True
 
     class Config:
         from_attributes = True
@@ -132,6 +141,7 @@ class EntryRead(BaseModel):
     description: Optional[str] = None
     display_order: int
     created_by: int
+    created_by_name: Optional[str] = None
     updated_by: int
     updated_by_name: Optional[str] = None
     created_at: datetime

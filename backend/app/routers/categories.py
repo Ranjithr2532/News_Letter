@@ -22,6 +22,11 @@ def list_categories(period_id: Optional[int] = None, db: Session = Depends(get_d
 
 @router.post("/", response_model=schemas.CategoryRead)
 def create_category(payload: schemas.CategoryCreate, db: Session = Depends(get_db)):
+    if payload.period_id:
+        period = db.query(models.NewsletterPeriod).filter(models.NewsletterPeriod.id == payload.period_id).first()
+        if period and period.edit is False:
+            raise HTTPException(status_code=400, detail="This newsletter period has been finalized and is read-only.")
+
     category = models.CategoryStage(**payload.model_dump())
     db.add(category)
     db.commit()

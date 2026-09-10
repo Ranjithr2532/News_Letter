@@ -41,6 +41,7 @@ class NewsletterPeriod(Base):
     end_date = Column(Date, nullable=False)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    edit = Column(Boolean, default=True)
 
     entries = relationship("NewsletterEntry", back_populates="period", cascade="all, delete-orphan")
 
@@ -64,7 +65,12 @@ class NewsletterEntry(Base):
     category = relationship("CategoryStage", back_populates="entries")
     photos = relationship("EntryPhoto", back_populates="entry", cascade="all, delete-orphan")
     history = relationship("EntryEditHistory", back_populates="entry", cascade="all, delete-orphan")
+    creator = relationship("User", foreign_keys=[created_by])
     updater = relationship("User", foreign_keys=[updated_by])
+
+    @property
+    def created_by_name(self) -> str:
+        return self.creator.name if self.creator else f"User #{self.created_by}"
 
     @property
     def updated_by_name(self) -> str:
