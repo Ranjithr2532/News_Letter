@@ -6,6 +6,9 @@ import os
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app import models, schemas
+from datetime import date
+import calendar
+
 
 router = APIRouter()
 
@@ -57,6 +60,10 @@ def list_periods(
     if months is not None and months > 0:
         cutoff = date.today() - timedelta(days=int(months * 30))
         query = query.filter(models.NewsletterPeriod.start_date >= cutoff)
+
+    # Default to current year if no year, month, or months filter was provided
+    if year is None and month is None and months is None:
+        query = query.filter(extract('year', models.NewsletterPeriod.start_date) == date.today().year)
 
     return query.order_by(models.NewsletterPeriod.start_date.desc()).all()
 
@@ -208,3 +215,59 @@ def generate_category_docx(period_id: int, category_id: int, db: Session = Depen
         filename=clean_filename,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
+
+def get_current_period_bounds():
+    """Returns (start_date, end_date) for whichever half of the current 
+    month today's real date falls into."""
+    today = date.today()
+    year, month, day = today.year, today.month, today.day
+
+    if day <= 15:
+        start = date(year, month, 1)
+        end = date(year, month, 15)
+    else:
+        start = date(year, month, 16)
+        last_day = calendar.monthrange(year, month)[1]
+        end = date(year, month, last_day)
+
+    return start, end
+
+
+@router.post("/ensure-current", response_model=schemas.PeriodRead)
+def ensure_current_period(group_name: str, created_by: int, db: Session = Depends(get_db)):
+    """Auto-creates today's current half-month period for this group, 
+    if it doesn't already exist. Safe to call repeatedly — never creates 
+    duplicates, never creates anything outside the current year."""
+    today = date.today()
+    start, end = get_current_period_bounds()
+
+    # Safety guard — never create a period outside the current year
+    if start.year != today.year or end.year != today.year:
+        raise HTTPException(status_code=400, detail="Cannot create period outside current year")
+
+    existing = (
+        db.query(models.NewsletterPeriod)
+        .filter(
+            models.NewsletterPeriod.group_name == group_name,
+            models.NewsletterPeriod.start_date == start,
+            models.NewsletterPeriod.end_date == end,
+        )
+        .first()
+    )
+    if existing:
+        return existing
+
+    month_name = start.strftime("%b")
+    title = f"{group_name} Event Details — {month_name} {start.day}-{end.day}, {start.year}"
+
+    period = models.NewsletterPeriod(
+        group_name=group_name,
+        title=title,
+        start_date=start,
+        end_date=end,
+        created_by=created_by,
+    )
+    db.add(period)
+    db.commit()
+    db.refresh(period)
+    return period

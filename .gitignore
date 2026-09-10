@@ -6,9 +6,11 @@ venv/
 .venv/
 ENV/
 env/
+backend/venv/
 
-# Python compiled bytecode
+# Python compiled bytecode & caches
 __pycache__/
+*/__pycache__/
 *.py[cod]
 *$py.class
 
@@ -29,6 +31,7 @@ uploads/
 
 # Python testing & coverage
 .pytest_cache/
+backend/.pytest_cache/
 .coverage
 htmlcov/
 

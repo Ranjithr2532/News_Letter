@@ -11,6 +11,9 @@ UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
+from datetime import datetime
+from typing import Optional
+
 @router.post("/", response_model=schemas.PhotoRead)
 def upload_photo(
     entry_id: int = Form(...),
@@ -35,16 +38,27 @@ def upload_photo(
         display_order=display_order,
     )
     db.add(photo)
+
+    # Update parent entry's audit metadata
+    entry.updated_by = uploaded_by
+    entry.updated_at = datetime.utcnow()
+
     db.commit()
     db.refresh(photo)
     return photo
 
 
 @router.delete("/{photo_id}")
-def delete_photo(photo_id: int, db: Session = Depends(get_db)):
+def delete_photo(photo_id: int, user_id: Optional[int] = None, db: Session = Depends(get_db)):
     photo = db.query(models.EntryPhoto).filter(models.EntryPhoto.id == photo_id).first()
     if not photo:
         raise HTTPException(status_code=404, detail="Photo not found")
+
+    entry = photo.entry
+    if entry:
+        if user_id:
+            entry.updated_by = user_id
+        entry.updated_at = datetime.utcnow()
 
     if os.path.exists(photo.file_path):
         os.remove(photo.file_path)

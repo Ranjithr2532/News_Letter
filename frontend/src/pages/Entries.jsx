@@ -211,7 +211,7 @@ const Entries = () => {
     }
 
     try {
-      await api.delete(`/photos/${photoId}`);
+      await api.delete(`/photos/${photoId}?user_id=${user.id}`);
       fetchEntries();
     } catch (err) {
       console.error('Failed to delete photo:', err);

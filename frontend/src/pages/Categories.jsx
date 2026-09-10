@@ -23,6 +23,7 @@ const Categories = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [downloading, setDownloading] = useState(false);
+  const [downloadingCategoryId, setDownloadingCategoryId] = useState(null);
 
   // Other Category Modal state
   const [showOtherModal, setShowOtherModal] = useState(false);
@@ -116,6 +117,35 @@ const Categories = () => {
       alert('Failed to download newsletter.');
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const handleDownloadCategoryDocx = async (e, category) => {
+    e.stopPropagation();
+    setDownloadingCategoryId(category.id);
+    try {
+      const response = await api.get(
+        `/periods/${periodId}/categories/${category.id}/generate-docx`,
+        { responseType: 'blob' }
+      );
+      const blob = new Blob([response.data], {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const cleanCatName = category.name.replace(/\s+/g, '_');
+      const filename = `${cleanCatName}_event.docx`;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to download category docx:', err);
+      alert('Failed to download category document.');
+    } finally {
+      setDownloadingCategoryId(null);
     }
   };
 
@@ -237,7 +267,18 @@ const Categories = () => {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    style={{ padding: '4px 6px', fontSize: '0.75rem' }}
+                    onClick={(e) => handleDownloadCategoryDocx(e, category)}
+                    title={`Download ${category.name} docx`}
+                    disabled={downloadingCategoryId === category.id}
+                  >
+                    <IconDownload size={14} />
+                  </button>
+
                   {category.period_id && (
                     <button
                       className="btn-ghost-danger"
