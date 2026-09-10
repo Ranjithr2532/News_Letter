@@ -4,7 +4,6 @@ import api from '../api/api';
 import { useUser } from '../context/UserContext';
 import {
   IconChevronRight,
-  IconTrash,
   IconDownload,
   IconCalendarEvent,
 } from '@tabler/icons-react';
@@ -101,25 +100,6 @@ const Periods = () => {
       setError('Failed to load newsletter periods.');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleDeletePeriod = async (e, periodId) => {
-    e.stopPropagation();
-    if (
-      !window.confirm(
-        'Are you sure you want to delete this newsletter period and all its entries?'
-      )
-    ) {
-      return;
-    }
-    try {
-      await api.delete(`/periods/${periodId}`);
-      fetchAvailableYears();
-      fetchPeriods(filterMode);
-    } catch (err) {
-      console.error('Failed to delete period:', err);
-      alert('Failed to delete newsletter period.');
     }
   };
 
@@ -310,16 +290,6 @@ const Periods = () => {
               disabled={downloadingId === period.id}
             >
               <IconDownload size={14} style={{ color: '#059669' }} />
-            </button>
-
-            <button
-              type="button"
-              className="btn-ghost-danger"
-              style={{ padding: '4px 7px', border: 'none' }}
-              onClick={(e) => handleDeletePeriod(e, period.id)}
-              title="Delete newsletter"
-            >
-              <IconTrash size={14} style={{ color: '#dc2626' }} />
             </button>
 
             <IconChevronRight
