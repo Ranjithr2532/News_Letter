@@ -26,13 +26,18 @@ def upload_photo(
         raise HTTPException(status_code=404, detail="Entry not found")
 
     timestamp_prefix = int(datetime.utcnow().timestamp() * 1000)
-    file_path = os.path.join(UPLOAD_DIR, f"{entry_id}_{timestamp_prefix}_{file.filename}")
-    with open(file_path, "wb") as buffer:
+    filename_clean = file.filename.replace(" ", "_")
+    unique_filename = f"{entry_id}_{timestamp_prefix}_{filename_clean}"
+    disk_path = os.path.join(UPLOAD_DIR, unique_filename)
+    with open(disk_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
+
+    # Save relative web path with forward slashes
+    web_file_path = f"uploads/{unique_filename}"
 
     photo = models.EntryPhoto(
         entry_id=entry_id,
-        file_path=file_path,
+        file_path=web_file_path,
         original_filename=file.filename,
         uploaded_by=uploaded_by,
         display_order=display_order,
@@ -68,14 +73,16 @@ def upload_photos_batch(
     timestamp_prefix = int(datetime.utcnow().timestamp() * 1000)
 
     for idx, file in enumerate(files):
-        unique_filename = f"{entry_id}_{timestamp_prefix}_{idx}_{file.filename}"
-        file_path = os.path.join(UPLOAD_DIR, unique_filename)
-        with open(file_path, "wb") as buffer:
+        filename_clean = file.filename.replace(" ", "_")
+        unique_filename = f"{entry_id}_{timestamp_prefix}_{idx}_{filename_clean}"
+        disk_path = os.path.join(UPLOAD_DIR, unique_filename)
+        with open(disk_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
+        web_file_path = f"uploads/{unique_filename}"
         photo = models.EntryPhoto(
             entry_id=entry_id,
-            file_path=file_path,
+            file_path=web_file_path,
             original_filename=file.filename,
             uploaded_by=uploaded_by,
             display_order=existing_count + idx,
@@ -107,11 +114,13 @@ def delete_photo(photo_id: int, user_id: Optional[int] = None, db: Session = Dep
             entry.updated_by = user_id
         entry.updated_at = datetime.utcnow()
 
-    if os.path.exists(photo.file_path):
-        try:
-            os.remove(photo.file_path)
-        except Exception as e:
-            print(f"Failed to delete file {photo.file_path}: {e}")
+    if photo.file_path:
+        norm_path = photo.file_path.replace("/", os.sep).replace("\\", os.sep)
+        if os.path.exists(norm_path):
+            try:
+                os.remove(norm_path)
+            except Exception as e:
+                print(f"Failed to delete file {norm_path}: {e}")
 
     db.delete(photo)
     db.commit()

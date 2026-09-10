@@ -875,7 +875,8 @@ const Categories = () => {
                                 <div className="entry-photos-gallery">
                                   {entry.photos &&
                                     entry.photos.map((photo) => {
-                                      const photoUrl = `http://${window.location.hostname || 'localhost'}:8000/${photo.file_path}`;
+                                      const photoPath = photo.file_path ? photo.file_path.replace(/\\/g, '/') : '';
+                                      const photoUrl = `http://${window.location.hostname || 'localhost'}:8000/${photoPath}`;
                                       return (
                                         <div
                                           key={photo.id}
