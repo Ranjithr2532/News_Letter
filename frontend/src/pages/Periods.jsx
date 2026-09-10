@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/api';
 import { useUser } from '../context/UserContext';
@@ -6,10 +6,19 @@ import {
   IconChevronRight,
   IconDownload,
   IconCalendarEvent,
+  IconCalendar,
   IconCheck,
   IconLock,
   IconAlertTriangle,
   IconX,
+  IconFilter,
+  IconRotateClockwise,
+  IconFileText,
+  IconClock,
+  IconSparkles,
+  IconLoader2,
+  IconUsersGroup,
+  IconCircleCheck,
 } from '@tabler/icons-react';
 
 const Periods = () => {
@@ -223,6 +232,14 @@ const Periods = () => {
     return sortedKeys.map((key) => monthMap[key]);
   };
 
+  // Compute live statistics
+  const stats = useMemo(() => {
+    const total = periods.length;
+    const finalized = periods.filter((p) => p.edit === false).length;
+    const open = total - finalized;
+    return { total, finalized, open };
+  }, [periods]);
+
   // Render function for a single Half Row inside a Month Card
   const renderHalfRow = (monthData, halfNum) => {
     const period = halfNum === 1 ? monthData.half1 : monthData.half2;
@@ -231,155 +248,98 @@ const Periods = () => {
     const startDay = halfNum === 1 ? 1 : 16;
     const endDay = halfNum === 1 ? 15 : monthData.lastDayOfMonth;
     const rangeLabel = `${monthData.monthAbbrev} ${startDay} – ${monthData.monthAbbrev} ${endDay}`;
+    const subLabel = halfNum === 1 ? '1st Half Period' : '2nd Half Period';
 
     if (isExisting) {
+      const isFinalized = period.edit === false;
+      const isDownloading = downloadingId === period.id;
+
       return (
         <div
+          className="half-row clickable"
           onClick={() =>
             navigate(`/categories/${period.id}`, {
               state: { periodTitle: period.title },
             })
           }
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justify: 'space-between',
-            padding: '10px 12px',
-            borderRadius: '8px',
-            cursor: 'pointer',
-            transition: 'background-color 0.15s ease-in-out',
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#f8fafc')}
-          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+          title={`Click to view entries for ${period.title}`}
         >
           {/* Left side: Badge + Date Range */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              minWidth: 0,
-            }}
-          >
-            {/* Circular Pill Badge "1" or "2" */}
-            <div
-              style={{
-                width: '28px',
-                height: '28px',
-                borderRadius: '50%',
-                backgroundColor: '#dbeafe',
-                color: '#1e40af',
-                fontWeight: '700',
-                fontSize: '0.85rem',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-              }}
-            >
-              {halfNum}
+          <div className="half-left-meta">
+            <div className="half-pill-badge">
+              {halfNum === 1 ? 'H1' : 'H2'}
             </div>
 
-            {/* Date Range Text */}
-            <div
-              style={{
-                fontSize: '0.9rem',
-                fontWeight: '600',
-                color: '#0f172a',
-                lineHeight: '1.2',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {rangeLabel}
+            <div className="half-details">
+              <span className="half-date-label">{rangeLabel}</span>
+              <span className="half-sub-label">{subLabel}</span>
             </div>
           </div>
 
           {/* Right side: Action Buttons */}
           <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              marginLeft: '8px',
-              flexShrink: 0,
-            }}
+            className="half-actions-group"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Finalized Badge */}
-            {period.edit === false && (
-              <span
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  fontSize: '0.72rem',
-                  fontWeight: '700',
-                  color: '#15803d',
-                  backgroundColor: '#dcfce7',
-                  border: '1px solid #bbf7d0',
-                  padding: '2px 7px',
-                  borderRadius: '12px',
-                  whiteSpace: 'nowrap',
-                }}
-                title="Newsletter Finalized (View-only for all users)"
-              >
+            {/* Status Badge */}
+            {isFinalized ? (
+              <span className="status-badge-finalized" title="Finalized (View-only for all users)">
                 <IconLock size={12} />
-                Finalized
+                <span>Finalized</span>
+              </span>
+            ) : (
+              <span className="status-badge-open" title="Open for editing & submissions">
+                <IconCircleCheck size={12} />
+                <span>Open</span>
               </span>
             )}
 
-            {/* Tick Button for Role GH to Finalize */}
-            {isGhUser && period.edit !== false && (
+            {/* GH Finalize Action Button */}
+            {isGhUser && !isFinalized && (
               <button
                 type="button"
-                className="btn-secondary"
-                style={{
-                  padding: '4px 7px',
-                  fontSize: '0.75rem',
-                  backgroundColor: '#ecfdf5',
-                  border: '1px solid #a7f3d0',
-                  color: '#059669',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  borderRadius: '6px',
-                  transition: 'all 0.15s ease',
-                }}
+                className="action-icon-btn finalize"
                 onClick={(e) => {
                   e.stopPropagation();
                   setFinalizeModalPeriod(period);
                 }}
                 title="Finalize newsletter (Group Head only)"
+                aria-label="Finalize newsletter"
               >
-                <IconCheck size={14} style={{ color: '#059669', strokeWidth: 2.5 }} />
+                <IconCheck size={16} strokeWidth={2.5} />
               </button>
             )}
 
+            {/* Download DOCX Button */}
             <button
               type="button"
-              className="btn-secondary"
-              style={{
-                padding: '4px 7px',
-                fontSize: '0.75rem',
-                backgroundColor: '#f1f5f9',
-              }}
+              className="action-icon-btn download"
               onClick={(e) => handleDownloadDocx(e, period)}
-              title="Download newsletter docx"
-              disabled={downloadingId === period.id}
+              title="Download newsletter (.docx)"
+              disabled={isDownloading}
+              aria-label="Download newsletter docx"
             >
-              <IconDownload size={14} style={{ color: '#059669' }} />
+              {isDownloading ? (
+                <IconLoader2 size={15} className="animate-spin text-blue-600" />
+              ) : (
+                <IconDownload size={15} />
+              )}
             </button>
 
-            <IconChevronRight
-              size={18}
-              style={{ color: '#94a3b8', cursor: 'pointer' }}
+            {/* View Chevron Link */}
+            <div
+              className="chevron-arrow"
               onClick={() =>
                 navigate(`/categories/${period.id}`, {
                   state: { periodTitle: period.title },
                 })
               }
-            />
+              title="View Categories"
+              role="button"
+              tabIndex={0}
+            >
+              <IconChevronRight size={18} />
+            </div>
           </div>
         </div>
       );
@@ -399,39 +359,35 @@ const Periods = () => {
       const isFuture = halfStartDate > today;
 
       return (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justify: 'space-between',
-            padding: '10px 12px',
-            borderRadius: '8px',
-            opacity: isFuture ? 0.6 : 0.8,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div
-              style={{
-                width: '28px',
-                height: '28px',
-                borderRadius: '50%',
-                backgroundColor: '#f1f5f9',
-                color: '#94a3b8',
-                fontWeight: '700',
-                fontSize: '0.85rem',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-              }}
-            >
-              {halfNum}
+        <div className="half-row disabled">
+          <div className="half-left-meta">
+            <div className="half-pill-badge inactive">
+              {halfNum === 1 ? 'H1' : 'H2'}
             </div>
 
-            <div style={{ fontSize: '0.88rem', fontWeight: '500', color: '#94a3b8', whiteSpace: 'nowrap' }}>
-              {isFuture ? 'Not yet available' : rangeLabel}
+            <div className="half-details">
+              <span className="half-date-label" style={{ color: '#94a3b8' }}>
+                {rangeLabel}
+              </span>
+              <span className="half-sub-label">
+                {isFuture ? 'Upcoming schedule' : 'Unscheduled'}
+              </span>
             </div>
           </div>
+
+          <span
+            style={{
+              fontSize: '0.74rem',
+              color: '#94a3b8',
+              fontWeight: '600',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+            }}
+          >
+            <IconClock size={13} />
+            {isFuture ? 'Upcoming' : 'Pending'}
+          </span>
         </div>
       );
     }
@@ -443,400 +399,288 @@ const Periods = () => {
 
   return (
     <div className="periods-page">
-      {/* Header bar */}
-      <div
-        style={{
-          display: 'flex',
-          justify: 'space-between',
-          alignItems: 'center',
-          marginBottom: '24px',
-        }}
-      >
-        <div>
-          <h3 style={{ fontSize: '1.15rem', color: 'var(--text-heading)', margin: 0 }}>
-            Newsletter Overview
-          </h3>
-          <p style={{ fontSize: '0.85rem', color: '#64748b', margin: '4px 0 0 0' }}>
-            Group: <strong>{user.group || user.group_name}</strong> | View your group's newsletter periods
+      {/* 1. Hero Overview Header */}
+      <div className="periods-hero">
+        <div className="periods-hero-title-group">
+          <h2>
+            <IconCalendarEvent size={26} style={{ color: '#2563eb' }} />
+            <span>Newsletter Overview</span>
+          </h2>
+          <p>
+            <span>Department:</span>
+            <span className="group-badge-hero">
+              <IconUsersGroup size={13} />
+              {user.group || user.group_name || 'General'}
+            </span>
+            <span>• News-letter  publication schedules and archival records</span>
           </p>
+        </div>
+
+        {/* Live Overview Stats */}
+        <div className="periods-stats-strip">
+          <div className="stat-pill">
+            <div className="stat-pill-icon blue">
+              <IconFileText size={18} />
+            </div>
+            <div className="stat-pill-info">
+              <span className="stat-pill-count">{stats.total}</span>
+              <span className="stat-pill-label">Total Periods</span>
+            </div>
+          </div>
+
+          <div className="stat-pill">
+            <div className="stat-pill-icon emerald">
+              <IconCheck size={18} strokeWidth={2.5} />
+            </div>
+            <div className="stat-pill-info">
+              <span className="stat-pill-count">{stats.finalized}</span>
+              <span className="stat-pill-label">Finalized</span>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Existing Newsletters Section */}
-      <section className="card-section">
-        <div
-          style={{
-            display: 'flex',
-            justify: 'space-between',
-            alignItems: 'center',
-            marginBottom: '16px',
-            flexWrap: 'wrap',
-            gap: '12px',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <IconCalendarEvent size={20} style={{ color: 'var(--primary-btn)' }} />
-            <h3 style={{ margin: 0, border: 'none', padding: 0 }}>
-              {selectedFilterYear || selectedFilterMonth
-                ? `Filtered Newsletters`
-                : filterMode === 'all'
-                ? 'All Years'
-                : `Year ${filterMode}`}
-            </h3>
-            <span className="kanban-count-badge" style={{ marginLeft: '4px' }}>
-              {monthCardsList.length}
-            </span>
-          </div>
+      {/* 2. Control & Filter Panel */}
+      <div className="periods-control-panel">
+        {/* Quick Year Pill Selectors */}
+        <div className="periods-quick-years">
+          <span className="quick-year-label">Select Year:</span>
 
-          {/* Top Specific Filter Bar (Year & Month) */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '0.82rem', color: '#64748b', fontWeight: '700' }}>
-              Filter:
-            </span>
-
-            <select
-              value={selectedFilterYear}
-              onChange={(e) => {
-                const val = e.target.value;
-                setSelectedFilterYear(val);
-                fetchPeriods('custom', val, selectedFilterMonth);
-              }}
-              style={{
-                padding: '6px 12px',
-                borderRadius: '6px',
-                border: '1px solid #cbd5e1',
-                fontSize: '0.85rem',
-                fontWeight: '600',
-                color: 'var(--text-heading)',
-                backgroundColor: '#ffffff',
-                cursor: 'pointer',
-              }}
-            >
-              <option value="">Select Year</option>
-              {availableYears.map((yr) => (
-                <option key={yr} value={yr}>
-                  {yr}
-                </option>
-              ))}
-            </select>
-
-            <select
-              value={selectedFilterMonth}
-              onChange={(e) => {
-                const val = e.target.value;
-                setSelectedFilterMonth(val);
-                fetchPeriods('custom', selectedFilterYear, val);
-              }}
-              style={{
-                padding: '6px 12px',
-                borderRadius: '6px',
-                border: '1px solid #cbd5e1',
-                fontSize: '0.85rem',
-                fontWeight: '600',
-                color: 'var(--text-heading)',
-                backgroundColor: '#ffffff',
-                cursor: 'pointer',
-              }}
-            >
-              <option value="">Select Month</option>
-              <option value="1">January</option>
-              <option value="2">February</option>
-              <option value="3">March</option>
-              <option value="4">April</option>
-              <option value="5">May</option>
-              <option value="6">June</option>
-              <option value="7">July</option>
-              <option value="8">August</option>
-              <option value="9">September</option>
-              <option value="10">October</option>
-              <option value="11">November</option>
-              <option value="12">December</option>
-            </select>
-
-            {(selectedFilterYear || selectedFilterMonth) && (
+          {availableYears.map((yr) => {
+            const isSelected =
+              filterMode === String(yr) &&
+              !selectedFilterYear &&
+              !selectedFilterMonth;
+            return (
               <button
+                key={yr}
                 type="button"
-                className="btn-ghost-danger"
-                style={{ padding: '4px 10px', fontSize: '0.8rem' }}
+                className={`year-tab-btn ${isSelected ? 'active' : ''}`}
                 onClick={() => {
                   setSelectedFilterYear('');
                   setSelectedFilterMonth('');
-                  fetchPeriods(currentYearStr, '', '');
+                  fetchPeriods(String(yr), '', '');
                 }}
               >
-                Reset Filter
+                <span>{yr}</span>
               </button>
-            )}
-          </div>
+            );
+          })}
+
+          <button
+            type="button"
+            className={`year-tab-btn ${filterMode === 'all' && !selectedFilterYear && !selectedFilterMonth
+                ? 'active'
+                : ''
+              }`}
+            onClick={() => {
+              setSelectedFilterYear('');
+              setSelectedFilterMonth('');
+              fetchPeriods('all', '', '');
+            }}
+          >
+            <span>All Years</span>
+          </button>
         </div>
 
-        {loading ? (
-          <p className="loading-text">Loading newsletters...</p>
-        ) : error ? (
-          <div className="error-message">{error}</div>
-        ) : (
-          <>
-            {monthCardsList.length === 0 ? (
-              <p className="empty-state">
-                No newsletters found for{' '}
-                {filterMode === 'all'
-                  ? 'all years'
-                  : `year ${filterMode}`}
-                .
-              </p>
-            ) : filterMode === 'all' ? (
-              /* All Years Grouped View */
-              <div>
-                {(() => {
-                  const monthsByYear = monthCardsList.reduce((acc, monthCard) => {
-                    const yr = String(monthCard.year);
-                    if (!acc[yr]) acc[yr] = [];
-                    acc[yr].push(monthCard);
-                    return acc;
-                  }, {});
-                  const sortedYearsList = Object.keys(monthsByYear).sort((a, b) => b - a);
+        {/* Specific Month/Year Filter Dropdowns */}
+        <div className="periods-custom-filters">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <IconFilter size={15} style={{ color: '#64748b' }} />
+            <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: '700' }}>
+              Filter:
+            </span>
+          </div>
 
-                  return sortedYearsList.map((yr, idx) => (
-                    <div key={yr} style={{ marginBottom: '28px' }}>
-                      {/* Year Divider Line */}
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          margin: idx === 0 ? '0 0 16px 0' : '24px 0 16px 0',
-                        }}
-                      >
-                        <span
-                          style={{
-                            fontSize: '0.88rem',
-                            fontWeight: '700',
-                            color: 'var(--primary-btn)',
-                            marginRight: '12px',
-                            backgroundColor: '#eff6ff',
-                            padding: '4px 12px',
-                            borderRadius: '6px',
-                            border: '1px solid #bfdbfe',
-                          }}
-                        >
-                          Year {yr}
-                        </span>
-                        <div style={{ flex: 1, height: '1px', backgroundColor: '#cbd5e1' }} />
-                      </div>
+          <select
+            className="custom-select-input"
+            value={selectedFilterYear}
+            onChange={(e) => {
+              const val = e.target.value;
+              setSelectedFilterYear(val);
+              fetchPeriods('custom', val, selectedFilterMonth);
+            }}
+          >
+            <option value="">All Years</option>
+            {availableYears.map((yr) => (
+              <option key={yr} value={yr}>
+                {yr}
+              </option>
+            ))}
+          </select>
 
-                      {/* Month Cards Grid */}
-                      <div
-                        style={{
-                          display: 'grid',
-                          gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-                          gap: '16px',
-                        }}
-                      >
-                        {monthsByYear[yr].map((monthData) => (
-                          <div
-                            key={monthData.yearMonthStr}
-                            style={{
-                              backgroundColor: '#ffffff',
-                              border: '1px solid #e2e8f0',
-                              borderRadius: '12px',
-                              padding: '16px 18px',
-                              boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              justifyContent: 'space-between',
-                              overflow: 'hidden',
-                            }}
-                          >
-                            {/* Card Header with Website Primary Tint Background */}
-                            <div
-                              style={{
-                                backgroundColor: '#eff6ff',
-                                borderBottom: '1px solid #dbeafe',
-                                margin: '-16px -18px 12px -18px',
-                                padding: '9px 16px',
-                                display: 'flex',
-                                alignItems: 'center',
-                              }}
-                            >
-                              <h4
-                                style={{
-                                  fontSize: '0.92rem',
-                                  fontWeight: '700',
-                                  color: '#1e40af',
-                                  margin: 0,
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '6px',
-                                }}
-                              >
-                                <IconCalendarEvent size={16} style={{ color: '#1e40af' }} />
-                                <span>{monthData.monthName}</span>
-                              </h4>
-                            </div>
+          <select
+            className="custom-select-input"
+            value={selectedFilterMonth}
+            onChange={(e) => {
+              const val = e.target.value;
+              setSelectedFilterMonth(val);
+              fetchPeriods('custom', selectedFilterYear, val);
+            }}
+          >
+            <option value="">All Months</option>
+            <option value="1">January</option>
+            <option value="2">February</option>
+            <option value="3">March</option>
+            <option value="4">April</option>
+            <option value="5">May</option>
+            <option value="6">June</option>
+            <option value="7">July</option>
+            <option value="8">August</option>
+            <option value="9">September</option>
+            <option value="10">October</option>
+            <option value="11">November</option>
+            <option value="12">December</option>
+          </select>
 
-                            {renderHalfRow(monthData, 1)}
-                            <div style={{ borderTop: '1px solid #f1f5f9', margin: '6px 0' }} />
-                            {renderHalfRow(monthData, 2)}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ));
-                })()}
-              </div>
-            ) : (
-              /* Month Cards Grid (Current Year / Filtered View) */
-              <div>
+          {(selectedFilterYear || selectedFilterMonth) && (
+            <button
+              type="button"
+              className="filter-reset-btn"
+              onClick={() => {
+                setSelectedFilterYear('');
+                setSelectedFilterMonth('');
+                fetchPeriods(currentYearStr, '', '');
+              }}
+              title="Reset Filters"
+            >
+              <IconRotateClockwise size={14} />
+              <span>Reset</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* 3. Main Content: Month Cards Grid */}
+      {loading ? (
+        <div
+          style={{
+            background: '#ffffff',
+            borderRadius: '16px',
+            border: '1px solid #e2e8f0',
+            padding: '48px 24px',
+            textAlign: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '12px',
+          }}
+        >
+          <IconLoader2 size={32} className="animate-spin text-blue-600" />
+          <p style={{ color: '#64748b', fontSize: '0.9rem', fontWeight: '600' }}>
+            Loading newsletter periods...
+          </p>
+        </div>
+      ) : error ? (
+        <div className="error-message">{error}</div>
+      ) : monthCardsList.length === 0 ? (
+        <div
+          style={{
+            background: '#ffffff',
+            borderRadius: '16px',
+            border: '1px solid #e2e8f0',
+            padding: '48px 24px',
+            textAlign: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '8px',
+          }}
+        >
+          <IconCalendar size={36} style={{ color: '#94a3b8' }} />
+          <h4 style={{ margin: 0, color: '#0f172a', fontSize: '1rem' }}>
+            No newsletter periods found
+          </h4>
+          <p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem' }}>
+            There are no records matching your current filter selection.
+          </p>
+        </div>
+      ) : filterMode === 'all' && !selectedFilterYear && !selectedFilterMonth ? (
+        /* All Years Grouped View */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+          {(() => {
+            const monthsByYear = monthCardsList.reduce((acc, monthCard) => {
+              const yr = String(monthCard.year);
+              if (!acc[yr]) acc[yr] = [];
+              acc[yr].push(monthCard);
+              return acc;
+            }, {});
+            const sortedYearsList = Object.keys(monthsByYear).sort((a, b) => b - a);
+
+            return sortedYearsList.map((yr) => (
+              <div key={yr}>
+                {/* Year Section Header */}
                 <div
                   style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-                    gap: '16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    marginBottom: '16px',
                   }}
                 >
-                  {monthCardsList.map((monthData) => (
-                    <div
-                      key={monthData.yearMonthStr}
-                      style={{
-                        backgroundColor: '#ffffff',
-                        border: '1px solid #e2e8f0',
-                        borderRadius: '12px',
-                        padding: '16px 18px',
-                        boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'space-between',
-                        overflow: 'hidden',
-                      }}
-                    >
-                      {/* Card Header with Website Primary Tint Background */}
-                      <div
-                        style={{
-                          backgroundColor: '#eff6ff',
-                          borderBottom: '1px solid #dbeafe',
-                          margin: '-16px -18px 12px -18px',
-                          padding: '9px 16px',
-                          display: 'flex',
-                          alignItems: 'center',
-                        }}
-                      >
-                        <h4
-                          style={{
-                            fontSize: '0.92rem',
-                            fontWeight: '700',
-                            color: '#1e40af',
-                            margin: 0,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                          }}
-                        >
-                          <IconCalendarEvent size={16} style={{ color: '#1e40af' }} />
+                  <span
+                    style={{
+                      fontSize: '0.88rem',
+                      fontWeight: '800',
+                      color: '#1d4ed8',
+                      backgroundColor: '#eff6ff',
+                      padding: '4px 14px',
+                      borderRadius: '8px',
+                      border: '1px solid #bfdbfe',
+                      boxShadow: '0 1px 3px rgba(37, 99, 235, 0.1)',
+                    }}
+                  >
+                    Year {yr}
+                  </span>
+                  <div style={{ flex: 1, height: '1px', backgroundColor: '#e2e8f0' }} />
+                </div>
+
+                {/* Grid for Year */}
+                <div className="month-cards-grid">
+                  {monthsByYear[yr].map((monthData) => (
+                    <div key={monthData.yearMonthStr} className="month-card">
+                      <div className="month-card-header">
+                        <h4 className="month-card-title">
+                          <IconCalendarEvent size={18} className="month-card-icon" />
                           <span>{monthData.monthName}</span>
                         </h4>
                       </div>
 
-                      {renderHalfRow(monthData, 1)}
-                      <div style={{ borderTop: '1px solid #f1f5f9', margin: '6px 0' }} />
-                      {renderHalfRow(monthData, 2)}
+                      <div className="month-card-body">
+                        {renderHalfRow(monthData, 1)}
+                        <div className="row-separator" />
+                        {renderHalfRow(monthData, 2)}
+                      </div>
                     </div>
                   ))}
                 </div>
               </div>
-            )}
-
-            {/* Dynamic Year Action Buttons */}
-            {availableYears.length > 0 && (
-              <div
-                style={{
-                  marginTop: '24px',
-                  paddingTop: '16px',
-                  borderTop: '1px dashed #cbd5e1',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  flexWrap: 'wrap',
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: '0.85rem',
-                    color: '#64748b',
-                    fontWeight: '700',
-                    marginRight: '4px',
-                  }}
-                >
-                  Load Year:
-                </span>
-
-                {availableYears.map((yr) => {
-                  const isSelected = filterMode === String(yr);
-                  return (
-                    <button
-                      key={yr}
-                      type="button"
-                      onClick={() => fetchPeriods(String(yr))}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        padding: '6px 14px',
-                        borderRadius: '8px',
-                        backgroundColor: isSelected
-                          ? 'var(--primary-btn)'
-                          : '#ffffff',
-                        color: isSelected ? '#ffffff' : 'var(--text-heading)',
-                        border: isSelected
-                          ? '2px solid var(--primary-btn)'
-                          : '1px solid #cbd5e1',
-                        cursor: 'pointer',
-                        fontWeight: '700',
-                        fontSize: '0.85rem',
-                        boxShadow: isSelected
-                          ? '0 4px 10px rgba(30, 64, 175, 0.25)'
-                          : '0 1px 3px rgba(0,0,0,0.03)',
-                        transition: 'all 0.18s ease-in-out',
-                      }}
-                    >
-                      <span>{yr}</span>
-                    </button>
-                  );
-                })}
-
-                {/* All Years Button */}
-                <button
-                  type="button"
-                  onClick={() => fetchPeriods('all')}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    padding: '6px 14px',
-                    borderRadius: '8px',
-                    backgroundColor:
-                      filterMode === 'all' ? 'var(--primary-btn)' : '#ffffff',
-                    color: filterMode === 'all' ? '#ffffff' : 'var(--text-heading)',
-                    border:
-                      filterMode === 'all'
-                        ? '2px solid var(--primary-btn)'
-                        : '1px solid #cbd5e1',
-                    cursor: 'pointer',
-                    fontWeight: '700',
-                    fontSize: '0.85rem',
-                    boxShadow:
-                      filterMode === 'all'
-                        ? '0 4px 10px rgba(30, 64, 175, 0.25)'
-                        : '0 1px 3px rgba(0,0,0,0.03)',
-                    transition: 'all 0.18s ease-in-out',
-                  }}
-                >
-                  <span>All Years</span>
-                </button>
+            ));
+          })()}
+        </div>
+      ) : (
+        /* Standard Month Cards Grid (Current Year / Filtered View) */
+        <div className="month-cards-grid">
+          {monthCardsList.map((monthData) => (
+            <div key={monthData.yearMonthStr} className="month-card">
+              <div className="month-card-header">
+                <h4 className="month-card-title">
+                  <IconCalendarEvent size={18} className="month-card-icon" />
+                  <span>{monthData.monthName}</span>
+                </h4>
               </div>
-            )}
-          </>
-        )}
-      </section>
 
-      {/* Finalize Confirmation Modal for GH */}
+              <div className="month-card-body">
+                {renderHalfRow(monthData, 1)}
+                <div className="row-separator" />
+                {renderHalfRow(monthData, 2)}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* 4. Finalize Confirmation Modal (Group Head Role) */}
       {finalizeModalPeriod && (
         <div
           className="modal-backdrop"
@@ -844,8 +688,8 @@ const Periods = () => {
           style={{
             position: 'fixed',
             inset: 0,
-            backgroundColor: 'rgba(15, 23, 42, 0.55)',
-            backdropFilter: 'blur(3px)',
+            backgroundColor: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(4px)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -858,30 +702,32 @@ const Periods = () => {
             onClick={(e) => e.stopPropagation()}
             style={{
               backgroundColor: '#ffffff',
-              borderRadius: '12px',
-              maxWidth: '420px',
+              borderRadius: '16px',
+              maxWidth: '440px',
               width: '100%',
-              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.05)',
+              boxShadow:
+                '0 24px 38px -6px rgba(0, 0, 0, 0.18), 0 10px 14px -6px rgba(0, 0, 0, 0.08)',
               overflow: 'hidden',
               border: '1px solid #e2e8f0',
+              animation: 'profilePopIn 0.18s ease-out',
             }}
           >
             {/* Modal Header */}
             <div
               style={{
-                padding: '16px 20px',
+                padding: '18px 22px',
                 borderBottom: '1px solid #f1f5f9',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <div
                   style={{
-                    width: '30px',
-                    height: '30px',
-                    borderRadius: '8px',
+                    width: '34px',
+                    height: '34px',
+                    borderRadius: '10px',
                     backgroundColor: '#ecfdf5',
                     color: '#059669',
                     display: 'flex',
@@ -890,11 +736,23 @@ const Periods = () => {
                     flexShrink: 0,
                   }}
                 >
-                  <IconCheck size={18} strokeWidth={2.5} />
+                  <IconCheck size={20} strokeWidth={2.5} />
                 </div>
-                <h3 style={{ margin: 0, fontSize: '1rem', color: '#0f172a', fontWeight: '700' }}>
-                  Finalize Newsletter
-                </h3>
+                <div>
+                  <h3
+                    style={{
+                      margin: 0,
+                      fontSize: '1.05rem',
+                      color: '#0f172a',
+                      fontWeight: '700',
+                    }}
+                  >
+                    Finalize Newsletter
+                  </h3>
+                  <span style={{ fontSize: '0.76rem', color: '#64748b' }}>
+                    Group Head Approval
+                  </span>
+                </div>
               </div>
 
               <button
@@ -905,8 +763,8 @@ const Periods = () => {
                   border: 'none',
                   cursor: 'pointer',
                   color: '#94a3b8',
-                  padding: '4px',
-                  borderRadius: '6px',
+                  padding: '6px',
+                  borderRadius: '8px',
                   display: 'flex',
                 }}
               >
@@ -915,19 +773,61 @@ const Periods = () => {
             </div>
 
             {/* Modal Body */}
-            <div style={{ padding: '20px' }}>
-              <p style={{ margin: '0 0 8px 0', fontSize: '0.92rem', color: '#1e293b', lineHeight: '1.4' }}>
-                Are you sure you want to finalize <strong>{finalizeModalPeriod.title}</strong>?
+            <div style={{ padding: '22px' }}>
+              <div
+                style={{
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '10px',
+                  padding: '12px 14px',
+                  marginBottom: '14px',
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: '0.72rem',
+                    fontWeight: '700',
+                    color: '#64748b',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  Period Target
+                </span>
+                <h4 style={{ margin: '4px 0 0 0', color: '#0f172a', fontSize: '0.94rem' }}>
+                  {finalizeModalPeriod.title}
+                </h4>
+              </div>
+
+              <p
+                style={{
+                  margin: '0 0 8px 0',
+                  fontSize: '0.88rem',
+                  color: '#334155',
+                  lineHeight: '1.45',
+                }}
+              >
+                Are you sure you want to finalize this newsletter edition?
               </p>
-              <p style={{ margin: 0, fontSize: '0.84rem', color: '#64748b', lineHeight: '1.4' }}>
-                Once finalized, this newsletter will be locked in <strong>View-Only</strong> mode for all users. No further changes can be made.
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: '0.82rem',
+                  lineHeight: '1.4',
+                  backgroundColor: '#fffbeb',
+                  border: '1px solid #fef3c7',
+                  padding: '8px 10px',
+                  borderRadius: '8px',
+                  color: '#92400e',
+                }}
+              >
+                ⚠️ Once finalized, entries will be permanently locked in <strong>View-Only</strong> mode for all users.
               </p>
             </div>
 
             {/* Modal Footer */}
             <div
               style={{
-                padding: '14px 20px',
+                padding: '14px 22px',
                 borderTop: '1px solid #f1f5f9',
                 display: 'flex',
                 alignItems: 'center',
@@ -938,14 +838,13 @@ const Periods = () => {
             >
               <button
                 type="button"
-                className="btn-secondary"
                 onClick={() => setFinalizeModalPeriod(null)}
                 disabled={submittingFinalize}
                 style={{
-                  padding: '7px 16px',
-                  fontSize: '0.85rem',
+                  padding: '8px 18px',
+                  fontSize: '0.86rem',
                   fontWeight: '600',
-                  borderRadius: '6px',
+                  borderRadius: '8px',
                   backgroundColor: '#ffffff',
                   border: '1px solid #cbd5e1',
                   color: '#475569',
@@ -960,10 +859,10 @@ const Periods = () => {
                 onClick={handleConfirmFinalize}
                 disabled={submittingFinalize}
                 style={{
-                  padding: '7px 16px',
-                  fontSize: '0.85rem',
+                  padding: '8px 18px',
+                  fontSize: '0.86rem',
                   fontWeight: '600',
-                  borderRadius: '6px',
+                  borderRadius: '8px',
                   backgroundColor: '#059669',
                   border: 'none',
                   color: '#ffffff',
@@ -971,16 +870,19 @@ const Periods = () => {
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: '6px',
-                  boxShadow: '0 2px 4px rgba(5, 150, 105, 0.25)',
-                  opacity: submittingFinalize ? 0.7 : 1,
+                  boxShadow: '0 2px 6px rgba(5, 150, 105, 0.3)',
+                  opacity: submittingFinalize ? 0.75 : 1,
                 }}
               >
                 {submittingFinalize ? (
-                  'Finalizing...'
+                  <>
+                    <IconLoader2 size={16} className="animate-spin" />
+                    <span>Finalizing...</span>
+                  </>
                 ) : (
                   <>
-                    <IconCheck size={15} strokeWidth={2.5} />
-                    Make it Finalize
+                    <IconCheck size={16} strokeWidth={2.5} />
+                    <span>Confirm Finalize</span>
                   </>
                 )}
               </button>

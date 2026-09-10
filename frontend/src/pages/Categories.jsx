@@ -17,6 +17,11 @@ import {
   IconUpload,
   IconClock,
   IconLock,
+  IconFileText,
+  IconUsersGroup,
+  IconLoader2,
+  IconCalendar,
+  IconLayersSubtract,
 } from '@tabler/icons-react';
 
 const Categories = () => {
@@ -25,7 +30,7 @@ const Categories = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const periodTitle = location.state?.periodTitle;
+  const passedPeriodTitle = location.state?.periodTitle;
 
   const [period, setPeriod] = useState(null);
   const [categories, setCategories] = useState([]);
@@ -57,11 +62,14 @@ const Categories = () => {
   const [editDescription, setEditDescription] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
 
-  // Other Custom Category Modal state
+  // Custom Category Modal state
   const [showOtherModal, setShowOtherModal] = useState(false);
   const [otherTitle, setOtherTitle] = useState('');
   const [creatingOther, setCreatingOther] = useState(false);
   const [otherError, setOtherError] = useState('');
+
+  // Photo Lightbox modal
+  const [previewPhoto, setPreviewPhoto] = useState(null);
 
   useEffect(() => {
     if (!user) {
@@ -350,9 +358,8 @@ const Categories = () => {
       const urlBlob = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = urlBlob;
-      const filename = periodTitle
-        ? `${periodTitle.replace(/\s+/g, '_')}.docx`
-        : `newsletter_period_${periodId}.docx`;
+      const effectiveTitle = period?.title || passedPeriodTitle || `Newsletter_Period_${periodId}`;
+      const filename = `${effectiveTitle.replace(/\s+/g, '_')}.docx`;
       link.setAttribute('download', filename);
       document.body.appendChild(link);
       link.click();
@@ -382,7 +389,7 @@ const Categories = () => {
       const link = document.createElement('a');
       link.href = urlBlob;
       const cleanCatName = category.name.replace(/\s+/g, '_');
-      const filename = `${cleanCatName}_event.docx`;
+      const filename = `${cleanCatName}_entries.docx`;
       link.setAttribute('download', filename);
       document.body.appendChild(link);
       link.click();
@@ -398,42 +405,116 @@ const Categories = () => {
 
   if (!user) return null;
 
+  const displayPeriodTitle = period?.title || passedPeriodTitle || `Newsletter Period #${periodId}`;
+
   return (
-    <div
-      className="categories-page"
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        minHeight: 'calc(100vh - 120px)',
-      }}
-    >
-      {/* Top Navigation */}
-      <div style={{ marginBottom: '16px' }}>
-        <button onClick={() => navigate('/periods')} className="btn-link-back">
+    <div className="categories-page">
+      {/* 1. Top Breadcrumb Navigation */}
+      <div>
+        <button
+          onClick={() => navigate('/periods')}
+          className="btn-link-back"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontSize: '0.86rem',
+            fontWeight: '600',
+            color: '#2563eb',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            padding: '4px 0',
+          }}
+        >
           <IconArrowLeft size={18} />
-          <span>Back to newsletters</span>
+          <span>Back to Newsletter Overview</span>
         </button>
       </div>
 
-      {/* Finalized View-Only Notice Banner */}
+      {/* 2. Hero Context Banner */}
+      <div className="categories-hero">
+        <div className="categories-hero-left">
+          <h2 className="categories-hero-title">
+            <IconCalendar size={24} style={{ color: '#2563eb' }} />
+            <span>{displayPeriodTitle}</span>
+          </h2>
+          <div className="categories-hero-meta">
+            <span>Department:</span>
+            <span className="group-badge-hero">
+              <IconUsersGroup size={13} />
+              {user.group || user.group_name || 'General'}
+            </span>
+            <span>•</span>
+            <span>Status:</span>
+            {isViewOnly ? (
+              <span className="status-badge-finalized">
+                <IconLock size={12} />
+                <span>Finalized (View-Only)</span>
+              </span>
+            ) : (
+              <span className="status-badge-open">
+                <IconCheck size={12} strokeWidth={2.5} />
+                <span>Open for Editing</span>
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Top Action: Download Full Newsletter */}
+        <button
+          onClick={handleDownload}
+          className="btn-action-green"
+          disabled={downloading}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '10px 20px',
+            fontSize: '0.9rem',
+            fontWeight: '600',
+            borderRadius: '10px',
+            backgroundColor: '#059669',
+            color: '#ffffff',
+            border: 'none',
+            cursor: downloading ? 'not-allowed' : 'pointer',
+            boxShadow: '0 2px 8px rgba(5, 150, 105, 0.25)',
+            transition: 'all 0.16s ease',
+          }}
+        >
+          {downloading ? (
+            <>
+              <IconLoader2 size={18} className="animate-spin" />
+              <span>Generating Document...</span>
+            </>
+          ) : (
+            <>
+              <IconDownload size={18} />
+              <span>Download Newsletter (.docx)</span>
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* 3. Finalized Notice Banner (if applicable) */}
       {isViewOnly && (
         <div
           style={{
             backgroundColor: '#f0fdf4',
             border: '1px solid #bbf7d0',
-            borderRadius: '10px',
-            padding: '12px 18px',
-            marginBottom: '16px',
+            borderRadius: '12px',
+            padding: '14px 18px',
             display: 'flex',
             alignItems: 'center',
-            gap: '12px',
+            gap: '14px',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
           }}
         >
           <div
             style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '50%',
+              width: '36px',
+              height: '36px',
+              borderRadius: '10px',
               backgroundColor: '#dcfce7',
               display: 'flex',
               alignItems: 'center',
@@ -442,724 +523,525 @@ const Categories = () => {
               flexShrink: 0,
             }}
           >
-            <IconLock size={18} />
+            <IconLock size={20} />
           </div>
           <div>
-            <div style={{ fontSize: '0.9rem', fontWeight: '700', color: '#166534' }}>
-              Finalized Newsletter (View-Only)
+            <div style={{ fontSize: '0.92rem', fontWeight: '700', color: '#166534' }}>
+              Finalized Newsletter (Read-Only Mode)
             </div>
             <div style={{ fontSize: '0.82rem', color: '#15803d', marginTop: '2px' }}>
-              This newsletter has been finalized and locked by the Group Head. All entries and attached photos are in view-only mode.
+              This newsletter period has been approved and finalized by the Group Head. All entries, descriptions, and photos are locked.
             </div>
           </div>
         </div>
       )}
 
-      {/* Main Categories Card Section */}
-      <section
-        className="card-section"
+      {/* 4. Categories Section Header */}
+      <div
         style={{
-          flex: 1,
           display: 'flex',
-          flexDirection: 'column',
-          marginBottom: 0,
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginTop: '4px',
         }}
       >
-        {/* Header with Title on Left & Main Download Button on Right */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <IconLayersSubtract size={20} style={{ color: '#2563eb' }} />
+          <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#0f172a', fontWeight: '800' }}>
+            Categories
+          </h3>
+          <span className="kanban-count-badge">{categories.length}</span>
+        </div>
+        <span style={{ fontSize: '0.82rem', color: '#64748b' }}>
+          Click any category below to expand entries and add content
+        </span>
+      </div>
+
+      {/* 5. Main Categories Accordion Stack */}
+      {loading ? (
         <div
           style={{
+            background: '#ffffff',
+            borderRadius: '16px',
+            border: '1px solid #e2e8f0',
+            padding: '48px 24px',
+            textAlign: 'center',
             display: 'flex',
-            justifyContent: 'space-between',
+            flexDirection: 'column',
             alignItems: 'center',
-            marginBottom: '1.4rem',
-            flexWrap: 'wrap',
             gap: '12px',
           }}
         >
-          <div>
-            <h3 style={{ margin: 0 }}>Categories</h3>
-            <p
-              style={{
-                fontSize: '0.88rem',
-                color: '#64748b',
-                margin: '4px 0 0 0',
-              }}
-            >
-              Click a category to expand inline and manage entry details for this newsletter.
-            </p>
-          </div>
-
-          <button
-            onClick={handleDownload}
-            className="btn-action-green"
-            style={{ marginLeft: 'auto' }}
-            disabled={downloading}
-          >
-            <IconDownload size={18} />
-            <span>{downloading ? 'Generating...' : 'Download Newsletter (.docx)'}</span>
-          </button>
+          <IconLoader2 size={32} className="animate-spin text-blue-600" />
+          <p style={{ color: '#64748b', fontSize: '0.9rem', fontWeight: '600' }}>
+            Loading categories...
+          </p>
         </div>
+      ) : error ? (
+        <div className="error-message">{error}</div>
+      ) : (
+        <div className="category-accordion-list">
+          {categories.map((category) => {
+            const isExpanded = expandedCategoryId === category.id;
 
-        {loading ? (
-          <p className="loading-text">Loading categories...</p>
-        ) : error ? (
-          <div className="error-message">{error}</div>
-        ) : (
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '16px',
-            }}
-          >
-            {categories.map((category) => {
-              const isExpanded = expandedCategoryId === category.id;
-              const hasActiveExpanded =
-                expandedCategoryId !== null && !isExpanded;
-
-              if (isExpanded) {
-                // EXPANDED Category Card (Vertical stack item)
-                return (
-                  <div
-                    key={category.id}
-                    style={{
-                      width: '100%',
-                      backgroundColor: '#ffffff',
-                      border: '1px solid #cbd5e1',
-                      borderRadius: '10px',
-                      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.04)',
-                      overflow: 'hidden',
-                      transition: 'opacity 0.15s ease-in-out',
-                    }}
-                  >
-                    {/* Header Row */}
-                    <div
-                      onClick={() => handleToggleExpand(category.id)}
-                      style={{
-                        backgroundColor: '#f8fafc',
-                        padding: '16px 18px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        cursor: 'pointer',
-                        width: '100%',
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '12px',
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: '38px',
-                            height: '38px',
-                            borderRadius: '8px',
-                            backgroundColor: '#f1f5f9',
-                            color: '#475569',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            flexShrink: 0,
-                          }}
-                        >
-                          <IconFolder size={20} />
-                        </div>
-                        <div>
-                          <div
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                            }}
-                          >
-                            <h4
-                              style={{
-                                margin: 0,
-                                fontSize: '0.96rem',
-                                color: 'var(--text-heading)',
-                                fontWeight: '700',
-                                lineHeight: '1.3',
-                              }}
-                            >
-                              {category.name}
-                            </h4>
-                            <IconChevronUp size={18} style={{ color: '#94a3b8' }} />
-                          </div>
-                          {category.period_id && (
-                            <span
-                              style={{
-                                fontSize: '0.72rem',
-                                color: '#94a3b8',
-                                fontWeight: '500',
-                              }}
-                            >
-                              Custom Category
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Far Right: Delete & Download Icon */}
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '10px',
-                          marginLeft: 'auto',
-                        }}
-                      >
-                        {!isViewOnly && category.period_id && (
-                          <button
-                            className="btn-ghost-danger"
-                            style={{ padding: '4px 6px', border: 'none' }}
-                            onClick={(e) =>
-                              handleDeleteCustomCategory(e, category.id)
-                            }
-                            title="Delete custom category"
-                          >
-                            <IconTrash size={14} />
-                          </button>
-                        )}
-
-                        <button
-                          type="button"
-                          className="btn-secondary"
-                          style={{
-                            padding: '6px 10px',
-                            fontSize: '0.75rem',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                          }}
-                          onClick={(e) =>
-                            handleDownloadCategoryDocx(e, category)
-                          }
-                          title={`Download ${category.name} docx`}
-                          disabled={downloadingCategoryId === category.id}
-                        >
-                          <IconDownload size={15} />
-                        </button>
-                      </div>
+            return (
+              <div
+                key={category.id}
+                className={`category-card ${isExpanded ? 'expanded' : ''}`}
+              >
+                {/* Accordion Header */}
+                <div
+                  className="category-header"
+                  onClick={() => handleToggleExpand(category.id)}
+                  title={`Click to ${isExpanded ? 'collapse' : 'expand'} ${category.name}`}
+                >
+                  <div className="category-header-left">
+                    <div className="category-icon-box">
+                      <IconFolder size={20} />
                     </div>
 
-                    {/* Content Section below header */}
+                    <div className="category-title-wrap">
+                      <div className="category-name-row">
+                        <h4 className="category-name-heading">{category.name}</h4>
+                        {category.period_id && (
+                          <span className="category-badge-custom">Custom</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Header Right Actions */}
+                  <div
+                    className="category-header-actions"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {/* Delete Custom Category Button (if applicable) */}
+                    {!isViewOnly && category.period_id && (
+                      <button
+                        type="button"
+                        className="action-icon-btn"
+                        style={{ color: '#dc2626', borderColor: '#fecaca', backgroundColor: '#fef2f2' }}
+                        onClick={(e) => handleDeleteCustomCategory(e, category.id)}
+                        title="Delete custom category"
+                        aria-label="Delete category"
+                      >
+                        <IconTrash size={15} />
+                      </button>
+                    )}
+
+                    {/* Category Download DOCX */}
+                    <button
+                      type="button"
+                      className="action-icon-btn download"
+                      onClick={(e) => handleDownloadCategoryDocx(e, category)}
+                      title={`Download ${category.name} entries (.docx)`}
+                      disabled={downloadingCategoryId === category.id}
+                      aria-label="Download category document"
+                    >
+                      {downloadingCategoryId === category.id ? (
+                        <IconLoader2 size={15} className="animate-spin text-blue-600" />
+                      ) : (
+                        <IconDownload size={15} />
+                      )}
+                    </button>
+
+                    {/* Expand/Collapse Chevron Indicator */}
                     <div
                       style={{
-                        padding: '18px 20px',
-                        borderTop: '1px solid #e2e8f0',
+                        width: '32px',
+                        height: '32px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#64748b',
                       }}
                     >
-                      {/* Entries List */}
-                      {loadingEntries ? (
-                        <p className="loading-text">Loading entries...</p>
-                      ) : entriesError ? (
-                        <div className="error-message">{entriesError}</div>
-                      ) : categoryEntries.length === 0 ? (
-                        <p
-                          className="empty-state"
-                          style={{
-                            fontSize: '0.88rem',
-                            marginBottom: '16px',
-                            textAlign: 'left',
-                          }}
-                        >
-                          No entries found for this category yet. Add one
-                          below.
-                        </p>
+                      {isExpanded ? (
+                        <IconChevronUp size={20} style={{ color: '#2563eb' }} />
                       ) : (
-                        <div
-                          style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '12px',
-                            marginBottom: '20px',
-                          }}
-                        >
-                          {categoryEntries.map((entry) => (
-                            <div
-                              key={entry.id}
-                              style={{
-                                backgroundColor: '#ffffff',
-                                border: '1px solid #e2e8f0',
-                                borderRadius: '8px',
-                                padding: '14px 16px',
-                                boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
-                              }}
-                            >
-                              {editingEntryId === entry.id ? (
-                                /* Inline Edit Form */
-                                <div
-                                  style={{
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: '10px',
-                                  }}
-                                >
+                        <IconChevronDown size={20} />
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Expanded Content Section */}
+                {isExpanded && (
+                  <div className="category-content-body">
+                    {/* List of Entries */}
+                    {loadingEntries ? (
+                      <div
+                        style={{
+                          padding: '24px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '10px',
+                          color: '#64748b',
+                        }}
+                      >
+                        <IconLoader2 size={20} className="animate-spin text-blue-600" />
+                        <span style={{ fontSize: '0.88rem', fontWeight: '600' }}>
+                          Loading entries...
+                        </span>
+                      </div>
+                    ) : entriesError ? (
+                      <div className="error-message">{entriesError}</div>
+                    ) : categoryEntries.length === 0 ? (
+                      <div
+                        style={{
+                          backgroundColor: '#f8fafc',
+                          border: '1px dashed #cbd5e1',
+                          borderRadius: '10px',
+                          padding: '24px 20px',
+                          textAlign: 'center',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          gap: '6px',
+                        }}
+                      >
+                        <IconFileText size={28} style={{ color: '#94a3b8' }} />
+                        <h5 style={{ margin: 0, color: '#0f172a', fontSize: '0.92rem' }}>
+                          No entries yet in {category.name}
+                        </h5>
+                        <p style={{ margin: 0, color: '#64748b', fontSize: '0.82rem' }}>
+                          {!isViewOnly
+                            ? 'Use the form below to record your first entry and attach photos.'
+                            : 'No entries were recorded for this category.'}
+                        </p>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                        {categoryEntries.map((entry) => (
+                          <div key={entry.id} className="entry-card">
+                            {editingEntryId === entry.id ? (
+                              /* Inline Edit Form */
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                <div>
+                                  <label
+                                    style={{
+                                      fontSize: '0.78rem',
+                                      fontWeight: '700',
+                                      color: '#475569',
+                                      marginBottom: '4px',
+                                      display: 'block',
+                                    }}
+                                  >
+                                    Title *
+                                  </label>
                                   <input
                                     type="text"
                                     value={editTitle}
                                     onChange={(e) => setEditTitle(e.target.value)}
                                     placeholder="Entry Title..."
                                     style={{
-                                      padding: '8px 12px',
-                                      borderRadius: '6px',
+                                      width: '100%',
+                                      padding: '10px 12px',
+                                      borderRadius: '8px',
                                       border: '1px solid #cbd5e1',
                                       fontSize: '0.9rem',
                                       fontWeight: '600',
+                                      color: '#0f172a',
+                                      outline: 'none',
                                     }}
                                   />
+                                </div>
+
+                                <div>
+                                  <label
+                                    style={{
+                                      fontSize: '0.78rem',
+                                      fontWeight: '700',
+                                      color: '#475569',
+                                      marginBottom: '4px',
+                                      display: 'block',
+                                    }}
+                                  >
+                                    Description
+                                  </label>
                                   <textarea
                                     value={editDescription}
-                                    onChange={(e) =>
-                                      setEditDescription(e.target.value)
-                                    }
+                                    onChange={(e) => setEditDescription(e.target.value)}
                                     placeholder="Entry Description..."
                                     rows="3"
                                     style={{
-                                      padding: '8px 12px',
-                                      borderRadius: '6px',
+                                      width: '100%',
+                                      padding: '10px 12px',
+                                      borderRadius: '8px',
                                       border: '1px solid #cbd5e1',
                                       fontSize: '0.88rem',
+                                      color: '#0f172a',
+                                      outline: 'none',
+                                      resize: 'vertical',
                                     }}
                                   />
-                                  <div
-                                    style={{
-                                      display: 'flex',
-                                      gap: '8px',
-                                      marginTop: '4px',
-                                    }}
-                                  >
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        handleSaveEditEntry(entry.id, category.id)
-                                      }
-                                      disabled={savingEdit}
-                                      className="btn-primary"
-                                      style={{
-                                        padding: '5px 12px',
-                                        fontSize: '0.8rem',
-                                      }}
-                                    >
-                                      {savingEdit ? 'Saving...' : 'Save'}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => setEditingEntryId(null)}
-                                      className="btn-secondary"
-                                      style={{
-                                        padding: '5px 12px',
-                                        fontSize: '0.8rem',
-                                      }}
-                                    >
-                                      Cancel
-                                    </button>
-                                  </div>
                                 </div>
-                              ) : (
-                                /* Entry View Card */
-                                <div>
-                                  <div
+
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveEditEntry(entry.id, category.id)}
+                                    disabled={savingEdit}
+                                    className="btn-primary"
                                     style={{
-                                      display: 'flex',
-                                      justifyContent: 'space-between',
-                                      alignItems: 'flex-start',
-                                      gap: '12px',
+                                      padding: '7px 16px',
+                                      fontSize: '0.84rem',
+                                      fontWeight: '600',
+                                      borderRadius: '8px',
                                     }}
                                   >
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                      <h5
-                                        style={{
-                                          fontSize: '0.95rem',
-                                          fontWeight: '700',
-                                          color: '#0f172a',
-                                          margin: 0,
-                                          lineHeight: '1.35',
-                                        }}
+                                    {savingEdit ? 'Saving...' : 'Save Changes'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingEntryId(null)}
+                                    className="btn-secondary"
+                                    style={{
+                                      padding: '7px 14px',
+                                      fontSize: '0.84rem',
+                                      fontWeight: '600',
+                                      borderRadius: '8px',
+                                      backgroundColor: '#f1f5f9',
+                                      color: '#475569',
+                                      border: '1px solid #cbd5e1',
+                                    }}
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              /* Standard Entry View */
+                              <>
+                                <div className="entry-card-header">
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                    <h5 className="entry-title">{entry.title}</h5>
+                                    {isGhUser && (
+                                      <span
+                                        className="entry-author-pill"
+                                        title={`Added by ${entry.created_by_name || `User #${entry.created_by}`}`}
                                       >
-                                        {entry.title}
-                                      </h5>
-                                      {isGhUser && (
-                                        <span
-                                          style={{
-                                            fontSize: '0.72rem',
-                                            backgroundColor: '#eff6ff',
-                                            color: '#1e40af',
-                                            border: '1px solid #bfdbfe',
-                                            padding: '2px 8px',
-                                            borderRadius: '12px',
-                                            fontWeight: '600',
-                                            whiteSpace: 'nowrap',
-                                          }}
-                                          title={`Added by ${entry.created_by_name || `User #${entry.created_by}`}`}
-                                        >
-                                          👤 {entry.created_by_name || `User #${entry.created_by}`}
-                                        </span>
-                                      )}
-                                    </div>
-
-                                    {/* Action Buttons (Outline Style) */}
-                                    {!isViewOnly && (isGhUser || entry.created_by === user?.id) && (
-                                      <div
-                                        style={{
-                                          display: 'flex',
-                                          gap: '8px',
-                                          flexShrink: 0,
-                                        }}
-                                      >
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            handleStartEditEntry(entry)
-                                          }
-                                          style={{
-                                            padding: '4px 10px',
-                                            fontSize: '0.78rem',
-                                            fontWeight: '600',
-                                            color: '#2563eb',
-                                            backgroundColor: '#ffffff',
-                                            border: '1px solid #2563eb',
-                                            borderRadius: '6px',
-                                            cursor: 'pointer',
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: '4px',
-                                          }}
-                                        >
-                                          <IconEdit size={14} />
-                                          <span>Edit</span>
-                                        </button>
-
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            handleDeleteEntry(entry.id, category.id)
-                                          }
-                                          style={{
-                                            padding: '4px 10px',
-                                            fontSize: '0.78rem',
-                                            fontWeight: '600',
-                                            color: '#dc2626',
-                                            backgroundColor: '#ffffff',
-                                            border: '1px solid #dc2626',
-                                            borderRadius: '6px',
-                                            cursor: 'pointer',
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: '4px',
-                                          }}
-                                        >
-                                          <IconTrash size={14} />
-                                          <span>Delete</span>
-                                        </button>
-                                      </div>
+                                        👤 {entry.created_by_name || `User #${entry.created_by}`}
+                                      </span>
                                     )}
                                   </div>
 
-                                  {entry.description && (
-                                    <p
-                                      style={{
-                                        fontSize: '0.86rem',
-                                        color: '#475569',
-                                        marginTop: '6px',
-                                        marginBottom: 0,
-                                        whiteSpace: 'pre-wrap',
-                                      }}
-                                    >
-                                      {entry.description}
-                                    </p>
+                                  {/* Action Buttons for Author or GH */}
+                                  {!isViewOnly && (isGhUser || entry.created_by === user?.id) && (
+                                    <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleStartEditEntry(entry)}
+                                        className="action-icon-btn"
+                                        style={{
+                                          width: '30px',
+                                          height: '30px',
+                                          color: '#2563eb',
+                                          borderColor: '#bfdbfe',
+                                          backgroundColor: '#eff6ff',
+                                        }}
+                                        title="Edit entry"
+                                        aria-label="Edit entry"
+                                      >
+                                        <IconEdit size={14} />
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteEntry(entry.id, category.id)}
+                                        className="action-icon-btn"
+                                        style={{
+                                          width: '30px',
+                                          height: '30px',
+                                          color: '#dc2626',
+                                          borderColor: '#fecaca',
+                                          backgroundColor: '#fef2f2',
+                                        }}
+                                        title="Delete entry"
+                                        aria-label="Delete entry"
+                                      >
+                                        <IconTrash size={14} />
+                                      </button>
+                                    </div>
                                   )}
-
-                                  {/* Photos List & Add Photo button */}
-                                  <div style={{ marginTop: '10px' }}>
-                                    <div
-                                      style={{
-                                        display: 'flex',
-                                        flexWrap: 'wrap',
-                                        alignItems: 'center',
-                                        gap: '8px',
-                                      }}
-                                    >
-                                      {entry.photos &&
-                                        entry.photos.map((photo) => (
-                                          <div
-                                            key={photo.id}
-                                            style={{
-                                              position: 'relative',
-                                              width: '64px',
-                                              height: '64px',
-                                              flexShrink: 0,
-                                            }}
-                                          >
-                                            <img
-                                              src={`http://${window.location.hostname ||
-                                                'localhost'
-                                                }:8000/${photo.file_path}`}
-                                              alt={
-                                                photo.original_filename ||
-                                                'Entry photo'
-                                              }
-                                              style={{
-                                                width: '64px',
-                                                height: '64px',
-                                                objectFit: 'cover',
-                                                borderRadius: '6px',
-                                                border: '1px solid #e2e8f0',
-                                              }}
-                                            />
-                                            {!isViewOnly && (
-                                              <button
-                                                type="button"
-                                                onClick={() =>
-                                                  handleDeletePhoto(
-                                                    photo.id,
-                                                    category.id
-                                                  )
-                                                }
-                                                title="Delete photo"
-                                                style={{
-                                                  position: 'absolute',
-                                                  top: '-4px',
-                                                  right: '-4px',
-                                                  width: '18px',
-                                                  height: '18px',
-                                                  borderRadius: '50%',
-                                                  backgroundColor: '#dc2626',
-                                                  color: '#ffffff',
-                                                  border: 'none',
-                                                  cursor: 'pointer',
-                                                  display: 'flex',
-                                                  alignItems: 'center',
-                                                  justifyContent: 'center',
-                                                }}
-                                              >
-                                                <IconX size={10} />
-                                              </button>
-                                            )}
-                                          </div>
-                                        ))}
-
-                                      {!isViewOnly && (
-                                        <label
-                                          title="Upload photo"
-                                          style={{
-                                            width: '64px',
-                                            height: '64px',
-                                            border: '1.5px dashed #cbd5e1',
-                                            borderRadius: '6px',
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            gap: '2px',
-                                            cursor: 'pointer',
-                                            backgroundColor: '#f8fafc',
-                                            color: '#64748b',
-                                            fontSize: '0.68rem',
-                                            fontWeight: '600',
-                                          }}
-                                        >
-                                          <IconUpload size={14} />
-                                          <span>+ Photo</span>
-                                          <input
-                                            type="file"
-                                            accept="image/*"
-                                            multiple
-                                            style={{ display: 'none' }}
-                                            onChange={(e) => {
-                                              if (
-                                                e.target.files &&
-                                                e.target.files.length > 0
-                                              ) {
-                                                handleAddPhotoToEntry(
-                                                  entry.id,
-                                                  category.id,
-                                                  e.target.files
-                                                );
-                                                e.target.value = '';
-                                              }
-                                            }}
-                                          />
-                                        </label>
-                                      )}
-                                    </div>
-                                  </div>
-
-                                  {/* Footer Metadata */}
-                                  <div
-                                    style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '10px',
-                                      marginTop: '8px',
-                                      color: '#94a3b8',
-                                      fontSize: '0.72rem',
-                                      flexWrap: 'wrap',
-                                    }}
-                                  >
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                      <IconClock size={12} />
-                                      <span>
-                                        Added by{' '}
-                                        <strong style={{ color: '#475569' }}>
-                                          {entry.created_by_name || `User #${entry.created_by}`}
-                                        </strong>
-                                        {entry.created_at && (
-                                          <>
-                                            {' '}on{' '}
-                                            {new Date(entry.created_at).toLocaleString('en-US', {
-                                              month: 'short',
-                                              day: 'numeric',
-                                              year: 'numeric',
-                                              hour: 'numeric',
-                                              minute: '2-digit',
-                                              hour12: true,
-                                            })}
-                                          </>
-                                        )}
-                                      </span>
-                                    </div>
-
-                                    {entry.updated_at && entry.updated_at !== entry.created_at && (
-                                      <span>
-                                        • Edited by {entry.updated_by_name || `User #${entry.updated_by}`}
-                                      </span>
-                                    )}
-                                  </div>
                                 </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
 
-                      {/* b. Add New Entry Mini-Form Box */}
-                      {!isViewOnly && (
-                        <div
-                          style={{
-                            backgroundColor: '#f8fafc',
-                            border: '1px solid #e2e8f0',
-                            borderRadius: '10px',
-                            padding: '18px 20px',
-                          }}
+                                {entry.description && (
+                                  <p className="entry-description-text">{entry.description}</p>
+                                )}
+
+                                {/* Entry Photos Gallery */}
+                                <div className="entry-photos-gallery">
+                                  {entry.photos &&
+                                    entry.photos.map((photo) => {
+                                      const photoUrl = `http://${window.location.hostname || 'localhost'}:8000/${photo.file_path}`;
+                                      return (
+                                        <div
+                                          key={photo.id}
+                                          className="entry-photo-card"
+                                          onClick={() => setPreviewPhoto({ url: photoUrl, name: photo.original_filename })}
+                                          style={{ cursor: 'pointer' }}
+                                          title="Click to preview image"
+                                        >
+                                          <img
+                                            src={photoUrl}
+                                            alt={photo.original_filename || 'Entry photo'}
+                                          />
+                                          {!isViewOnly && (
+                                            <button
+                                              type="button"
+                                              className="photo-delete-btn"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleDeletePhoto(photo.id, category.id);
+                                              }}
+                                              title="Delete photo"
+                                              aria-label="Delete photo"
+                                            >
+                                              <IconX size={11} strokeWidth={2.5} />
+                                            </button>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+
+                                  {/* Upload Additional Photo Button */}
+                                  {!isViewOnly && (
+                                    <label className="photo-upload-slot" title="Add photo to this entry">
+                                      <IconUpload size={16} />
+                                      <span>+ Photo</span>
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        multiple
+                                        style={{ display: 'none' }}
+                                        onChange={(e) => {
+                                          if (e.target.files && e.target.files.length > 0) {
+                                            handleAddPhotoToEntry(
+                                              entry.id,
+                                              category.id,
+                                              e.target.files
+                                            );
+                                            e.target.value = '';
+                                          }
+                                        }}
+                                      />
+                                    </label>
+                                  )}
+                                </div>
+
+                                {/* Footer Timestamp Metadata */}
+                                <div className="entry-footer-meta">
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <IconClock size={13} />
+                                    <span>
+                                      Added by{' '}
+                                      <strong style={{ color: '#475569' }}>
+                                        {entry.created_by_name || `User #${entry.created_by}`}
+                                      </strong>
+                                      {entry.created_at && (
+                                        <>
+                                          {' '}on{' '}
+                                          {new Date(entry.created_at).toLocaleString('en-US', {
+                                            month: 'short',
+                                            day: 'numeric',
+                                            year: 'numeric',
+                                            hour: 'numeric',
+                                            minute: '2-digit',
+                                            hour12: true,
+                                          })}
+                                        </>
+                                      )}
+                                    </span>
+                                  </div>
+
+                                  {entry.updated_at && entry.updated_at !== entry.created_at && (
+                                    <span>
+                                      • Edited by {entry.updated_by_name || `User #${entry.updated_by}`}
+                                    </span>
+                                  )}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Add New Entry Mini-Form Box */}
+                    {!isViewOnly && (
+                      <div className="add-entry-box">
+                        <h5 className="add-entry-title">
+                          <IconPlus size={16} style={{ color: '#2563eb' }} />
+                          <span>Add New Entry to {category.name}</span>
+                        </h5>
+
+                        {addError && (
+                          <div className="error-message" style={{ fontSize: '0.82rem', margin: 0 }}>
+                            {addError}
+                          </div>
+                        )}
+
+                        <form
+                          onSubmit={(e) => handleAddEntrySubmit(e, category.id)}
+                          style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}
                         >
-                          <h5
+                          <input
+                            type="text"
+                            placeholder="Entry Title *"
+                            value={newTitle}
+                            onChange={(e) => setNewTitle(e.target.value)}
+                            required
                             style={{
-                              margin: '0 0 14px 0',
-                              fontSize: '0.92rem',
-                              fontWeight: '700',
+                              padding: '10px 14px',
+                              borderRadius: '8px',
+                              border: '1px solid #cbd5e1',
+                              fontSize: '0.88rem',
+                              outline: 'none',
+                              backgroundColor: '#ffffff',
                               color: '#0f172a',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '8px',
                             }}
-                          >
-                            <div
-                              style={{
-                                width: '24px',
-                                height: '24px',
-                                borderRadius: '6px',
-                                backgroundColor: '#e2e8f0',
-                                color: '#334155',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyCenter: 'center',
-                              }}
-                            >
-                              <IconPlus size={14} />
-                            </div>
-                            <span>Add New Entry for {category.name}</span>
-                          </h5>
+                          />
 
-                          {addError && (
-                            <div
-                              className="error-message"
-                              style={{ marginBottom: '10px', fontSize: '0.82rem' }}
-                            >
-                              {addError}
-                            </div>
-                          )}
-
-                          <form
-                            onSubmit={(e) =>
-                              handleAddEntrySubmit(e, category.id)
-                            }
+                          <textarea
+                            placeholder="Entry Description (optional)..."
+                            value={newDescription}
+                            onChange={(e) => setNewDescription(e.target.value)}
+                            rows="3"
                             style={{
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: '12px',
+                              padding: '10px 14px',
+                              borderRadius: '8px',
+                              border: '1px solid #cbd5e1',
+                              fontSize: '0.88rem',
+                              outline: 'none',
+                              backgroundColor: '#ffffff',
+                              color: '#0f172a',
+                              resize: 'vertical',
                             }}
-                          >
-                            <input
-                              type="text"
-                              placeholder="Entry Title *"
-                              value={newTitle}
-                              onChange={(e) => setNewTitle(e.target.value)}
-                              required
-                              style={{
-                                padding: '10px 14px',
-                                borderRadius: '8px',
-                                border: '1px solid #cbd5e1',
-                                fontSize: '0.88rem',
-                                outline: 'none',
-                                backgroundColor: '#ffffff',
-                                color: '#0f172a',
-                              }}
-                            />
+                          />
 
-                            <textarea
-                              placeholder="Entry Description (optional)..."
-                              value={newDescription}
-                              onChange={(e) => setNewDescription(e.target.value)}
-                              rows="3"
-                              style={{
-                                padding: '10px 14px',
-                                borderRadius: '8px',
-                                border: '1px solid #cbd5e1',
-                                fontSize: '0.88rem',
-                                outline: 'none',
-                                backgroundColor: '#ffffff',
-                                color: '#0f172a',
-                                resize: 'vertical',
-                              }}
-                            />
-
-                            {/* Optional Photo Attachment */}
-                            <div
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '10px',
-                              }}
-                            >
+                          {/* Optional Photo Attachment */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                               <input
+                                id={`file-input-new-${category.id}`}
                                 type="file"
                                 accept="image/*"
                                 multiple
-                                ref={fileInputRef}
                                 style={{ display: 'none' }}
                                 onChange={(e) => {
                                   if (e.target.files && e.target.files.length > 0) {
-                                    setNewFiles((prev) => [
-                                      ...prev,
-                                      ...Array.from(e.target.files),
-                                    ]);
-                                    e.target.value = '';
+                                    const selectedFiles = Array.from(e.target.files);
+                                    setNewFiles((prev) => [...prev, ...selectedFiles]);
                                   }
                                 }}
                               />
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  fileInputRef.current &&
-                                  fileInputRef.current.click()
-                                }
+                              <label
+                                htmlFor={`file-input-new-${category.id}`}
                                 style={{
                                   padding: '7px 14px',
-                                  borderRadius: '6px',
+                                  borderRadius: '8px',
                                   border: '1px solid #cbd5e1',
                                   backgroundColor: '#ffffff',
                                   color: '#475569',
@@ -1169,349 +1051,241 @@ const Categories = () => {
                                   display: 'inline-flex',
                                   alignItems: 'center',
                                   gap: '6px',
+                                  boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
                                 }}
                               >
-                                <IconCamera size={16} style={{ color: '#64748b' }} />
+                                <IconCamera size={16} style={{ color: '#2563eb' }} />
                                 <span>
                                   {newFiles.length > 0
                                     ? `Attach Photos (${newFiles.length} selected)`
                                     : 'Attach Photos (Optional)'}
                                 </span>
-                              </button>
-                              {/* Optional Photo Attachment */}
+                              </label>
+                            </div>
+
+                            {/* Attached Files List Pills */}
+                            {newFiles.length > 0 && (
                               <div
                                 style={{
                                   display: 'flex',
+                                  flexWrap: 'wrap',
                                   alignItems: 'center',
-                                  gap: '10px',
+                                  gap: '6px',
                                 }}
                               >
-                                <input
-                                  id={`file-input-new-${category.id}`}
-                                  type="file"
-                                  accept="image/*"
-                                  multiple
-                                  style={{ display: 'none' }}
-                                  onChange={(e) => {
-                                    if (e.target.files && e.target.files.length > 0) {
-                                      const selectedFiles = Array.from(e.target.files);
-                                      setNewFiles((prev) => [...prev, ...selectedFiles]);
-                                    }
-                                  }}
-                                />
-                                <label
-                                  htmlFor={`file-input-new-${category.id}`}
-                                  style={{
-                                    padding: '7px 14px',
-                                    borderRadius: '6px',
-                                    border: '1px solid #cbd5e1',
-                                    backgroundColor: '#ffffff',
-                                    color: '#475569',
-                                    fontSize: '0.82rem',
-                                    fontWeight: '600',
-                                    cursor: 'pointer',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '6px',
-                                  }}
-                                >
-                                  <IconCamera size={16} style={{ color: '#64748b' }} />
-                                  <span>
-                                    {newFiles.length > 0
-                                      ? `Attach Photos (${newFiles.length} selected)`
-                                      : 'Attach Photos (Optional)'}
-                                  </span>
-                                </label>
-
-                                {newFiles.length > 0 && (
-                                  <div
+                                {newFiles.map((file, idx) => (
+                                  <span
+                                    key={idx}
                                     style={{
-                                      display: 'flex',
-                                      flexWrap: 'wrap',
+                                      fontSize: '0.75rem',
+                                      backgroundColor: '#ffffff',
+                                      color: '#334155',
+                                      padding: '3px 8px',
+                                      borderRadius: '6px',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
                                       gap: '6px',
-                                      marginTop: '6px',
+                                      border: '1px solid #cbd5e1',
+                                      boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
                                     }}
                                   >
-                                    {newFiles.map((file, idx) => (
-                                      <span
-                                        key={idx}
-                                        style={{
-                                          fontSize: '0.75rem',
-                                          backgroundColor: '#ffffff',
-                                          color: '#334155',
-                                          padding: '3px 8px',
-                                          borderRadius: '4px',
-                                          display: 'inline-flex',
-                                          alignItems: 'center',
-                                          gap: '6px',
-                                          border: '1px solid #cbd5e1',
-                                        }}
-                                      >
-                                        📷 {file.name}
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            setNewFiles((prev) =>
-                                              prev.filter((_, i) => i !== idx)
-                                            )
-                                          }
-                                          style={{
-                                            background: 'none',
-                                            border: 'none',
-                                            color: '#dc2626',
-                                            cursor: 'pointer',
-                                            fontWeight: 'bold',
-                                            fontSize: '0.85rem',
-                                            lineHeight: 1,
-                                            padding: 0,
-                                          }}
-                                        >
-                                          ×
-                                        </button>
-                                      </span>
-                                    ))}
+                                    📷 {file.name}
                                     <button
                                       type="button"
-                                      onClick={() => setNewFiles([])}
+                                      onClick={() =>
+                                        setNewFiles((prev) =>
+                                          prev.filter((_, i) => i !== idx)
+                                        )
+                                      }
                                       style={{
                                         background: 'none',
                                         border: 'none',
                                         color: '#dc2626',
                                         cursor: 'pointer',
-                                        fontSize: '0.78rem',
-                                        fontWeight: '600',
-                                        marginLeft: '4px',
+                                        fontWeight: 'bold',
+                                        fontSize: '0.85rem',
+                                        lineHeight: 1,
+                                        padding: 0,
                                       }}
                                     >
-                                      Clear all
+                                      ×
                                     </button>
-                                  </div>
-                                )}
-                              </div>
-
-                              <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                                  </span>
+                                ))}
                                 <button
-                                  type="submit"
-                                  disabled={submittingNew}
-                                  className="btn-primary"
+                                  type="button"
+                                  onClick={() => setNewFiles([])}
                                   style={{
-                                    padding: '8px 18px',
-                                    fontSize: '0.86rem',
+                                    background: 'none',
+                                    border: 'none',
+                                    color: '#dc2626',
+                                    cursor: 'pointer',
+                                    fontSize: '0.78rem',
                                     fontWeight: '600',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '6px',
+                                    marginLeft: '4px',
                                   }}
                                 >
-                                  <IconPlus size={16} />
-                                  <span>
-                                    {submittingNew ? 'Saving Entry...' : 'Add Entry'}
-                                  </span>
+                                  Clear all
                                 </button>
                               </div>
-                          </form>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              }
+                            )}
+                          </div>
 
-              // COLLAPSED Category Card
-              return (
-                <div
-                  key={category.id}
-                  className="clickable-card"
-                  onClick={() => handleToggleExpand(category.id)}
-                  style={{
-                    background: '#ffffff',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '10px',
-                    padding: '16px 18px',
-                    boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justify: 'space-between',
-                    width: '100%',
-                    cursor: 'pointer',
-                    transition: 'opacity 0.15s ease-in-out, border-color 0.15s ease-in-out',
-                    minHeight: '76px',
-                    opacity: hasActiveExpanded ? 0.7 : 1,
-                  }}
-                >
-                  {/* Left: Folder + Title + Down Chevron */}
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '12px',
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: '38px',
-                        height: '38px',
-                        borderRadius: '8px',
-                        backgroundColor: '#eff6ff',
-                        color: 'var(--primary-btn)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0,
-                      }}
-                    >
-                      <IconFolder size={20} />
-                    </div>
-                    <div>
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                        }}
-                      >
-                        <h4
-                          style={{
-                            margin: 0,
-                            fontSize: '0.96rem',
-                            color: 'var(--text-heading)',
-                            fontWeight: '700',
-                            lineHeight: '1.3',
-                          }}
-                        >
-                          {category.name}
-                        </h4>
-                        <IconChevronDown size={18} style={{ color: '#94a3b8' }} />
+                          <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                            <button
+                              type="submit"
+                              disabled={submittingNew}
+                              className="btn-primary"
+                              style={{
+                                padding: '8px 18px',
+                                fontSize: '0.86rem',
+                                fontWeight: '600',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                borderRadius: '8px',
+                              }}
+                            >
+                              {submittingNew ? (
+                                <>
+                                  <IconLoader2 size={16} className="animate-spin" />
+                                  <span>Saving Entry...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <IconPlus size={16} />
+                                  <span>Save Entry</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </form>
                       </div>
-                      {category.period_id && (
-                        <span
-                          style={{
-                            fontSize: '0.72rem',
-                            color: '#94a3b8',
-                            fontWeight: '500',
-                          }}
-                        >
-                          Custom Category
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Far Right (End of Box): Delete & Download Icon */}
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '10px',
-                      marginLeft: 'auto',
-                    }}
-                  >
-                    {!isViewOnly && category.period_id && (
-                      <button
-                        className="btn-ghost-danger"
-                        style={{ padding: '4px 6px', border: 'none' }}
-                        onClick={(e) =>
-                          handleDeleteCustomCategory(e, category.id)
-                        }
-                        title="Delete custom category"
-                      >
-                        <IconTrash size={14} />
-                      </button>
                     )}
-
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      style={{
-                        padding: '6px 10px',
-                        fontSize: '0.75rem',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                      }}
-                      onClick={(e) => handleDownloadCategoryDocx(e, category)}
-                      title={`Download ${category.name} docx`}
-                      disabled={downloadingCategoryId === category.id}
-                    >
-                      <IconDownload size={15} />
-                    </button>
                   </div>
-                </div>
-              );
-            })}
+                )}
+              </div>
+            );
+          })}
 
-            {/* "+ Add Custom Category" Card */}
-            {!isViewOnly && (
+          {/* "+ Add Custom Category" Button */}
+          {!isViewOnly && (
+            <div
+              className="add-custom-cat-card"
+              onClick={() => {
+                setOtherTitle('');
+                setOtherError('');
+                setShowOtherModal(true);
+              }}
+              role="button"
+              tabIndex={0}
+              title="Add a custom category for this newsletter edition"
+            >
               <div
-                className="clickable-card"
-                onClick={() => {
-                  setOtherTitle('');
-                  setOtherError('');
-                  setShowOtherModal(true);
-                }}
                 style={{
-                  background: 'rgba(241, 245, 249, 0.5)',
-                  border: '1.5px dashed #cbd5e1',
-                  borderRadius: '10px',
-                  padding: '16px 18px',
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '50%',
+                  backgroundColor: '#eff6ff',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: '8px',
-                  cursor: 'pointer',
-                  minHeight: '76px',
-                  color: 'var(--primary-btn)',
-                  fontWeight: '700',
-                  fontSize: '0.92rem',
-                  transition: 'all 0.18s ease-in-out',
-                  opacity: expandedCategoryId !== null ? 0.7 : 1,
                 }}
               >
-                <IconPlus size={20} />
-                <span>Others</span>
+                <IconPlus size={16} strokeWidth={2.5} />
               </div>
-            )}
-          </div>
-        )}
-      </section>
+              <span>Add Custom Category</span>
+            </div>
+          )}
+        </div>
+      )}
 
-      {/* Modal for adding custom "Other" category */}
+      {/* 6. Modal for Custom "Other" Category */}
       {showOtherModal && (
         <div className="modal-backdrop" onClick={() => setShowOtherModal(false)}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ marginTop: 0 }}>
-              Add Custom Category for this Newsletter
-            </h3>
-            <p
+          <div
+            className="modal-card"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              borderRadius: '16px',
+              padding: '24px',
+              maxWidth: '460px',
+              width: '100%',
+              animation: 'profilePopIn 0.18s ease-out',
+            }}
+          >
+            <div
               style={{
-                fontSize: '0.85rem',
-                color: '#64748b',
-                marginBottom: '1.2rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '12px',
               }}
             >
-              This category will be created <strong>only for this Newsletter.</strong>
+              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '700', color: '#0f172a' }}>
+                Add Custom Category
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowOtherModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: '#94a3b8',
+                  padding: '4px',
+                }}
+              >
+                <IconX size={18} />
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.84rem', color: '#64748b', marginBottom: '16px', lineHeight: '1.4' }}>
+              This category will be attached <strong>specifically to {displayPeriodTitle}</strong>.
             </p>
-            {otherError && <div className="error-message">{otherError}</div>}
+
+            {otherError && (
+              <div className="error-message" style={{ marginBottom: '12px', fontSize: '0.82rem' }}>
+                {otherError}
+              </div>
+            )}
+
             <form onSubmit={handleAddOtherCategory}>
-              <div className="form-field" style={{ marginBottom: '1.2rem' }}>
-                <label>Category Title *</label>
+              <div className="form-field" style={{ marginBottom: '16px' }}>
+                <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#334155', display: 'block', marginBottom: '6px' }}>
+                  Category Name *
+                </label>
                 <input
                   type="text"
-                  placeholder="e.g. Special Workshop, Guest Lecture, Exhibition"
+                  placeholder="e.g. Special Workshop, Guest Lecture, Industrial Visit"
                   value={otherTitle}
                   onChange={(e) => setOtherTitle(e.target.value)}
                   autoFocus
                   required
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    border: '1px solid #cbd5e1',
+                    fontSize: '0.9rem',
+                    outline: 'none',
+                  }}
                 />
               </div>
-              <div
-                className="form-buttons"
-                style={{ justifyContent: 'flex-end', gap: '10px' }}
-              >
+
+              <div className="form-buttons" style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                 <button
                   type="button"
                   onClick={() => setShowOtherModal(false)}
                   className="btn-secondary"
+                  style={{
+                    padding: '8px 16px',
+                    fontSize: '0.86rem',
+                    borderRadius: '8px',
+                    backgroundColor: '#ffffff',
+                    border: '1px solid #cbd5e1',
+                    color: '#475569',
+                  }}
                 >
                   Cancel
                 </button>
@@ -1519,11 +1293,96 @@ const Categories = () => {
                   type="submit"
                   className="btn-primary"
                   disabled={creatingOther}
+                  style={{
+                    padding: '8px 18px',
+                    fontSize: '0.86rem',
+                    borderRadius: '8px',
+                    backgroundColor: '#2563eb',
+                    color: '#ffffff',
+                    border: 'none',
+                    fontWeight: '600',
+                  }}
                 >
-                  {creatingOther ? 'Adding...' : 'Add Category'}
+                  {creatingOther ? 'Creating...' : 'Create Category'}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 7. Image Lightbox Preview Modal */}
+      {previewPhoto && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setPreviewPhoto(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.85)',
+            backdropFilter: 'blur(6px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10000,
+            padding: '24px',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: 'relative',
+              maxWidth: '85vw',
+              maxHeight: '85vh',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              backgroundColor: '#0f172a',
+              padding: '12px',
+              borderRadius: '16px',
+              border: '1px solid #334155',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setPreviewPhoto(null)}
+              style={{
+                position: 'absolute',
+                top: '-12px',
+                right: '-12px',
+                width: '32px',
+                height: '32px',
+                borderRadius: '50%',
+                backgroundColor: '#ffffff',
+                color: '#0f172a',
+                border: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 2px 10px rgba(0,0,0,0.3)',
+                fontWeight: 'bold',
+              }}
+              title="Close"
+            >
+              <IconX size={18} />
+            </button>
+            <img
+              src={previewPhoto.url}
+              alt={previewPhoto.name || 'Photo preview'}
+              style={{
+                maxWidth: '80vw',
+                maxHeight: '75vh',
+                objectFit: 'contain',
+                borderRadius: '10px',
+              }}
+            />
+            {previewPhoto.name && (
+              <span style={{ marginTop: '8px', color: '#cbd5e1', fontSize: '0.82rem' }}>
+                {previewPhoto.name}
+              </span>
+            )}
           </div>
         </div>
       )}

@@ -7,6 +7,10 @@ import {
   IconLogout,
   IconChevronDown,
   IconMail,
+  IconBriefcase,
+  IconBuilding,
+  IconUsersGroup,
+  IconShield,
 } from '@tabler/icons-react';
 
 const Layout = () => {
@@ -43,11 +47,50 @@ const Layout = () => {
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   };
 
+  const formatRole = (role) => {
+    if (!role) return 'Scientist';
+    const lower = role.toLowerCase().trim();
+    if (lower === 'gh') return 'Group Head (GH)';
+    if (lower === 'scientist') return 'Scientist';
+    if (lower === 'technical staff') return 'Technical Staff';
+    return role.charAt(0).toUpperCase() + role.slice(1);
+  };
+
+  const lowerUserRole = user.role?.toLowerCase()?.trim();
+  const isUserTech = lowerUserRole === 'technical staff';
+  const isUserSci = lowerUserRole === 'scientist';
+
   return (
     <div className="app-layout-topbar">
       {/* Top Navigation Bar */}
       <header className="app-topbar">
         <div className="topbar-left">
+          {/* Brand Logo & Title */}
+          <div
+            className="topbar-brand"
+            onClick={() => navigate('/periods')}
+            title="CMTI Newsletter Portal"
+            role="button"
+            tabIndex={0}
+          >
+            <div className="brand-logo-card">
+              <img
+                src="/cmti.png"
+                alt="CMTI"
+                className="brand-logo-img"
+              />
+            </div>
+            <div className="brand-text">
+              <span className="brand-title">
+                CMTI <span className="brand-highlight">Newsletter</span>
+              </span>
+              <span className="brand-subtitle">Activity & Publication Portal</span>
+            </div>
+          </div>
+
+          <div className="topbar-divider" />
+
+          {/* Navigation Links */}
           <nav className="topbar-nav">
             <NavLink
               to="/periods"
@@ -58,18 +101,6 @@ const Layout = () => {
               <IconCalendar size={18} />
               <span>Newsletters</span>
             </NavLink>
-
-            {isGhUser && (
-              <NavLink
-                to="/customize"
-                className={({ isActive }) =>
-                  `topbar-link ${isActive ? 'active' : ''}`
-                }
-              >
-                <IconSettings size={18} />
-                <span>Admin</span>
-              </NavLink>
-            )}
           </nav>
         </div>
 
@@ -78,8 +109,6 @@ const Layout = () => {
           <div
             className="profile-menu-container"
             ref={profileRef}
-            onMouseEnter={() => setProfileOpen(true)}
-            onMouseLeave={() => setProfileOpen(false)}
           >
             <button
               type="button"
@@ -90,6 +119,12 @@ const Layout = () => {
             >
               <div className="avatar-circle">
                 {getInitials(user.name)}
+              </div>
+              <div className="profile-btn-info">
+                <span className="profile-btn-name">{user.name}</span>
+                <span className="profile-btn-role">
+                  {formatRole(user.role)}
+                </span>
               </div>
               <IconChevronDown
                 size={14}
@@ -118,50 +153,94 @@ const Layout = () => {
                 <div className="profile-card-body">
                   {user.role && (
                     <div className="profile-detail-row">
-                      <span className="detail-label">Role:</span>
-                      <span className="detail-value role-badge">
-                        {user.role.toLowerCase() === 'gh' ? 'Group Head (GH)' : user.role}
+                      <span className="detail-label">
+                        <IconShield size={14} />
+                        <span>Role:</span>
+                      </span>
+                      <span
+                        className={`detail-value role-badge ${
+                          isGhUser
+                            ? 'role-gh'
+                            : isUserTech
+                            ? 'role-tech'
+                            : isUserSci
+                            ? 'role-scientist'
+                            : ''
+                        }`}
+                      >
+                        {formatRole(user.role)}
                       </span>
                     </div>
                   )}
 
                   {user.designation && (
                     <div className="profile-detail-row">
-                      <span className="detail-label">Designation:</span>
+                      <span className="detail-label">
+                        <IconBriefcase size={14} />
+                        <span>Designation:</span>
+                      </span>
                       <span className="detail-value">{user.designation}</span>
                     </div>
                   )}
 
                   {user.center && (
                     <div className="profile-detail-row">
-                      <span className="detail-label">Center:</span>
+                      <span className="detail-label">
+                        <IconBuilding size={14} />
+                        <span>Center:</span>
+                      </span>
                       <span className="detail-value">{user.center}</span>
                     </div>
                   )}
 
                   {(user.group || user.group_name) && (
                     <div className="profile-detail-row">
-                      <span className="detail-label">Group:</span>
-                      <span className="detail-value group-tag">{user.group || user.group_name}</span>
+                      <span className="detail-label">
+                        <IconUsersGroup size={14} />
+                        <span>Group:</span>
+                      </span>
+                      <span className="detail-value group-tag">
+                        {user.group || user.group_name}
+                      </span>
                     </div>
                   )}
+                </div>
 
-                  {user.type && (
-                    <div className="profile-detail-row">
-                      <span className="detail-label">Type:</span>
-                      <span className="detail-value">{user.type}</span>
-                    </div>
-                  )}
+                <div className="profile-card-footer">
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="profile-logout-btn"
+                  >
+                    <IconLogout size={15} />
+                    <span>Sign out</span>
+                  </button>
                 </div>
               </div>
             )}
           </div>
 
+          {/* Admin Settings Icon Button Beside Logout (Group Head Only) */}
+          {isGhUser && (
+            <NavLink
+              to="/customize"
+              className={({ isActive }) =>
+                `topbar-admin-btn ${isActive ? 'active' : ''}`
+              }
+              title="Admin & Settings"
+              aria-label="Admin Settings"
+            >
+              <IconSettings size={18} />
+            </NavLink>
+          )}
+
+          <div className="topbar-divider-small" />
+
           {/* Logout button directly in navbar */}
           <button
             onClick={handleLogout}
             className="topbar-logout-btn"
-            title="Logout"
+            title="Sign out"
             aria-label="Logout"
           >
             <IconLogout size={18} />
