@@ -114,9 +114,6 @@ const Categories = () => {
     setNewTitle('');
     setNewDescription('');
     setNewFiles([]);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
     setAddError('');
   };
 
@@ -144,19 +141,32 @@ const Categories = () => {
 
       // Upload initial photos if selected via batch endpoint
       if (newFiles && newFiles.length > 0 && res.data && res.data.id) {
-        const formData = new FormData();
-        formData.append('entry_id', res.data.id);
-        formData.append('uploaded_by', user.id);
-        newFiles.forEach((file) => {
-          formData.append('files', file);
-        });
-
         try {
+          const formData = new FormData();
+          formData.append('entry_id', res.data.id);
+          formData.append('uploaded_by', user.id);
+          newFiles.forEach((file) => {
+            formData.append('files', file);
+          });
           await api.post('/photos/batch', formData, {
             headers: { 'Content-Type': 'multipart/form-data' },
           });
-        } catch (photoErr) {
-          console.error('Failed to upload initial photos:', photoErr);
+        } catch (batchErr) {
+          console.warn('Batch photo upload failed, attempting single upload fallback:', batchErr);
+          for (let i = 0; i < newFiles.length; i++) {
+            const formData = new FormData();
+            formData.append('entry_id', res.data.id);
+            formData.append('uploaded_by', user.id);
+            formData.append('display_order', i);
+            formData.append('file', newFiles[i]);
+            try {
+              await api.post('/photos/', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+              });
+            } catch (singleErr) {
+              console.error('Failed to upload photo:', singleErr);
+            }
+          }
         }
       }
 
@@ -218,21 +228,34 @@ const Categories = () => {
     const fileList = Array.from(files.length !== undefined ? files : [files]);
     if (fileList.length === 0) return;
 
-    const formData = new FormData();
-    formData.append('entry_id', entryId);
-    formData.append('uploaded_by', user.id);
-    fileList.forEach((file) => {
-      formData.append('files', file);
-    });
-
     try {
+      const formData = new FormData();
+      formData.append('entry_id', entryId);
+      formData.append('uploaded_by', user.id);
+      fileList.forEach((file) => {
+        formData.append('files', file);
+      });
       await api.post('/photos/batch', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      fetchCategoryEntries(catId);
-    } catch (err) {
-      console.error('Failed to upload photo(s):', err);
-      alert('Failed to upload photo(s).');
+    } catch (batchErr) {
+      console.warn('Batch upload failed, attempting single upload fallback:', batchErr);
+      const entry = categoryEntries.find((e) => e.id === entryId);
+      let startOrder = entry && entry.photos ? entry.photos.length : 0;
+      for (let i = 0; i < fileList.length; i++) {
+        const formData = new FormData();
+        formData.append('entry_id', entryId);
+        formData.append('uploaded_by', user.id);
+        formData.append('display_order', startOrder + i);
+        formData.append('file', fileList[i]);
+        try {
+          await api.post('/photos/', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          });
+        } catch (singleErr) {
+          console.error('Failed to upload photo:', singleErr);
+        }
+      }
     }
     fetchCategoryEntries(catId);
   };
@@ -1015,27 +1038,20 @@ const Categories = () => {
                             }}
                           >
                             <input
+                              id={`file-input-new-${category.id}`}
                               type="file"
                               accept="image/*"
                               multiple
-                              ref={fileInputRef}
                               style={{ display: 'none' }}
                               onChange={(e) => {
                                 if (e.target.files && e.target.files.length > 0) {
-                                  setNewFiles((prev) => [
-                                    ...prev,
-                                    ...Array.from(e.target.files),
-                                  ]);
-                                  e.target.value = '';
+                                  const selectedFiles = Array.from(e.target.files);
+                                  setNewFiles((prev) => [...prev, ...selectedFiles]);
                                 }
                               }}
                             />
-                            <button
-                              type="button"
-                              onClick={() =>
-                                fileInputRef.current &&
-                                fileInputRef.current.click()
-                              }
+                            <label
+                              htmlFor={`file-input-new-${category.id}`}
                               style={{
                                 padding: '7px 14px',
                                 borderRadius: '6px',
@@ -1056,7 +1072,7 @@ const Categories = () => {
                                   ? `Attach Photos (${newFiles.length} selected)`
                                   : 'Attach Photos (Optional)'}
                               </span>
-                            </button>
+                            </label>
 
                             {newFiles.length > 0 && (
                               <div

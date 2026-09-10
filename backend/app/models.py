@@ -17,6 +17,14 @@ class User(Base):
     password = Column(String, nullable=False)
     type = Column(String, nullable=True)
 
+    @property
+    def group_name(self) -> str:
+        return self.group or ""
+
+    @group_name.setter
+    def group_name(self, value: str) -> None:
+        self.group = value
+
 
 class CategoryStage(Base):
     __tablename__ = "category_stage"
