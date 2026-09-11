@@ -52,6 +52,15 @@ class NewsletterPeriod(Base):
     edit = Column(Boolean, default=True)
 
     entries = relationship("NewsletterEntry", back_populates="period", cascade="all, delete-orphan")
+    creator = relationship("User", foreign_keys=[created_by])
+
+    @property
+    def creator_name(self) -> str:
+        return self.creator.name if self.creator else f"User #{self.created_by}"
+
+    @property
+    def center(self) -> str:
+        return self.creator.center if self.creator else ""
 
 
 class NewsletterEntry(Base):

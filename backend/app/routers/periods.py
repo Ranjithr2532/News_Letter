@@ -43,13 +43,25 @@ from sqlalchemy import extract
 
 @router.get("/", response_model=List[schemas.PeriodRead])
 def list_periods(
-    group_name: str,
+    group_name: Optional[str] = None,
+    center: Optional[str] = None,
     year: Optional[int] = None,
     month: Optional[int] = None,
     months: Optional[float] = None,
     db: Session = Depends(get_db)
 ):
-    query = db.query(models.NewsletterPeriod).filter(models.NewsletterPeriod.group_name == group_name)
+    query = db.query(models.NewsletterPeriod)
+
+    # Filter by center if provided (for CH role)
+    if center is not None and center.strip() != "":
+        query = query.join(models.User, models.NewsletterPeriod.created_by == models.User.id).filter(
+            models.User.center == center
+        )
+        # If CH also selected a specific group
+        if group_name and group_name.strip().lower() not in ("all", "all groups", "", "undefined", "null"):
+            query = query.filter(models.NewsletterPeriod.group_name == group_name)
+    elif group_name and group_name.strip().lower() not in ("all", "all groups", "", "undefined", "null"):
+        query = query.filter(models.NewsletterPeriod.group_name == group_name)
 
     if year is not None:
         query = query.filter(extract('year', models.NewsletterPeriod.start_date) == year)
@@ -69,13 +81,23 @@ def list_periods(
 
 
 @router.get("/years/", response_model=List[int])
-def list_period_years(group_name: str, db: Session = Depends(get_db)):
-    results = (
-        db.query(extract('year', models.NewsletterPeriod.start_date))
-        .filter(models.NewsletterPeriod.group_name == group_name)
-        .distinct()
-        .all()
-    )
+def list_period_years(
+    group_name: Optional[str] = None,
+    center: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    query = db.query(extract('year', models.NewsletterPeriod.start_date))
+
+    if center is not None and center.strip() != "":
+        query = query.join(models.User, models.NewsletterPeriod.created_by == models.User.id).filter(
+            models.User.center == center
+        )
+        if group_name and group_name.strip().lower() not in ("all", "all groups", "", "undefined", "null"):
+            query = query.filter(models.NewsletterPeriod.group_name == group_name)
+    elif group_name and group_name.strip().lower() not in ("all", "all groups", "", "undefined", "null"):
+        query = query.filter(models.NewsletterPeriod.group_name == group_name)
+
+    results = query.distinct().all()
     years = sorted([int(r[0]) for r in results if r[0] is not None], reverse=True)
     return years
 
@@ -219,6 +241,209 @@ def build_newsletter_docx(period_title: str, entries: list) -> Document:
         entry_counter += 1
 
     return doc
+
+
+def build_combined_center_docx(center_name: str, period_label: str, depts_entries: dict) -> Document:
+    doc = Document()
+
+    # Word Header
+    section = doc.sections[0]
+    header = section.header
+    header_p = header.paragraphs[0]
+    header_p.text = f"{center_name} Center — Combined Newsletter ({period_label})"
+    for r in header_p.runs:
+        r.font.name = "Calibri"
+        r.font.size = Pt(10)
+        r.font.color.rgb = RGBColor(100, 116, 139)
+
+    # Document Main Title
+    title_p = doc.add_paragraph()
+    title_run = title_p.add_run(f"{center_name} Center Newsletter")
+    title_run.bold = True
+    title_run.font.size = Pt(18)
+    title_run.font.color.rgb = RGBColor(37, 99, 235)
+    title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    sub_p = doc.add_paragraph()
+    sub_run = sub_p.add_run(f"Consolidated Department Activities — {period_label}")
+    sub_run.italic = True
+    sub_run.font.size = Pt(12)
+    sub_run.font.color.rgb = RGBColor(100, 116, 139)
+    sub_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    doc.add_paragraph("")  # spacing
+
+    entry_global_counter = 1
+    for dept_name, data in depts_entries.items():
+        gh_name = data.get("gh_name", "")
+        entries = data.get("entries", [])
+        if not entries:
+            continue
+
+        # Department Heading
+        dept_p = doc.add_paragraph()
+        dept_run = dept_p.add_run(f"■ Department: {dept_name}")
+        dept_run.bold = True
+        dept_run.font.size = Pt(14)
+        dept_run.font.color.rgb = RGBColor(15, 23, 42)
+        if gh_name:
+            gh_run = dept_p.add_run(f"  (Group Head: {gh_name})")
+            gh_run.font.size = Pt(11)
+            gh_run.italic = True
+            gh_run.font.color.rgb = RGBColor(71, 85, 105)
+
+        for entry in entries:
+            entry_p = doc.add_paragraph()
+            entry_run = entry_p.add_run(f"  {entry_global_counter}. {entry.title}")
+            entry_run.bold = True
+            entry_run.font.size = Pt(12)
+            entry_run.font.color.rgb = RGBColor(0, 0, 0)
+
+            if entry.description:
+                desc_p = doc.add_paragraph(f"     {entry.description}")
+                for r in desc_p.runs:
+                    r.font.color.rgb = RGBColor(51, 65, 85)
+
+            for photo in entry.photos:
+                if not photo.file_path:
+                    continue
+
+                photo_file = photo.file_path
+                if not os.path.exists(photo_file):
+                    filename_only = os.path.basename(photo.file_path)
+                    d_path = os.path.join(r"D:\Newsletter_Uploads", filename_only)
+                    local_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "uploads", filename_only)
+                    if os.path.exists(d_path):
+                        photo_file = d_path
+                    elif os.path.exists(local_path):
+                        photo_file = local_path
+
+                if os.path.exists(photo_file):
+                    try:
+                        img_p = doc.add_paragraph()
+                        img_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        target_w_in, target_h_in = 4.8, 3.2
+                        target_px_w, target_px_h = 1200, 800
+                        target_aspect = target_px_w / target_px_h
+
+                        with Image.open(photo_file) as img:
+                            if img.mode in ("RGBA", "P"):
+                                img = img.convert("RGB")
+                            w, h = img.size
+                            aspect = (w / h) if h > 0 else 1.0
+                            if aspect > target_aspect:
+                                new_w = int(h * target_aspect)
+                                left = (w - new_w) // 2
+                                img_cropped = img.crop((left, 0, left + new_w, h))
+                            else:
+                                new_h = int(w / target_aspect)
+                                top = (h - new_h) // 2
+                                img_cropped = img.crop((0, top, w, top + new_h))
+
+                            resample_filter = getattr(Image, 'Resampling', Image).LANCZOS
+                            img_resized = img_cropped.resize((target_px_w, target_px_h), resample_filter)
+                            img_buf = io.BytesIO()
+                            img_resized.save(img_buf, format="JPEG", quality=95)
+                            img_buf.seek(0)
+
+                        img_p.add_run().add_picture(img_buf, width=Inches(target_w_in), height=Inches(target_h_in))
+                    except Exception as e:
+                        print(f"Error inserting picture {photo_file}: {e}")
+
+            doc.add_paragraph("")
+            entry_global_counter += 1
+
+        doc.add_paragraph("")  # spacing between departments
+
+    if entry_global_counter == 1:
+        empty_p = doc.add_paragraph()
+        empty_run = empty_p.add_run("No newsletter activity entries recorded for this period.")
+        empty_run.italic = True
+        empty_run.font.color.rgb = RGBColor(100, 116, 139)
+        empty_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    return doc
+
+
+@router.get("/center/generate-combined-docx")
+def generate_center_combined_docx(
+    center: str,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    query = (
+        db.query(models.NewsletterPeriod)
+        .join(models.User, models.NewsletterPeriod.created_by == models.User.id)
+        .filter(models.User.center == center)
+    )
+    if start_date and end_date:
+        query = query.filter(
+            models.NewsletterPeriod.start_date == start_date,
+            models.NewsletterPeriod.end_date == end_date,
+        )
+    elif year:
+        query = query.filter(extract('year', models.NewsletterPeriod.start_date) == year)
+        if month:
+            query = query.filter(extract('month', models.NewsletterPeriod.start_date) == month)
+
+    periods = query.order_by(models.NewsletterPeriod.group_name.asc(), models.NewsletterPeriod.start_date.asc()).all()
+    if not periods:
+        raise HTTPException(status_code=404, detail="No newsletter periods found for this center and selection.")
+
+    depts_entries = {}
+    for p in periods:
+        dept = p.group_name or "General"
+        if dept not in depts_entries:
+            depts_entries[dept] = {
+                "gh_name": p.creator_name,
+                "entries": [],
+            }
+
+        categories = (
+            db.query(models.CategoryStage)
+            .filter(
+                models.CategoryStage.is_active == True,
+                (models.CategoryStage.period_id == None) | (models.CategoryStage.period_id == p.id),
+            )
+            .order_by(models.CategoryStage.stage_number.asc(), models.CategoryStage.id.asc())
+            .all()
+        )
+        for cat in categories:
+            cat_entries = (
+                db.query(models.NewsletterEntry)
+                .filter(
+                    models.NewsletterEntry.period_id == p.id,
+                    models.NewsletterEntry.category_id == cat.id,
+                )
+                .order_by(models.NewsletterEntry.display_order.asc(), models.NewsletterEntry.id.asc())
+                .all()
+            )
+            depts_entries[dept]["entries"].extend(cat_entries)
+
+    if start_date and end_date:
+        period_label = f"{start_date.strftime('%b %d')} – {end_date.strftime('%b %d, %Y')}"
+    elif year and month:
+        period_label = f"{calendar.month_name[month]} {year}"
+    elif year:
+        period_label = f"Full Year {year}"
+    else:
+        period_label = "Consolidated Edition"
+
+    doc = build_combined_center_docx(center, period_label, depts_entries)
+
+    clean_center = center.replace(' ', '_')
+    clean_label = period_label.replace(' ', '_').replace('–', '-')
+    filename = f"{clean_center}_Combined_Newsletter_{clean_label}.docx"
+    file_path = os.path.join(GENERATED_DIR, filename)
+    doc.save(file_path)
+
+    return FileResponse(
+        path=file_path,
+        filename=filename,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
 
 
 @router.get("/{period_id}/generate-docx")

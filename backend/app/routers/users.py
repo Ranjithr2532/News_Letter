@@ -57,6 +57,30 @@ def list_users(
     return query.order_by(models.User.id.asc()).all()
 
 
+@router.get("/groups/list", response_model=List[str])
+def list_center_groups(center: Optional[str] = None, db: Session = Depends(get_db)):
+    group_set = set()
+    u_query = db.query(models.User.group).filter(models.User.group.isnot(None), models.User.group != "")
+    if center:
+        u_query = u_query.filter(models.User.center == center)
+    for row in u_query.distinct().all():
+        if row[0] and row[0].strip():
+            group_set.add(row[0].strip())
+
+    if center:
+        p_query = (
+            db.query(models.NewsletterPeriod.group_name)
+            .join(models.User, models.NewsletterPeriod.created_by == models.User.id)
+            .filter(models.User.center == center)
+        )
+        for row in p_query.distinct().all():
+            if row[0] and row[0].strip():
+                group_set.add(row[0].strip())
+
+    groups = sorted(list(group_set))
+    return groups
+
+
 @router.get("/{user_id}", response_model=schemas.UserRead)
 def get_user(user_id: int, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == user_id).first()

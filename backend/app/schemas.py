@@ -95,6 +95,8 @@ class PeriodRead(BaseModel):
     created_by: int
     created_at: datetime
     edit: Optional[bool] = True
+    creator_name: Optional[str] = None
+    center: Optional[str] = None
 
     class Config:
         from_attributes = True

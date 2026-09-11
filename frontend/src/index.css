@@ -438,6 +438,12 @@ body {
   border-color: rgba(168, 85, 247, 0.3);
 }
 
+.detail-value.role-badge.role-ch {
+  background-color: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
 .detail-value.role-badge.role-tech {
   background-color: rgba(20, 184, 166, 0.15);
   color: #14b8a6;

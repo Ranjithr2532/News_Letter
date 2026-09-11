@@ -98,3 +98,23 @@ def test_ensure_current_period_current_year_safety_guard(client, test_user):
         # Verify created period year matches current year 2026
         assert data["start_date"].startswith("2026")
         assert data["end_date"].startswith("2026")
+
+
+# ============================================================================
+# TEST 5: Center Combined DOCX Generation
+# ============================================================================
+def test_center_combined_docx_generation(client, test_user, db_session):
+    test_user.center = "SMPM"
+    db_session.commit()
+
+    with freeze_time("2026-09-10"):
+        res = client.post(
+            f"/periods/ensure-current?group_name={test_user.group_name}&created_by={test_user.id}"
+        )
+        assert res.status_code == 200
+
+        # Request combined docx for center SMPM
+        docx_res = client.get("/periods/center/generate-combined-docx?center=SMPM")
+        assert docx_res.status_code == 200
+        assert docx_res.headers["content-type"] == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+

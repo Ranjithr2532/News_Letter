@@ -39,6 +39,7 @@ const Layout = () => {
   if (!user) return null;
 
   const isGhUser = user.role?.toLowerCase() === 'gh';
+  const isChUser = user.role?.toLowerCase() === 'ch';
 
   // Compute initials (e.g., "VITHUN S N" -> "VN" or "VS")
   const getInitials = (name) => {
@@ -51,6 +52,7 @@ const Layout = () => {
   const formatRole = (role) => {
     if (!role) return 'Scientist';
     const lower = role.toLowerCase().trim();
+    if (lower === 'ch') return 'Centre Head (CH)';
     if (lower === 'gh') return 'Group Head (GH)';
     if (lower === 'scientist') return 'Scientist';
     if (lower === 'technical staff') return 'Technical Staff';
@@ -106,8 +108,8 @@ const Layout = () => {
         </div>
 
         <div className="topbar-right">
-          {/* Notification Bell */}
-          <NotificationBell />
+          {/* Notification Bell (for GH and Scientists, not CH) */}
+          {!isChUser && <NotificationBell />}
 
           {/* Profile Avatar Button with Hover/Click Popover */}
           <div
@@ -163,7 +165,9 @@ const Layout = () => {
                       </span>
                       <span
                         className={`detail-value role-badge ${
-                          isGhUser
+                          isChUser
+                            ? 'role-ch'
+                            : isGhUser
                             ? 'role-gh'
                             : isUserTech
                             ? 'role-tech'

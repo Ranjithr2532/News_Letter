@@ -9,13 +9,16 @@ const DeadlineModal = () => {
   const [showModal, setShowModal] = useState(false);
   const [markingRead, setMarkingRead] = useState(false);
 
+  const isChUser = user?.role?.toLowerCase() === 'ch';
+
   useEffect(() => {
-    if (user?.id) {
+    if (user?.id && !isChUser) {
       checkUnreadNotifications();
     }
-  }, [user?.id]);
+  }, [user?.id, isChUser]);
 
   const checkUnreadNotifications = async () => {
+    if (isChUser) return;
     try {
       const res = await api.get(`/notifications/?user_id=${user.id}&unread_only=true`);
       const unreadList = res.data || [];
@@ -49,7 +52,7 @@ const DeadlineModal = () => {
     }
   };
 
-  if (!showModal || !activeNotif) return null;
+  if (isChUser || !showModal || !activeNotif) return null;
 
   const isGhUrgent = activeNotif.notification_type === 'GH_FINALIZE';
 

@@ -45,9 +45,10 @@ const Categories = () => {
   const [downloading, setDownloading] = useState(false);
   const [downloadingCategoryId, setDownloadingCategoryId] = useState(null);
 
+  const isChUser = user?.role?.trim().toLowerCase() === 'ch';
   const isGhUser = user?.role?.trim().toLowerCase() === 'gh';
-  const isViewOnly = period?.edit === false;
-  const canViewAll = isGhUser || isViewOnly;
+  const isViewOnly = isChUser || period?.edit === false;
+  const canViewAll = isChUser || isGhUser || isViewOnly;
 
   // Accordion state: ID of currently expanded category (only one expanded at a time)
   const [expandedCategoryId, setExpandedCategoryId] = useState(null);
@@ -594,14 +595,38 @@ const Categories = () => {
             <span>Department:</span>
             <span className="group-badge-hero">
               <IconUsersGroup size={13} />
-              {user.group || user.group_name || 'General'}
+              {period?.group_name || user.group || user.group_name || 'General'}
             </span>
+            {isChUser && (
+              <>
+                <span>•</span>
+                <span>Center:</span>
+                <span
+                  style={{
+                    backgroundColor: '#fffbeb',
+                    color: '#b45309',
+                    border: '1px solid #fde68a',
+                    padding: '2px 8px',
+                    borderRadius: '8px',
+                    fontSize: '0.78rem',
+                    fontWeight: '700',
+                  }}
+                >
+                  {user.center || 'Center'} (CH Oversight)
+                </span>
+              </>
+            )}
             <span>•</span>
             <span>Status:</span>
-            {isViewOnly ? (
+            {period?.edit === false ? (
               <span className="status-badge-finalized">
                 <IconLock size={12} />
                 <span>Finalized (View-Only)</span>
+              </span>
+            ) : isChUser ? (
+              <span className="status-badge-open" style={{ backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }}>
+                <IconEye size={12} />
+                <span>CH Review Mode (Open)</span>
               </span>
             ) : (
               <span className="status-badge-open">
