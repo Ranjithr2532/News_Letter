@@ -13,8 +13,12 @@ def create_entry(payload: schemas.EntryCreate, db: Session = Depends(get_db)):
     if period and period.edit is False:
         raise HTTPException(status_code=400, detail="This newsletter period has been finalized and is read-only.")
 
+    group_name = payload.group_name or (period.group_name if period else None) or "General"
+    entry_data = payload.model_dump()
+    entry_data["group_name"] = group_name
+
     entry = models.NewsletterEntry(
-        **payload.model_dump(),
+        **entry_data,
         updated_by=payload.created_by,  # on creation, updated_by = same as created_by
     )
     db.add(entry)

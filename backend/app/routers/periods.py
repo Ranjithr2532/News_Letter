@@ -123,6 +123,7 @@ def delete_period(period_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"detail": "Period deleted"}
 
+import io
 from PIL import Image
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Inches, Pt, RGBColor
@@ -177,22 +178,42 @@ def build_newsletter_docx(period_title: str, entries: list) -> Document:
                     img_p = doc.add_paragraph()
                     img_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-                    # Uniform standardized bounding box: Max Width 4.8", Max Height 3.2"
+                    # Uniform standardized dimensions: 4.8 inches width x 3.2 inches height
+                    target_w_in, target_h_in = 4.8, 3.2
+                    target_px_w, target_px_h = 1200, 800
+                    target_aspect = target_px_w / target_px_h
+
                     with Image.open(photo_file) as img:
+                        if img.mode in ("RGBA", "P"):
+                            img = img.convert("RGB")
+
                         w, h = img.size
+                        aspect = (w / h) if h > 0 else 1.0
 
-                    max_w = 4.8  # inches
-                    max_h = 3.2  # inches
+                        if aspect > target_aspect:
+                            new_w = int(h * target_aspect)
+                            left = (w - new_w) // 2
+                            img_cropped = img.crop((left, 0, left + new_w, h))
+                        else:
+                            new_h = int(w / target_aspect)
+                            top = (h - new_h) // 2
+                            img_cropped = img.crop((0, top, w, top + new_h))
 
-                    aspect = (w / h) if h > 0 else 1.0
+                        resample_filter = getattr(Image, 'Resampling', Image).LANCZOS
+                        img_resized = img_cropped.resize((target_px_w, target_px_h), resample_filter)
 
-                    if aspect >= (max_w / max_h):
-                        img_p.add_run().add_picture(photo_file, width=Inches(max_w))
-                    else:
-                        img_p.add_run().add_picture(photo_file, height=Inches(max_h))
+                        img_buf = io.BytesIO()
+                        img_resized.save(img_buf, format="JPEG", quality=95)
+                        img_buf.seek(0)
+
+                    img_p.add_run().add_picture(img_buf, width=Inches(target_w_in), height=Inches(target_h_in))
 
                 except Exception as e:
-                    print(f"Error adding picture {photo_file}: {e}")
+                    print(f"Error processing picture {photo_file}: {e}")
+                    try:
+                        img_p.add_run().add_picture(photo_file, width=Inches(4.8), height=Inches(3.2))
+                    except Exception as fallback_err:
+                        print(f"Fallback picture insertion failed for {photo_file}: {fallback_err}")
 
         doc.add_paragraph("")  # spacing
         entry_counter += 1
@@ -208,8 +229,11 @@ def generate_docx(period_id: int, created_by: Optional[int] = None, db: Session 
 
     categories = (
         db.query(models.CategoryStage)
-        .filter(models.CategoryStage.is_active == True)
-        .order_by(models.CategoryStage.stage_number.asc())
+        .filter(
+            models.CategoryStage.is_active == True,
+            (models.CategoryStage.period_id == None) | (models.CategoryStage.period_id == period_id),
+        )
+        .order_by(models.CategoryStage.stage_number.asc(), models.CategoryStage.id.asc())
         .all()
     )
 
@@ -332,3 +356,35 @@ def ensure_current_period(group_name: str, created_by: int, db: Session = Depend
     db.commit()
     db.refresh(period)
     return period
+
+
+@router.get("/{period_id}/contributors")
+def get_period_contributors(period_id: int, db: Session = Depends(get_db)):
+    """Returns the list of members who actually contributed/created entries in this period."""
+    entries = db.query(models.NewsletterEntry).filter(models.NewsletterEntry.period_id == period_id).all()
+    user_ids = set()
+    entry_counts = {}
+    for entry in entries:
+        if entry.created_by:
+            user_ids.add(entry.created_by)
+            entry_counts[entry.created_by] = entry_counts.get(entry.created_by, 0) + 1
+
+    if not user_ids:
+        return []
+
+    users = db.query(models.User).filter(models.User.id.in_(user_ids)).all()
+    contributors = []
+    for u in users:
+        contributors.append({
+            "id": u.id,
+            "name": u.name,
+            "email": u.email,
+            "designation": u.designation,
+            "role": u.role,
+            "group": getattr(u, "group_name", None) or u.group,
+            "entry_count": entry_counts.get(u.id, 0),
+        })
+
+    # Sort descending by number of entries, then alphabetically by name
+    contributors.sort(key=lambda item: (-item["entry_count"], item["name"] or ""))
+    return contributors

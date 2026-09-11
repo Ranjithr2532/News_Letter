@@ -117,7 +117,7 @@ class PhotoRead(BaseModel):
 # ---------- Newsletter Entry ----------
 class EntryCreate(BaseModel):
     period_id: int
-    group_name: str
+    group_name: Optional[str] = None
     category_id: int
     title: str
     description: Optional[str] = None
