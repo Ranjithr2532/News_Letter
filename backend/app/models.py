@@ -110,3 +110,19 @@ class EntryEditHistory(Base):
     edited_at = Column(DateTime(timezone=True), server_default=func.now())
 
     entry = relationship("NewsletterEntry", back_populates="history")
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    period_id = Column(Integer, ForeignKey("newsletter_periods.id", ondelete="CASCADE"), nullable=False)
+    title = Column(String(255), nullable=False)
+    message = Column(Text, nullable=False)
+    notification_type = Column(String(50), nullable=False)  # "USER_DEADLINE", "GH_FINALIZE", "GH_URGENT"
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User", backref="notifications")
+    period = relationship("NewsletterPeriod")

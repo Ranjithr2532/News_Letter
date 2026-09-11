@@ -27,6 +27,7 @@ import {
   IconUser,
   IconFilter,
   IconUserCheck,
+  IconAlertCircle,
 } from '@tabler/icons-react';
 
 const Categories = () => {
@@ -87,6 +88,9 @@ const Categories = () => {
   // Photo Lightbox modal
   const [previewPhoto, setPreviewPhoto] = useState(null);
 
+  // Deadline Warning Banner state
+  const [deadlineWarning, setDeadlineWarning] = useState(false);
+
   useEffect(() => {
     if (!user) {
       navigate('/');
@@ -100,6 +104,18 @@ const Categories = () => {
     try {
       const res = await api.get(`/periods/${periodId}`);
       setPeriod(res.data);
+      if (res.data && res.data.edit === true && res.data.end_date) {
+        const endDateParts = res.data.end_date.split('-');
+        if (endDateParts.length === 3) {
+          const endDate = new Date(endDateParts[0], endDateParts[1] - 1, endDateParts[2]);
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const diffDays = Math.ceil((endDate - today) / (1000 * 60 * 60 * 24));
+          if (diffDays <= 4 && diffDays >= 0) {
+            setDeadlineWarning(true);
+          }
+        }
+      }
     } catch (err) {
       console.error('Failed to fetch period details:', err);
     }
@@ -485,12 +501,7 @@ const Categories = () => {
       if (!canViewAll && user?.id) {
         setSelectedContributorId(user.id);
       } else {
-        if (allContribs.length > 0) {
-          const contribWithEntries = allContribs.find((c) => c.entry_count > 0);
-          setSelectedContributorId(contribWithEntries ? contribWithEntries.id : allContribs[0].id);
-        } else {
-          setSelectedContributorId(user?.id || null);
-        }
+        setSelectedContributorId('all');
       }
     } catch (err) {
       console.error('Failed to load preview details:', err);
@@ -664,7 +675,43 @@ const Categories = () => {
         </div>
       </div>
 
-      {/* 3. Finalized Notice Banner (if applicable) */}
+      {/* 3. Deadline Warning Banner (if within 2 days of period end_date) */}
+      {/* {!isViewOnly && deadlineWarning && (
+        <div
+          style={{
+            backgroundColor: '#fffbe6',
+            border: '1px solid #ffe58f',
+            borderRadius: '12px',
+            padding: '14px 18px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '14px',
+            marginBottom: '16px',
+            boxShadow: '0 2px 8px rgba(217, 119, 6, 0.1)',
+          }}
+        >
+        
+          <button
+            type="button"
+            onClick={() => setDeadlineWarning(false)}
+            style={{
+              padding: '6px 12px',
+              borderRadius: '6px',
+              backgroundColor: '#ffffff',
+              border: '1px solid #fde68a',
+              color: '#92400e',
+              fontSize: '0.8rem',
+              fontWeight: '600',
+              cursor: 'pointer',
+            }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )} */}
+
+      {/* 4. Finalized Notice Banner (if applicable) */}
       {isViewOnly && (
         <div
           style={{
@@ -1647,7 +1694,7 @@ const Categories = () => {
                       ? (previewCategory ? `${previewCategory.name} — Category Preview` : 'Newsletter Document Preview')
                       : (previewCategory ? `${previewCategory.name} — My Entries Preview` : 'My Newsletter Entries Preview')}
                   </h3>
-                  <p style={{ margin: '2px 0 0 0', fontSize: '0.8rem', color: '#64748b' }}>
+                  {/* <p style={{ margin: '2px 0 0 0', fontSize: '0.8rem', color: '#64748b' }}>
                     {canViewAll
                       ? (previewCategory
                         ? `Previewing formatted entries and contributors specifically for ${previewCategory.name}`
@@ -1655,7 +1702,7 @@ const Categories = () => {
                       : (previewCategory
                         ? `Previewing your submitted entries in ${previewCategory.name}`
                         : 'Previewing your formatted newsletter entries matching the exported Word (.docx) document')}
-                  </p>
+                  </p> */}
                 </div>
               </div>
 
@@ -1704,7 +1751,7 @@ const Categories = () => {
                   }}
                 >
                   <IconFilter size={14} style={{ color: '#2563eb' }} />
-                  <span>{canViewAll ? 'Filter by Contributor:' : 'My Contributed Entries:'}</span>
+                  <span>{canViewAll ? 'Filter by Contributor:' : 'My Entries:'}</span>
                 </span>
                 <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
                   {canViewAll
@@ -1736,6 +1783,45 @@ const Categories = () => {
                     padding: '2px 0',
                   }}
                 >
+                  {/* "All Contributions" Pill — available for GH / canViewAll users */}
+                  {canViewAll && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedContributorId('all')}
+                      style={{
+                        padding: '6px 14px',
+                        borderRadius: '20px',
+                        fontSize: '0.82rem',
+                        fontWeight: '600',
+                        border: selectedContributorId === 'all' || !selectedContributorId ? '1.5px solid #2563eb' : '1px solid #cbd5e1',
+                        backgroundColor: selectedContributorId === 'all' || !selectedContributorId ? '#eff6ff' : '#ffffff',
+                        color: selectedContributorId === 'all' || !selectedContributorId ? '#1d4ed8' : '#334155',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        transition: 'all 0.15s ease',
+                        boxShadow: selectedContributorId === 'all' || !selectedContributorId ? '0 1px 4px rgba(37,99,235,0.2)' : 'none',
+                      }}
+                      title="View all combined contributions from all members"
+                    >
+                      <IconUsersGroup size={14} style={{ color: selectedContributorId === 'all' || !selectedContributorId ? '#2563eb' : '#64748b' }} />
+                      <span>All Contributions</span>
+                      <span
+                        style={{
+                          padding: '1px 6px',
+                          borderRadius: '10px',
+                          backgroundColor: selectedContributorId === 'all' || !selectedContributorId ? '#bfdbfe' : '#f1f5f9',
+                          color: selectedContributorId === 'all' || !selectedContributorId ? '#1e40af' : '#64748b',
+                          fontSize: '0.72rem',
+                          fontWeight: '700',
+                        }}
+                      >
+                        {previewEntries.length}
+                      </span>
+                    </button>
+                  )}
+
                   {/* Individual Contributor Pills — show active contributors for GH, or self for member */}
                   {contributors.map((c) => {
                     const isSelected = selectedContributorId === c.id;
@@ -1887,16 +1973,16 @@ const Categories = () => {
                           border: '1px solid #bfdbfe',
                         }}
                       >
-                        Contributor: {contributors.find((c) => c.id === Number(selectedContributorId))?.name || user?.name || 'Contributor'}
+                        Contributor: {selectedContributorId === 'all' || !selectedContributorId ? 'All Contributions' : (contributors.find((c) => c.id === Number(selectedContributorId))?.name || user?.name || 'Contributor')}
                       </span>
                     </div>
                   </div>
 
                   {/* Render Entries Grouped by Category */}
                   {(() => {
-                    const activeEntries = selectedContributorId
+                    const activeEntries = (selectedContributorId && selectedContributorId !== 'all')
                       ? previewEntries.filter((e) => e.created_by === Number(selectedContributorId))
-                      : [];
+                      : previewEntries;
 
                     if (activeEntries.length === 0) {
                       return (

@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.database import engine, Base
 from app import models
-from app.routers import users, periods, categories, entries, photos
+from app.routers import users, periods, categories, entries, photos, notifications
 
 # Creates all tables in Postgres if they don't already exist
 Base.metadata.create_all(bind=engine)
@@ -36,8 +36,9 @@ app.include_router(periods.router, prefix="/periods", tags=["Periods"])
 app.include_router(categories.router, prefix="/categories", tags=["Categories"])
 app.include_router(entries.router, prefix="/entries", tags=["Entries"])
 app.include_router(photos.router, prefix="/photos", tags=["Photos"])
+app.include_router(notifications.router, prefix="/notifications", tags=["Notifications"])
 
 
 @app.get("/")
 def root():
-    return {"status": "Newsletter Builder API running"}
+    return {"status": "Newsletter Builder API running"}

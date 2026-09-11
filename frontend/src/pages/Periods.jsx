@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/api';
 import { useUser } from '../context/UserContext';
+import DeadlineModal from '../components/DeadlineModal';
 import {
   IconChevronRight,
   IconDownload,
@@ -37,6 +38,12 @@ const Periods = () => {
   // Finalize popup state (for GH role)
   const [finalizeModalPeriod, setFinalizeModalPeriod] = useState(null);
   const [submittingFinalize, setSubmittingFinalize] = useState(false);
+
+  // Download options popup state
+  const [downloadModalPeriod, setDownloadModalPeriod] = useState(null);
+  const [periodContributors, setPeriodContributors] = useState([]);
+  const [selectedContributorId, setSelectedContributorId] = useState('');
+  const [loadingContributors, setLoadingContributors] = useState(false);
 
   // Defaults to current year (e.g. '2026') on mount
   const [filterMode, setFilterMode] = useState(currentYearStr);
@@ -121,25 +128,59 @@ const Periods = () => {
     }
   };
 
-  const handleDownloadDocx = async (e, period) => {
-    e.stopPropagation();
+  const handleOpenDownloadModal = async (e, period) => {
+    if (e) e.stopPropagation();
+    setDownloadModalPeriod(period);
+    setSelectedContributorId('');
+    setLoadingContributors(true);
+    try {
+      const res = await api.get(`/periods/${period.id}/contributors`);
+      setPeriodContributors(res.data || []);
+    } catch (err) {
+      console.error('Failed to fetch period contributors:', err);
+      setPeriodContributors([]);
+    } finally {
+      setLoadingContributors(false);
+    }
+  };
+
+  const executeDownloadDocx = async () => {
+    if (!downloadModalPeriod) return;
+    const period = downloadModalPeriod;
     setDownloadingId(period.id);
     try {
-      const response = await api.get(`/periods/${period.id}/generate-docx`, {
+      let url = `/periods/${period.id}/generate-docx`;
+      if (selectedContributorId) {
+        url += `?created_by=${selectedContributorId}`;
+      }
+      const response = await api.get(url, {
         responseType: 'blob',
       });
       const blob = new Blob([response.data], {
         type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       });
-      const url = window.URL.createObjectURL(blob);
+      const downloadUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.href = url;
-      const filename = `${period.title.replace(/\s+/g, '_')}.docx`;
+      link.href = downloadUrl;
+
+      let userSuffix = '';
+      if (selectedContributorId) {
+        const found = periodContributors.find(
+          (c) => String(c.id) === String(selectedContributorId)
+        );
+        if (found) {
+          const cName = (found.name || found.email).replace(/\s+/g, '_');
+          userSuffix = `_${cName}`;
+        }
+      }
+
+      const filename = `${period.title.replace(/\s+/g, '_')}${userSuffix}.docx`;
       link.setAttribute('download', filename);
       document.body.appendChild(link);
       link.click();
       link.remove();
-      window.URL.revokeObjectURL(url);
+      window.URL.revokeObjectURL(downloadUrl);
+      setDownloadModalPeriod(null);
     } catch (err) {
       console.error('Failed to download docx:', err);
       alert('Failed to download newsletter.');
@@ -314,7 +355,7 @@ const Periods = () => {
             <button
               type="button"
               className="action-icon-btn download"
-              onClick={(e) => handleDownloadDocx(e, period)}
+              onClick={(e) => handleOpenDownloadModal(e, period)}
               title="Download newsletter (.docx)"
               disabled={isDownloading}
               aria-label="Download newsletter docx"
@@ -890,6 +931,254 @@ const Periods = () => {
           </div>
         </div>
       )}
+
+      {/* Download Selection Modal */}
+      {downloadModalPeriod && (
+        <div
+          className="modal-backdrop"
+          onClick={() => !downloadingId && setDownloadModalPeriod(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '20px',
+          }}
+        >
+          <div
+            className="modal-card"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: '#ffffff',
+              borderRadius: '16px',
+              maxWidth: '480px',
+              width: '100%',
+              boxShadow:
+                '0 24px 38px -6px rgba(0, 0, 0, 0.18), 0 10px 14px -6px rgba(0, 0, 0, 0.08)',
+              overflow: 'hidden',
+              border: '1px solid #e2e8f0',
+              animation: 'profilePopIn 0.18s ease-out',
+            }}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                padding: '18px 22px',
+                borderBottom: '1px solid #f1f5f9',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+                color: '#ffffff',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div
+                  style={{
+                    width: '34px',
+                    height: '34px',
+                    borderRadius: '10px',
+                    backgroundColor: 'rgba(56, 189, 248, 0.15)',
+                    color: '#38bdf8',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                    border: '1px solid rgba(56, 189, 248, 0.3)',
+                  }}
+                >
+                  <IconDownload size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', color: '#f8fafc', fontWeight: '700' }}>
+                    Download Word Document (.docx)
+                  </h3>
+                  <span style={{ fontSize: '0.76rem', color: '#94a3b8' }}>
+                    Export newsletter entries to Word format
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => !downloadingId && setDownloadModalPeriod(null)}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  cursor: 'pointer',
+                  color: '#cbd5e1',
+                  padding: '6px',
+                  borderRadius: '8px',
+                  display: 'flex',
+                }}
+              >
+                <IconX size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '22px' }}>
+              <div
+                style={{
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '10px',
+                  padding: '12px 14px',
+                  marginBottom: '18px',
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: '0.72rem',
+                    fontWeight: '700',
+                    color: '#64748b',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  Target Period
+                </span>
+                <h4 style={{ margin: '4px 0 0 0', color: '#0f172a', fontSize: '0.94rem' }}>
+                  {downloadModalPeriod.title}
+                </h4>
+              </div>
+
+              {/* Selection Options */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <label
+                  style={{
+                    fontSize: '0.84rem',
+                    fontWeight: '700',
+                    color: '#0f172a',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <IconFilter size={15} style={{ color: '#2563eb' }} />
+                  <span>Select Contributor Filter:</span>
+                </label>
+
+                {loadingContributors ? (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '12px',
+                      color: '#64748b',
+                      fontSize: '0.85rem',
+                    }}
+                  >
+                    <IconLoader2 size={16} className="animate-spin text-blue-600" />
+                    <span>Loading contributors...</span>
+                  </div>
+                ) : (
+                  <select
+                    value={selectedContributorId}
+                    onChange={(e) => setSelectedContributorId(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '0.9rem',
+                      fontWeight: '600',
+                      color: '#0f172a',
+                      backgroundColor: '#ffffff',
+                      cursor: 'pointer',
+                      outline: 'none',
+                    }}
+                  >
+                    <option value="">🌐 All Members (Full Newsletter — {periodContributors.reduce((sum, c) => sum + (c.entry_count || 0), 0)} entries)</option>
+                    {periodContributors.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        👤 {c.name || c.email} ({c.entry_count} {c.entry_count === 1 ? 'entry' : 'entries'})
+                      </option>
+                    ))}
+                  </select>
+                )}
+
+                <span style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '2px' }}>
+                  {selectedContributorId === ''
+                    ? "Exporting full combined document with all members' entries."
+                    : 'Exporting document containing only entries created by the selected contributor.'}
+                </span>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div
+              style={{
+                padding: '14px 22px',
+                borderTop: '1px solid #f1f5f9',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                gap: '10px',
+                backgroundColor: '#f8fafc',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setDownloadModalPeriod(null)}
+                disabled={!!downloadingId}
+                style={{
+                  padding: '8px 18px',
+                  fontSize: '0.86rem',
+                  fontWeight: '600',
+                  borderRadius: '8px',
+                  backgroundColor: '#ffffff',
+                  border: '1px solid #cbd5e1',
+                  color: '#475569',
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={executeDownloadDocx}
+                disabled={!!downloadingId || loadingContributors}
+                style={{
+                  padding: '8px 20px',
+                  fontSize: '0.86rem',
+                  fontWeight: '700',
+                  borderRadius: '8px',
+                  background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                  border: 'none',
+                  color: '#ffffff',
+                  cursor: downloadingId ? 'not-allowed' : 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: '0 2px 8px rgba(37, 99, 235, 0.3)',
+                  opacity: downloadingId ? 0.75 : 1,
+                }}
+              >
+                {downloadingId ? (
+                  <>
+                    <IconLoader2 size={16} className="animate-spin" />
+                    <span>Generating Doc...</span>
+                  </>
+                ) : (
+                  <>
+                    <IconDownload size={16} />
+                    <span>Download (.docx)</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Deadline Reminder Modal Popup (Presented on First Page After Login) */}
+      <DeadlineModal />
     </div>
   );
 };

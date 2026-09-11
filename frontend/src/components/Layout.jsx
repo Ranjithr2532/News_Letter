@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useUser } from '../context/UserContext';
+import NotificationBell from './NotificationBell';
 import {
   IconCalendar,
   IconSettings,
@@ -105,6 +106,9 @@ const Layout = () => {
         </div>
 
         <div className="topbar-right">
+          {/* Notification Bell */}
+          <NotificationBell />
+
           {/* Profile Avatar Button with Hover/Click Popover */}
           <div
             className="profile-menu-container"

@@ -256,7 +256,17 @@ def generate_docx(period_id: int, created_by: Optional[int] = None, db: Session 
     file_path = os.path.join(GENERATED_DIR, f"newsletter_period_{period_id}.docx")
     doc.save(file_path)
 
-    clean_filename = f"{period.title.replace(' ', '_')}.docx"
+    clean_title = period.title.replace(' ', '_')
+    if created_by is not None:
+        user_obj = db.query(models.User).filter(models.User.id == created_by).first()
+        if user_obj and (user_obj.name or user_obj.email):
+            user_name_clean = (user_obj.name or user_obj.email).replace(' ', '_')
+            clean_filename = f"{clean_title}_{user_name_clean}.docx"
+        else:
+            clean_filename = f"{clean_title}_user_{created_by}.docx"
+    else:
+        clean_filename = f"{clean_title}.docx"
+
     return FileResponse(
         path=file_path,
         filename=clean_filename,
