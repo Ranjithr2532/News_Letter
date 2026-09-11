@@ -159,13 +159,26 @@ def build_newsletter_docx(period_title: str, entries: list) -> Document:
                 r.font.color.rgb = RGBColor(0, 0, 0)
 
         for photo in entry.photos:
-            if photo.file_path and os.path.exists(photo.file_path):
+            if not photo.file_path:
+                continue
+
+            photo_file = photo.file_path
+            if not os.path.exists(photo_file):
+                filename_only = os.path.basename(photo.file_path)
+                d_path = os.path.join(r"D:\Newsletter_Uploads", filename_only)
+                local_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "uploads", filename_only)
+                if os.path.exists(d_path):
+                    photo_file = d_path
+                elif os.path.exists(local_path):
+                    photo_file = local_path
+
+            if os.path.exists(photo_file):
                 try:
                     img_p = doc.add_paragraph()
                     img_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
                     # Uniform standardized bounding box: Max Width 4.8", Max Height 3.2"
-                    with Image.open(photo.file_path) as img:
+                    with Image.open(photo_file) as img:
                         w, h = img.size
 
                     max_w = 4.8  # inches
@@ -174,12 +187,12 @@ def build_newsletter_docx(period_title: str, entries: list) -> Document:
                     aspect = (w / h) if h > 0 else 1.0
 
                     if aspect >= (max_w / max_h):
-                        img_p.add_run().add_picture(photo.file_path, width=Inches(max_w))
+                        img_p.add_run().add_picture(photo_file, width=Inches(max_w))
                     else:
-                        img_p.add_run().add_picture(photo.file_path, height=Inches(max_h))
+                        img_p.add_run().add_picture(photo_file, height=Inches(max_h))
 
                 except Exception as e:
-                    print(f"Error adding picture {photo.file_path}: {e}")
+                    print(f"Error adding picture {photo_file}: {e}")
 
         doc.add_paragraph("")  # spacing
         entry_counter += 1

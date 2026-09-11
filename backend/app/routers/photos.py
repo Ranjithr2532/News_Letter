@@ -9,7 +9,13 @@ from app import models, schemas
 
 router = APIRouter()
 
-UPLOAD_DIR = "uploads"
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+D_DRIVE_DIR = r"D:\Newsletter_Uploads"
+if os.path.exists(D_DRIVE_DIR):
+    UPLOAD_DIR = D_DRIVE_DIR
+else:
+    UPLOAD_DIR = os.path.join(os.path.dirname(BASE_DIR), "uploads")
+
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
