@@ -61,13 +61,13 @@ def list_users(
 def list_center_groups(center: Optional[str] = None, db: Session = Depends(get_db)):
     group_set = set()
     u_query = db.query(models.User.group).filter(models.User.group.isnot(None), models.User.group != "")
-    if center:
+    if center and center.strip().lower() not in ("all", "all centers", "", "undefined", "null"):
         u_query = u_query.filter(models.User.center == center)
     for row in u_query.distinct().all():
         if row[0] and row[0].strip():
             group_set.add(row[0].strip())
 
-    if center:
+    if center and center.strip().lower() not in ("all", "all centers", "", "undefined", "null"):
         p_query = (
             db.query(models.NewsletterPeriod.group_name)
             .join(models.User, models.NewsletterPeriod.created_by == models.User.id)
@@ -76,9 +76,30 @@ def list_center_groups(center: Optional[str] = None, db: Session = Depends(get_d
         for row in p_query.distinct().all():
             if row[0] and row[0].strip():
                 group_set.add(row[0].strip())
+    else:
+        p_query = db.query(models.NewsletterPeriod.group_name)
+        for row in p_query.distinct().all():
+            if row[0] and row[0].strip():
+                group_set.add(row[0].strip())
 
     groups = sorted(list(group_set))
     return groups
+
+
+@router.get("/centers/list", response_model=List[str])
+def list_centers(db: Session = Depends(get_db)):
+    center_set = set()
+    for row in db.query(models.User.center).filter(models.User.center.isnot(None), models.User.center != "").distinct().all():
+        if row[0] and row[0].strip():
+            center_set.add(row[0].strip())
+    centers = sorted(list(center_set))
+    return centers
+
+
+@router.get("/chs/list", response_model=List[schemas.UserRead])
+def list_centre_heads(db: Session = Depends(get_db)):
+    chs = db.query(models.User).filter(models.User.role.ilike("ch")).order_by(models.User.center.asc(), models.User.name.asc()).all()
+    return chs
 
 
 @router.get("/{user_id}", response_model=schemas.UserRead)

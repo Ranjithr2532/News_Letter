@@ -13,16 +13,17 @@ const NotificationBell = () => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
 
+  const isAdmin = user?.role?.toLowerCase() === 'admin';
   const isChUser = user?.role?.toLowerCase() === 'ch';
 
   useEffect(() => {
-    if (user?.id && !isChUser) {
+    if (user?.id && !isAdmin && !isChUser) {
       fetchNotifications();
       // Interval poll every 30 seconds to fetch fresh notifications dynamically
       const interval = setInterval(fetchNotifications, 30000);
       return () => clearInterval(interval);
     }
-  }, [user?.id, isChUser]);
+  }, [user?.id, isAdmin, isChUser]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {

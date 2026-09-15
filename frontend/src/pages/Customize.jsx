@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/api';
 import { useUser } from '../context/UserContext';
@@ -19,22 +19,28 @@ import {
   IconX,
   IconFolderPlus,
   IconAdjustments,
+  IconFilter,
+  IconRotateClockwise,
+  IconLock,
 } from '@tabler/icons-react';
 
 const Customize = () => {
   const { user } = useUser();
   const navigate = useNavigate();
 
-  // Role Guard: Redirect non-GH users immediately
+  const isAdmin = user?.role?.toLowerCase() === 'admin';
+  const isGhUser = user?.role?.toLowerCase() === 'gh';
+
+  // Role Guard: Redirect non-GH and non-Admin users immediately
   useEffect(() => {
     if (!user) {
       navigate('/');
-    } else if (user.role?.toLowerCase() !== 'gh') {
+    } else if (!isAdmin && !isGhUser) {
       navigate('/periods');
     }
-  }, [user, navigate]);
+  }, [user, isAdmin, isGhUser, navigate]);
 
-  // Active Tab: 'users' or 'categories'
+  // Active Tab: 'users' | 'categories' | 'directory'
   const [activeTab, setActiveTab] = useState('users');
 
   // Section A: User Form States
@@ -44,11 +50,19 @@ const Customize = () => {
   const [userDesignation, setUserDesignation] = useState('');
   const [userRoleSelect, setUserRoleSelect] = useState('scientist');
   const [customRoleText, setCustomRoleText] = useState('');
+  const [adminUserCenter, setAdminUserCenter] = useState('');
+  const [adminUserGroup, setAdminUserGroup] = useState('');
   const [userSubmitting, setUserSubmitting] = useState(false);
   const [userSuccessMsg, setUserSuccessMsg] = useState('');
   const [userErrorMsg, setUserErrorMsg] = useState('');
 
-  // Group Users List state
+  // Admin Oversight: Centers, CHs & Filters
+  const [allCenters, setAllCenters] = useState([]);
+  const [allChs, setAllChs] = useState([]);
+  const [filterCenter, setFilterCenter] = useState('all');
+  const [filterRole, setFilterRole] = useState('all');
+
+  // Users List state
   const [groupUsers, setGroupUsers] = useState([]);
   const [usersLoading, setUsersLoading] = useState(false);
 
@@ -68,21 +82,63 @@ const Customize = () => {
   const [editCatStage, setEditCatStage] = useState(0);
 
   useEffect(() => {
-    if (user && user.role?.toLowerCase() === 'gh') {
+    if (user && (isAdmin || isGhUser)) {
       fetchCategories();
-      fetchGroupUsers();
+      fetchUsers('all', 'all');
+      if (isAdmin) {
+        fetchAdminMeta();
+      }
     }
-  }, [user]);
+  }, [user, isAdmin, isGhUser]);
 
-  const fetchGroupUsers = async () => {
-    const userGroup = user?.group || user?.group_name;
-    if (!userGroup) return;
+  const fetchAdminMeta = async () => {
+    try {
+      const [cRes, chRes] = await Promise.all([
+        api.get('/users/centers/list'),
+        api.get('/users/chs/list'),
+      ]);
+      const centers = cRes.data || [];
+      setAllCenters(centers);
+      setAllChs(chRes.data || []);
+      if (centers.length > 0 && !adminUserCenter) {
+        setAdminUserCenter(centers[0]);
+      }
+    } catch (err) {
+      console.error('Failed to fetch admin metadata:', err);
+    }
+  };
+
+  const chMapByCenter = useMemo(() => {
+    const map = {};
+    allChs.forEach((ch) => {
+      if (ch.center) map[ch.center] = ch;
+    });
+    return map;
+  }, [allChs]);
+
+  const fetchUsers = async (center = filterCenter, role = filterRole) => {
     setUsersLoading(true);
     try {
-      const res = await api.get(`/users/?group=${encodeURIComponent(userGroup)}`);
-      setGroupUsers(res.data);
+      if (isAdmin) {
+        let url = '/users/?';
+        const params = [];
+        if (center && center !== 'all') {
+          params.push(`center=${encodeURIComponent(center)}`);
+        }
+        if (role && role !== 'all') {
+          params.push(`role=${encodeURIComponent(role)}`);
+        }
+        url += params.join('&');
+        const res = await api.get(url);
+        setGroupUsers(res.data || []);
+      } else {
+        const userGroup = user?.group || user?.group_name;
+        if (!userGroup) return;
+        const res = await api.get(`/users/?group=${encodeURIComponent(userGroup)}`);
+        setGroupUsers(res.data || []);
+      }
     } catch (err) {
-      console.error('Failed to fetch group users:', err);
+      console.error('Failed to fetch users:', err);
     } finally {
       setUsersLoading(false);
     }
@@ -93,7 +149,7 @@ const Customize = () => {
     setCatError('');
     try {
       const res = await api.get('/categories/');
-      setCategories(res.data);
+      setCategories(res.data || []);
       if (res.data && res.data.length > 0) {
         const maxStage = Math.max(...res.data.map((c) => c.stage_number || 0));
         setNewCatStage(maxStage + 1);
@@ -121,6 +177,14 @@ const Customize = () => {
         ? (customRoleText.trim() || 'scientist')
         : userRoleSelect;
 
+    const assignedCenter = isAdmin
+      ? (adminUserCenter.trim() || user.center || 'Main')
+      : user.center;
+
+    const assignedGroup = isAdmin
+      ? (adminUserGroup.trim() || 'General')
+      : (user.group || user.group_name || 'General');
+
     setUserSubmitting(true);
     try {
       await api.post('/users/', {
@@ -129,9 +193,9 @@ const Customize = () => {
         password: userPassword.trim(),
         designation: userDesignation.trim() || null,
         role: effectiveRole,
-        center: user.center,
-        group: user.group || user.group_name,
-        group_name: user.group || user.group_name,
+        center: assignedCenter,
+        group: assignedGroup,
+        group_name: assignedGroup,
       });
 
       setUserSuccessMsg(`User "${userName.trim()}" (${formatRole(effectiveRole)}) created successfully!`);
@@ -141,7 +205,13 @@ const Customize = () => {
       setUserDesignation('');
       setUserRoleSelect('scientist');
       setCustomRoleText('');
-      fetchGroupUsers();
+      if (isAdmin) {
+        setAdminUserGroup('');
+      }
+      fetchUsers(filterCenter, filterRole);
+      if (isAdmin) {
+        fetchAdminMeta();
+      }
     } catch (err) {
       console.error('Failed to add user:', err);
       const detail = err.response?.data?.detail;
@@ -163,7 +233,10 @@ const Customize = () => {
     }
     try {
       await api.delete(`/users/${userId}`);
-      fetchGroupUsers();
+      fetchUsers(filterCenter, filterRole);
+      if (isAdmin) {
+        fetchAdminMeta();
+      }
     } catch (err) {
       console.error('Failed to delete user:', err);
       alert('Failed to delete user.');
@@ -224,7 +297,7 @@ const Customize = () => {
     }
   };
 
-  if (!user || user.role?.toLowerCase() !== 'gh') return null;
+  if (!user || (!isAdmin && !isGhUser)) return null;
 
   const getInitials = (name) => {
     if (!name) return 'U';
@@ -236,10 +309,22 @@ const Customize = () => {
   const formatRole = (role) => {
     if (!role) return 'Scientist';
     const lower = role.toLowerCase().trim();
+    if (lower === 'admin') return 'System Administrator';
+    if (lower === 'ch') return 'Centre Head (CH)';
     if (lower === 'gh') return 'Group Head (GH)';
     if (lower === 'scientist') return 'Scientist';
     if (lower === 'technical staff') return 'Technical Staff';
     return role.charAt(0).toUpperCase() + role.slice(1);
+  };
+
+  const getRoleBadgeClass = (role) => {
+    if (!role) return 'role-scientist';
+    const lower = role.toLowerCase().trim();
+    if (lower === 'admin') return 'role-admin';
+    if (lower === 'ch') return 'role-ch';
+    if (lower === 'gh') return 'role-gh';
+    if (lower === 'technical staff') return 'role-tech';
+    return 'role-scientist';
   };
 
   return (
@@ -272,30 +357,67 @@ const Customize = () => {
         <div className="admin-hero-title-group">
           <h2>
             <IconAdjustments size={26} style={{ color: '#2563eb' }} />
-            <span>Admin & Configuration</span>
+            <span>{isAdmin ? 'System Administration & Configuration' : 'Admin & Configuration'}</span>
           </h2>
           <p>
-            <span>Department:</span>
-            <span className="group-badge-hero">
-              <IconUsers size={13} />
-              {user.group || user.group_name || 'General'}
-            </span>
-            <span>• Center:</span>
-            <strong style={{ color: '#0f172a' }}>{user.center || 'Main'}</strong>
-            <span>• Role:</span>
-            <span className="detail-value role-badge role-gh">Group Head (GH)</span>
+            {isAdmin ? (
+              <>
+                <span className="role-badge role-admin" style={{ padding: '3px 10px', fontSize: '0.78rem' }}>
+                  <IconShield size={14} />
+                  System Administrator
+                </span>
+                <span style={{ color: '#2563eb', fontWeight: '700' }}>• Institutional Oversight</span>
+                <span>• Managing users, centers, leadership, and global category stages</span>
+              </>
+            ) : (
+              <>
+                <span>Department:</span>
+                <span className="group-badge-hero">
+                  <IconUsers size={13} />
+                  {user.group || user.group_name || 'General'}
+                </span>
+                <span>• Center:</span>
+                <strong style={{ color: '#0f172a' }}>{user.center || 'Main'}</strong>
+                <span>• Role:</span>
+                <span className="detail-value role-badge role-gh">Group Head (GH)</span>
+              </>
+            )}
           </p>
         </div>
 
         {/* Live Counters */}
         <div className="periods-stats-strip">
+          {isAdmin && (
+            <div className="stat-pill">
+              <div className="stat-pill-icon blue" style={{ backgroundColor: '#eff6ff', color: '#2563eb' }}>
+                <IconBuilding size={18} />
+              </div>
+              <div className="stat-pill-info">
+                <span className="stat-pill-count">{allCenters.length}</span>
+                <span className="stat-pill-label">Centers</span>
+              </div>
+            </div>
+          )}
+
+          {isAdmin && (
+            <div className="stat-pill">
+              <div className="stat-pill-icon amber" style={{ backgroundColor: '#fef3c7', color: '#d97706' }}>
+                <IconShield size={18} />
+              </div>
+              <div className="stat-pill-info">
+                <span className="stat-pill-count">{allChs.length}</span>
+                <span className="stat-pill-label">Centre Heads</span>
+              </div>
+            </div>
+          )}
+
           <div className="stat-pill">
             <div className="stat-pill-icon blue">
               <IconUsers size={18} />
             </div>
             <div className="stat-pill-info">
               <span className="stat-pill-count">{groupUsers.length}</span>
-              <span className="stat-pill-label">Team Members</span>
+              <span className="stat-pill-label">{isAdmin ? 'Total Users' : 'Team Members'}</span>
             </div>
           </div>
 
@@ -319,7 +441,7 @@ const Customize = () => {
           onClick={() => setActiveTab('users')}
         >
           <IconUserPlus size={18} />
-          <span>Team Members & Accounts</span>
+          <span>{isAdmin ? 'User Management & Roles' : 'Team Members & Accounts'}</span>
         </button>
 
         <button
@@ -330,6 +452,17 @@ const Customize = () => {
           <IconListNumbers size={18} />
           <span>Category Stages</span>
         </button>
+
+        {isAdmin && (
+          <button
+            type="button"
+            className={`admin-tab-btn ${activeTab === 'directory' ? 'active' : ''}`}
+            onClick={() => setActiveTab('directory')}
+          >
+            <IconBuilding size={18} />
+            <span>Centers & Leadership Directory</span>
+          </button>
+        )}
       </div>
 
       {/* 4. Tab 1: User & Account Management */}
@@ -340,12 +473,14 @@ const Customize = () => {
             <div className="admin-card-header">
               <h3 className="admin-card-title">
                 <IconUserPlus size={20} style={{ color: '#2563eb' }} />
-                <span>Create Team Member</span>
+                <span>{isAdmin ? 'Create User Account (Any Role / Center)' : 'Create Team Member'}</span>
               </h3>
             </div>
 
             <p style={{ fontSize: '0.84rem', color: '#64748b', marginBottom: '18px', marginTop: 0, lineHeight: '1.45' }}>
-              Add a new user to your department. Department (<strong>{user.group || user.group_name}</strong>) and Center (<strong>{user.center}</strong>) are automatically assigned.
+              {isAdmin
+                ? 'Create a new user account and assign them to any Center, Department, and institutional Role (Centre Head, Group Head, Scientist, Staff, Admin).'
+                : <>Add a new user to your department. Department (<strong>{user.group || user.group_name}</strong>) and Center (<strong>{user.center}</strong>) are automatically assigned.</>}
             </p>
 
             {userSuccessMsg && (
@@ -401,7 +536,7 @@ const Customize = () => {
                 <input
                   type="text"
                   className="admin-input"
-                  placeholder="e.g. Scientist C, Project Associate, Senior Technician"
+                  placeholder="e.g. Scientist C, Centre Head, Project Associate"
                   value={userDesignation}
                   onChange={(e) => setUserDesignation(e.target.value)}
                 />
@@ -426,6 +561,8 @@ const Customize = () => {
                   <option value="scientist">Scientist</option>
                   <option value="technical staff">Technical Staff</option>
                   <option value="gh">Group Head (GH)</option>
+                  {isAdmin && <option value="ch">Centre Head (CH)</option>}
+                  {isAdmin && <option value="admin">System Administrator</option>}
                   <option value="other">Other / Custom Role (Type below)...</option>
                 </select>
               </div>
@@ -466,6 +603,7 @@ const Customize = () => {
                   { id: 'scientist', label: 'Scientist' },
                   { id: 'technical staff', label: 'Technical Staff' },
                   { id: 'gh', label: 'Group Head' },
+                  ...(isAdmin ? [{ id: 'ch', label: 'Centre Head (CH)' }, { id: 'admin', label: 'Admin' }] : []),
                   { id: 'other', label: 'Custom...' },
                 ].map((rolePreset) => (
                   <button
@@ -491,23 +629,53 @@ const Customize = () => {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div className="admin-form-group">
-                  <label className="admin-form-label">Center</label>
-                  <input
-                    type="text"
-                    className="admin-input"
-                    value={user.center || ''}
-                    disabled
-                  />
+                  <label className="admin-form-label">Center *</label>
+                  {isAdmin ? (
+                    <input
+                      type="text"
+                      className="admin-input"
+                      list="admin-center-datalist"
+                      placeholder="e.g. Main, Manufacturing, Automation"
+                      value={adminUserCenter}
+                      onChange={(e) => setAdminUserCenter(e.target.value)}
+                      required
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      className="admin-input"
+                      value={user.center || ''}
+                      disabled
+                    />
+                  )}
+                  {isAdmin && (
+                    <datalist id="admin-center-datalist">
+                      {allCenters.map((c) => (
+                        <option key={c} value={c} />
+                      ))}
+                    </datalist>
+                  )}
                 </div>
 
                 <div className="admin-form-group">
-                  <label className="admin-form-label">Department</label>
-                  <input
-                    type="text"
-                    className="admin-input"
-                    value={user.group || user.group_name || ''}
-                    disabled
-                  />
+                  <label className="admin-form-label">Department *</label>
+                  {isAdmin ? (
+                    <input
+                      type="text"
+                      className="admin-input"
+                      placeholder="e.g. Design, Electronics, Materials"
+                      value={adminUserGroup}
+                      onChange={(e) => setAdminUserGroup(e.target.value)}
+                      required
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      className="admin-input"
+                      value={user.group || user.group_name || ''}
+                      disabled
+                    />
+                  )}
                 </div>
               </div>
 
@@ -526,6 +694,7 @@ const Customize = () => {
                     justifyContent: 'center',
                     gap: '8px',
                     borderRadius: '8px',
+                    background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
                   }}
                 >
                   {userSubmitting ? (
@@ -546,11 +715,96 @@ const Customize = () => {
 
           {/* Right Card: Existing Users List */}
           <div className="admin-card">
-            <div className="admin-card-header">
+            <div className="admin-card-header" style={{ flexWrap: 'wrap', gap: '10px' }}>
               <h3 className="admin-card-title">
                 <IconUsers size={20} style={{ color: '#2563eb' }} />
-                <span>Department Members ({groupUsers.length})</span>
+                <span>{isAdmin ? `All Users (${groupUsers.length})` : `Department Members (${groupUsers.length})`}</span>
               </h3>
+
+              {/* Admin Multi-Center & Role Filter Controls */}
+              {isAdmin && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <IconFilter size={14} style={{ color: '#64748b' }} />
+                    <select
+                      value={filterCenter}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setFilterCenter(val);
+                        fetchUsers(val, filterRole);
+                      }}
+                      style={{
+                        padding: '4px 8px',
+                        fontSize: '0.78rem',
+                        fontWeight: '600',
+                        borderRadius: '6px',
+                        border: '1px solid #cbd5e1',
+                        color: '#1e293b',
+                        backgroundColor: '#ffffff',
+                      }}
+                    >
+                      <option value="all">All Centers ({allCenters.length})</option>
+                      {allCenters.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <select
+                    value={filterRole}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setFilterRole(val);
+                      fetchUsers(filterCenter, val);
+                    }}
+                    style={{
+                      padding: '4px 8px',
+                      fontSize: '0.78rem',
+                      fontWeight: '600',
+                      borderRadius: '6px',
+                      border: '1px solid #cbd5e1',
+                      color: '#1e293b',
+                      backgroundColor: '#ffffff',
+                    }}
+                  >
+                    <option value="all">All Roles</option>
+                    <option value="ch">Centre Head (CH)</option>
+                    <option value="gh">Group Head (GH)</option>
+                    <option value="scientist">Scientist</option>
+                    <option value="technical staff">Technical Staff</option>
+                    <option value="admin">Administrator</option>
+                  </select>
+
+                  {(filterCenter !== 'all' || filterRole !== 'all') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFilterCenter('all');
+                        setFilterRole('all');
+                        fetchUsers('all', 'all');
+                      }}
+                      style={{
+                        padding: '4px 8px',
+                        fontSize: '0.74rem',
+                        fontWeight: '600',
+                        borderRadius: '6px',
+                        border: '1px solid #cbd5e1',
+                        backgroundColor: '#f1f5f9',
+                        color: '#475569',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      <IconRotateClockwise size={12} />
+                      <span>Reset</span>
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             {usersLoading ? (
@@ -560,7 +814,7 @@ const Customize = () => {
               </div>
             ) : groupUsers.length === 0 ? (
               <p className="empty-state" style={{ padding: '24px', textAlign: 'center' }}>
-                No users found for this department.
+                No users found for this filter selection.
               </p>
             ) : (
               <div className="admin-table-wrap">
@@ -570,16 +824,14 @@ const Customize = () => {
                       <th>Member</th>
                       <th>Designation</th>
                       <th>Role</th>
+                      {isAdmin && <th>Center</th>}
+                      {isAdmin && <th>Department</th>}
                       <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {groupUsers.map((u) => {
                       const isSelf = u.id === user.id;
-                      const lowerRole = u.role?.toLowerCase()?.trim();
-                      const isUserGh = lowerRole === 'gh';
-                      const isUserTech = lowerRole === 'technical staff';
-                      const isUserSci = lowerRole === 'scientist';
 
                       return (
                         <tr key={u.id}>
@@ -604,19 +856,24 @@ const Customize = () => {
                             </span>
                           </td>
                           <td>
-                            <span
-                              className={`detail-value role-badge ${isUserGh
-                                ? 'role-gh'
-                                : isUserTech
-                                  ? 'role-tech'
-                                  : isUserSci
-                                    ? 'role-scientist'
-                                    : ''
-                                }`}
-                            >
+                            <span className={`detail-value role-badge ${getRoleBadgeClass(u.role)}`}>
                               {formatRole(u.role)}
                             </span>
                           </td>
+                          {isAdmin && (
+                            <td>
+                              <span style={{ fontSize: '0.82rem', fontWeight: '600', color: '#1e293b' }}>
+                                {u.center || '—'}
+                              </span>
+                            </td>
+                          )}
+                          {isAdmin && (
+                            <td>
+                              <span style={{ fontSize: '0.82rem', color: '#475569' }}>
+                                {u.group || u.group_name || '—'}
+                              </span>
+                            </td>
+                          )}
                           <td>
                             {!isSelf && (
                               <button
@@ -874,6 +1131,190 @@ const Customize = () => {
                 </table>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* 6. Tab 3: Centers & Leadership Directory (Admin Only) */}
+      {isAdmin && activeTab === 'directory' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div
+            style={{
+              backgroundColor: '#ffffff',
+              borderRadius: '16px',
+              border: '1px solid #e2e8f0',
+              padding: '20px 24px',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '18px' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', color: '#0f172a' }}>
+                  Institutional Centers & Assigned Centre Heads
+                </h3>
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.84rem', color: '#64748b' }}>
+                  Overview of all {allCenters.length} active centers in CMTI and their respective leadership assignments.
+                </p>
+              </div>
+              <span
+                style={{
+                  fontSize: '0.78rem',
+                  fontWeight: '700',
+                  color: '#2563eb',
+                  backgroundColor: '#eff6ff',
+                  border: '1px solid #bfdbfe',
+                  padding: '4px 12px',
+                  borderRadius: '16px',
+                }}
+              >
+                {allChs.length} Centre Heads Active
+              </span>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '18px' }}>
+              {allCenters.map((cName) => {
+                const chUser = chMapByCenter[cName];
+                const centerMembers = groupUsers.filter((u) => u.center === cName);
+                const distinctDepts = new Set(
+                  groupUsers
+                    .filter((u) => u.center === cName && (u.group || u.group_name))
+                    .map((u) => (u.group || u.group_name).trim())
+                );
+
+                return (
+                  <div
+                    key={cName}
+                    style={{
+                      border: '1.5px solid #e2e8f0',
+                      borderRadius: '14px',
+                      padding: '18px',
+                      backgroundColor: '#f8fafc',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '12px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div
+                          style={{
+                            width: '38px',
+                            height: '38px',
+                            borderRadius: '10px',
+                            backgroundColor: '#eff6ff',
+                            color: '#2563eb',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <IconBuilding size={20} />
+                        </div>
+                        <div>
+                          <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: '800', color: '#0f172a' }}>
+                            {cName}
+                          </h4>
+                          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                            Center
+                          </span>
+                        </div>
+                      </div>
+
+                      <span
+                        style={{
+                          fontSize: '0.74rem',
+                          fontWeight: '700',
+                          backgroundColor: '#eff6ff',
+                          color: '#2563eb',
+                          border: '1px solid #bfdbfe',
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                        }}
+                      >
+                        {distinctDepts.size} {distinctDepts.size === 1 ? 'Dept' : 'Depts'}
+                      </span>
+                    </div>
+
+                    {/* Centre Head Box */}
+                    <div
+                      style={{
+                        backgroundColor: '#ffffff',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '10px',
+                        padding: '12px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px',
+                      }}
+                    >
+                      <span style={{ fontSize: '0.72rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase' }}>
+                        Centre Head (CH)
+                      </span>
+                      {chUser ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <div
+                            style={{
+                              width: '28px',
+                              height: '28px',
+                              borderRadius: '50%',
+                              backgroundColor: '#fffbeb',
+                              color: '#b45309',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '0.74rem',
+                              fontWeight: '700',
+                              border: '1px solid #fde68a',
+                            }}
+                          >
+                            {getInitials(chUser.name)}
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <strong style={{ fontSize: '0.84rem', color: '#0f172a' }}>
+                              {chUser.name}
+                            </strong>
+                            <span style={{ fontSize: '0.74rem', color: '#64748b' }}>
+                              {chUser.email}
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: '0.8rem', color: '#94a3b8', fontStyle: 'italic' }}>
+                          ⚠️ No Centre Head assigned to this center
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Quick Filter Action */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFilterCenter(cName);
+                        setActiveTab('users');
+                        fetchUsers(cName, filterRole);
+                      }}
+                      style={{
+                        padding: '7px 12px',
+                        borderRadius: '8px',
+                        fontSize: '0.78rem',
+                        fontWeight: '700',
+                        border: '1px solid #cbd5e1',
+                        backgroundColor: '#ffffff',
+                        color: '#334155',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                      }}
+                    >
+                      <IconUsers size={14} />
+                      <span>View Center Members ({centerMembers.length})</span>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}

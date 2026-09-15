@@ -21,12 +21,14 @@ import {
   IconUsersGroup,
   IconCircleCheck,
   IconBuilding,
+  IconShield,
 } from '@tabler/icons-react';
 
 const Periods = () => {
   const { user } = useUser();
   const navigate = useNavigate();
 
+  const isAdmin = user?.role?.toLowerCase() === 'admin';
   const isChUser = user?.role?.toLowerCase() === 'ch';
   const isGhUser = user?.role?.toLowerCase() === 'gh';
   const currentYearStr = String(new Date().getFullYear());
@@ -37,13 +39,17 @@ const Periods = () => {
   const [error, setError] = useState('');
   const [downloadingId, setDownloadingId] = useState(null);
 
-  // CH Role: Center groups list and active group filter
+  // Admin & CH Role: Centers and Centre Heads data
+  const [allCenters, setAllCenters] = useState([]);
+  const [allChs, setAllChs] = useState([]);
+  const [selectedCenter, setSelectedCenter] = useState('all');
   const [centerGroups, setCenterGroups] = useState([]);
   const [selectedGroup, setSelectedGroup] = useState('all');
 
-  // CH Role: Combined Download Modal state
+  // Combined Download Modal state
   const [showCombinedModal, setShowCombinedModal] = useState(false);
   const [combinedScope, setCombinedScope] = useState('period'); // 'period' | 'month' | 'year'
+  const [selectedCombinedCenter, setSelectedCombinedCenter] = useState('all');
   const [selectedCombinedPeriod, setSelectedCombinedPeriod] = useState('');
   const [selectedCombinedYear, setSelectedCombinedYear] = useState(currentYearStr);
   const [selectedCombinedMonth, setSelectedCombinedMonth] = useState(String(new Date().getMonth() + 1));
@@ -76,7 +82,7 @@ const Periods = () => {
 
     const initPeriods = async () => {
       // 1. Silently auto-ensure today's real half-month period exists (for GH/Users with a group)
-      if (userGroup && !isChUser) {
+      if (userGroup && !isChUser && !isAdmin) {
         try {
           await api.post(
             `/periods/ensure-current?group_name=${encodeURIComponent(
@@ -88,7 +94,21 @@ const Periods = () => {
         }
       }
 
-      // 2. If CH, fetch all active groups under this center
+      // 2. If Admin, fetch all centers and all Centre Heads
+      if (isAdmin) {
+        try {
+          const [cRes, chRes] = await Promise.all([
+            api.get('/users/centers/list'),
+            api.get('/users/chs/list'),
+          ]);
+          setAllCenters(cRes.data || []);
+          setAllChs(chRes.data || []);
+        } catch (adminErr) {
+          console.error('Failed to fetch centers/chs for admin:', adminErr);
+        }
+      }
+
+      // 3. If CH, fetch all active groups under this center
       if (isChUser && user?.center) {
         try {
           const gRes = await api.get(
@@ -100,27 +120,40 @@ const Periods = () => {
         }
       }
 
-      // 3. Fetch available years and load current year's periods by default
-      fetchAvailableYears('all');
-      fetchPeriods(currentYearStr, '', '', 'all');
+      // 4. Fetch available years and load current year's periods
+      const initialCenter = isAdmin ? 'all' : isChUser ? user?.center : undefined;
+      fetchAvailableYears('all', initialCenter);
+      fetchPeriods(currentYearStr, '', '', 'all', initialCenter);
     };
 
     initPeriods();
   }, [user, navigate]);
 
-  const fetchAvailableYears = async (grp = selectedGroup) => {
+  const chMapByCenter = useMemo(() => {
+    const map = {};
+    allChs.forEach((ch) => {
+      if (ch.center) map[ch.center] = ch;
+    });
+    return map;
+  }, [allChs]);
+
+  const fetchAvailableYears = async (
+    grp = selectedGroup,
+    targetCenter = (isAdmin ? selectedCenter : isChUser ? user?.center : undefined)
+  ) => {
     try {
-      let url = '';
-      if (isChUser && user?.center) {
-        url = `/periods/years/?center=${encodeURIComponent(user.center)}`;
-        if (grp && grp !== 'all') {
-          url += `&group_name=${encodeURIComponent(grp)}`;
-        }
-      } else {
-        const userGroup = user?.group || user?.group_name || '';
-        if (!userGroup) return;
-        url = `/periods/years/?group_name=${encodeURIComponent(userGroup)}`;
+      let url = '/periods/years/?';
+      const params = [];
+      if (targetCenter && targetCenter !== 'all') {
+        params.push(`center=${encodeURIComponent(targetCenter)}`);
       }
+      if (grp && grp !== 'all') {
+        params.push(`group_name=${encodeURIComponent(grp)}`);
+      } else if (!isAdmin && !isChUser) {
+        const userGroup = user?.group || user?.group_name || '';
+        if (userGroup) params.push(`group_name=${encodeURIComponent(userGroup)}`);
+      }
+      url += params.join('&');
       const res = await api.get(url);
       setAvailableYears(res.data || []);
     } catch (err) {
@@ -132,35 +165,34 @@ const Periods = () => {
     mode = currentYearStr,
     filterYear = selectedFilterYear,
     filterMonth = selectedFilterMonth,
-    grp = selectedGroup
+    grp = selectedGroup,
+    targetCenter = (isAdmin ? selectedCenter : isChUser ? user?.center : undefined)
   ) => {
     setLoading(true);
     setError('');
     setFilterMode(mode);
     try {
-      let url = '';
-      if (isChUser && user?.center) {
-        url = `/periods/?center=${encodeURIComponent(user.center)}`;
-        if (grp && grp !== 'all') {
-          url += `&group_name=${encodeURIComponent(grp)}`;
-        }
-      } else {
+      let url = '/periods/?';
+      const params = [];
+      if (targetCenter && targetCenter !== 'all') {
+        params.push(`center=${encodeURIComponent(targetCenter)}`);
+      }
+      if (grp && grp !== 'all') {
+        params.push(`group_name=${encodeURIComponent(grp)}`);
+      } else if (!isAdmin && !isChUser) {
         const userGroup = user?.group || user?.group_name || '';
-        if (!userGroup) {
-          setLoading(false);
-          return;
-        }
-        url = `/periods/?group_name=${encodeURIComponent(userGroup)}`;
+        if (userGroup) params.push(`group_name=${encodeURIComponent(userGroup)}`);
       }
 
       if (filterYear || filterMonth) {
-        if (filterYear) url += `&year=${filterYear}`;
-        if (filterMonth) url += `&month=${filterMonth}`;
+        if (filterYear) params.push(`year=${filterYear}`);
+        if (filterMonth) params.push(`month=${filterMonth}`);
       } else if (mode === 'recent') {
-        url += '&months=2';
+        params.push('months=2');
       } else if (mode !== 'all' && mode) {
-        url += `&year=${mode}`;
+        params.push(`year=${mode}`);
       }
+      url += params.join('&');
       const res = await api.get(url);
       setPeriods(res.data || []);
     } catch (err) {
@@ -168,6 +200,26 @@ const Periods = () => {
       setError('Failed to load newsletter periods.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSelectCenter = async (centerName) => {
+    setSelectedCenter(centerName);
+    setSelectedGroup('all');
+    setSelectedCombinedCenter(centerName);
+    if (centerName === 'all') {
+      setCenterGroups([]);
+      fetchPeriods(filterMode, selectedFilterYear, selectedFilterMonth, 'all', 'all');
+      fetchAvailableYears('all', 'all');
+    } else {
+      try {
+        const gRes = await api.get(`/users/groups/list?center=${encodeURIComponent(centerName)}`);
+        setCenterGroups(gRes.data || []);
+      } catch (e) {
+        console.error('Failed to fetch center groups:', e);
+      }
+      fetchPeriods(filterMode, selectedFilterYear, selectedFilterMonth, 'all', centerName);
+      fetchAvailableYears('all', centerName);
     }
   };
 
@@ -280,13 +332,18 @@ const Periods = () => {
   }, [periods]);
 
   const executeDownloadCombinedDocx = async (overrideParams = null) => {
-    if (!user?.center) {
-      alert('No center assigned to current user.');
-      return;
-    }
+    const targetCenter =
+      overrideParams?.center ||
+      (isAdmin ? selectedCombinedCenter || selectedCenter : user?.center);
+
     setDownloadingCombined(true);
     try {
-      let url = `/periods/center/generate-combined-docx?center=${encodeURIComponent(user.center)}`;
+      let url = '/periods/center/generate-combined-docx?';
+      if (targetCenter && targetCenter !== 'all') {
+        url += `center=${encodeURIComponent(targetCenter)}`;
+      } else {
+        url += 'center=all';
+      }
       let filenameLabel = '';
 
       if (overrideParams?.start_date && overrideParams?.end_date) {
@@ -320,8 +377,8 @@ const Periods = () => {
       const link = document.createElement('a');
       link.href = downloadUrl;
 
-      const centerClean = (user.center || 'Center').replace(/\s+/g, '_');
-      const filename = `${centerClean}_Combined_All_Departments${filenameLabel}.docx`;
+      const centerClean = (targetCenter && targetCenter !== 'all') ? targetCenter.replace(/\s+/g, '_') : 'CMTI_All_Centers';
+      const filename = `${centerClean}_Combined_Newsletter${filenameLabel}.docx`;
       link.setAttribute('download', filename);
       document.body.appendChild(link);
       link.click();
@@ -331,7 +388,7 @@ const Periods = () => {
       setDownloadModalPeriod(null);
     } catch (err) {
       console.error('Failed to download combined docx:', err);
-      alert(err.response?.data?.detail || 'Failed to download consolidated newsletter. No entries found for this range.');
+      alert(err.response?.data?.detail || 'Failed to download consolidated newsletter. No entries found for this selection.');
     } finally {
       setDownloadingCombined(false);
     }
@@ -580,7 +637,16 @@ const Periods = () => {
             <span>Newsletter Overview</span>
           </h2>
           <p>
-            {isChUser ? (
+            {isAdmin ? (
+              <>
+                <span className="role-badge role-admin" style={{ padding: '3px 10px', fontSize: '0.78rem' }}>
+                  <IconShield size={14} />
+                  System Administrator
+                </span>
+                <span style={{ color: '#2563eb', fontWeight: '700' }}>• Institutional Oversight</span>
+                <span>• Viewing all {allCenters.length} centers & all {allChs.length} Centre Heads</span>
+              </>
+            ) : isChUser ? (
               <>
                 <span>Center:</span>
                 <span className="group-badge-hero" style={{ backgroundColor: '#fffbeb', color: '#b45309', border: '1px solid #fde68a' }}>
@@ -603,15 +669,16 @@ const Periods = () => {
           </p>
         </div>
 
-        {/* Live Overview Stats & CH Combined Download */}
+        {/* Live Overview Stats & Combined Download Button */}
         <div className="periods-stats-strip">
-          {isChUser && (
+          {(isAdmin || isChUser) && (
             <button
               type="button"
               onClick={() => {
                 if (uniquePeriodRanges.length > 0 && !selectedCombinedPeriod) {
                   setSelectedCombinedPeriod(uniquePeriodRanges[0].key);
                 }
+                setSelectedCombinedCenter(isAdmin ? selectedCenter : user?.center || 'all');
                 setShowCombinedModal(true);
               }}
               style={{
@@ -620,22 +687,34 @@ const Periods = () => {
                 gap: '8px',
                 padding: '10px 18px',
                 borderRadius: '12px',
-                background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+                background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
                 color: '#ffffff',
                 border: 'none',
                 fontSize: '0.86rem',
                 fontWeight: '700',
                 cursor: 'pointer',
-                boxShadow: '0 4px 12px rgba(5, 150, 105, 0.28)',
+                boxShadow: '0 4px 12px rgba(37, 99, 235, 0.28)',
                 transition: 'all 0.18s ease',
                 height: 'fit-content',
                 alignSelf: 'center',
               }}
-              title="Download consolidated Word document (.docx) combining all departments under this center"
+              title={isAdmin ? "Download Combined Institutional DOCX" : "Download Center Combined DOCX"}
             >
               <IconDownload size={18} strokeWidth={2.2} />
-              <span>Download Center Combined (.docx)</span>
+              <span>{isAdmin ? 'Download Institutional Combined (.docx)' : 'Download Center Combined (.docx)'}</span>
             </button>
+          )}
+
+          {isAdmin && (
+            <div className="stat-pill">
+              <div className="stat-pill-icon blue" style={{ backgroundColor: '#eff6ff', color: '#2563eb' }}>
+                <IconBuilding size={18} />
+              </div>
+              <div className="stat-pill-info">
+                <span className="stat-pill-count">{allCenters.length}</span>
+                <span className="stat-pill-label">Centers</span>
+              </div>
+            </div>
           )}
 
           <div className="stat-pill">
@@ -660,8 +739,136 @@ const Periods = () => {
         </div>
       </div>
 
-      {/* 1.5 CH Group Filter Toolbar */}
-      {isChUser && (
+      {/* 1.4 Admin Center Selector Toolbar */}
+      {isAdmin && (
+        <div
+          style={{
+            backgroundColor: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderRadius: '14px',
+            padding: '14px 20px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <IconBuilding size={20} style={{ color: '#2563eb' }} />
+              <span style={{ fontSize: '0.9rem', fontWeight: '800', color: '#1e293b' }}>
+                Select Center (Institutional Filter):
+              </span>
+            </div>
+            <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
+              {allChs.length} Centre Heads active
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={() => handleSelectCenter('all')}
+              style={{
+                padding: '6px 16px',
+                borderRadius: '20px',
+                fontSize: '0.82rem',
+                fontWeight: '700',
+                border: selectedCenter === 'all' ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                backgroundColor: selectedCenter === 'all' ? '#eff6ff' : '#ffffff',
+                color: selectedCenter === 'all' ? '#1d4ed8' : '#475569',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 0.15s ease',
+                boxShadow: selectedCenter === 'all' ? '0 1px 4px rgba(37,99,235,0.2)' : 'none',
+              }}
+            >
+              <IconBuilding size={15} style={{ color: selectedCenter === 'all' ? '#2563eb' : '#64748b' }} />
+              <span>All Centers ({allCenters.length})</span>
+            </button>
+
+            {allCenters.map((cName) => {
+              const isSelected = selectedCenter === cName;
+              const chUser = chMapByCenter[cName];
+              return (
+                <button
+                  key={cName}
+                  type="button"
+                  onClick={() => handleSelectCenter(cName)}
+                  style={{
+                    padding: '6px 14px',
+                    borderRadius: '20px',
+                    fontSize: '0.82rem',
+                    fontWeight: '700',
+                    border: isSelected ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                    backgroundColor: isSelected ? '#eff6ff' : '#ffffff',
+                    color: isSelected ? '#1d4ed8' : '#475569',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    transition: 'all 0.15s ease',
+                    boxShadow: isSelected ? '0 1px 4px rgba(37,99,235,0.2)' : 'none',
+                  }}
+                  title={chUser ? `Center: ${cName} • Centre Head: ${chUser.name}` : `Center: ${cName} (No CH assigned)`}
+                >
+                  <span>{cName}</span>
+                  {chUser && (
+                    <span
+                      style={{
+                        fontSize: '0.72rem',
+                        backgroundColor: isSelected ? '#dbeafe' : '#f1f5f9',
+                        color: isSelected ? '#1e40af' : '#64748b',
+                        padding: '1px 6px',
+                        borderRadius: '10px',
+                        fontWeight: '600',
+                      }}
+                    >
+                      CH: {chUser.name.split(' ')[0]}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Active Center Info Bar */}
+          {selectedCenter !== 'all' && (
+            <div
+              style={{
+                marginTop: '4px',
+                padding: '8px 12px',
+                borderRadius: '8px',
+                backgroundColor: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '8px',
+                fontSize: '0.82rem',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontWeight: '700', color: '#1e293b' }}>Active Center:</span>
+                <span style={{ color: '#2563eb', fontWeight: '800' }}>{selectedCenter}</span>
+                {chMapByCenter[selectedCenter] ? (
+                  <span style={{ color: '#475569' }}>
+                    • Centre Head: <strong style={{ color: '#b45309' }}>{chMapByCenter[selectedCenter].name}</strong> ({chMapByCenter[selectedCenter].email})
+                  </span>
+                ) : (
+                  <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>• No Centre Head assigned</span>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 1.5 Department Filter Toolbar (For CH or when Admin has selected a specific center) */}
+      {(isChUser || (isAdmin && selectedCenter !== 'all')) && (
         <div
           style={{
             backgroundColor: '#ffffff',
@@ -679,7 +886,7 @@ const Periods = () => {
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <IconBuilding size={18} style={{ color: '#d97706' }} />
             <span style={{ fontSize: '0.86rem', fontWeight: '700', color: '#1e293b' }}>
-              Filter by Department / Group:
+              Filter by Department ({isAdmin ? selectedCenter : user?.center}):
             </span>
           </div>
 
@@ -749,6 +956,7 @@ const Periods = () => {
                 if (uniquePeriodRanges.length > 0 && !selectedCombinedPeriod) {
                   setSelectedCombinedPeriod(uniquePeriodRanges[0].key);
                 }
+                setSelectedCombinedCenter(isAdmin ? selectedCenter : user?.center || 'all');
                 setShowCombinedModal(true);
               }}
               style={{
@@ -931,8 +1139,261 @@ const Periods = () => {
             There are no records matching your current filter selection.
           </p>
         </div>
-      ) : isChUser && selectedGroup === 'all' ? (
-        /* CH Multi-Department Sectioned View (One Dept Section -> Divider -> Next Dept Section) */
+      ) : isAdmin && selectedCenter === 'all' && selectedGroup === 'all' ? (
+        /* Admin All Centers Multi-Center & Multi-Department Grouped View */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '40px' }}>
+          {(() => {
+            const periodsByCenter = {};
+            periods.forEach((p) => {
+              const c = p.center || 'General';
+              if (!periodsByCenter[c]) periodsByCenter[c] = [];
+              periodsByCenter[c].push(p);
+            });
+
+            const centerKeys = Object.keys(periodsByCenter).sort();
+
+            return centerKeys.map((cName) => {
+              const centerPeriods = periodsByCenter[cName];
+              const chUser = chMapByCenter[cName];
+
+              // Group departments inside this center
+              const deptsInCenter = {};
+              centerPeriods.forEach((p) => {
+                const g = p.group_name || 'General';
+                if (!deptsInCenter[g]) deptsInCenter[g] = [];
+                deptsInCenter[g].push(p);
+              });
+              const deptNames = Object.keys(deptsInCenter).sort();
+
+              return (
+                <div
+                  key={cName}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '20px',
+                    backgroundColor: '#ffffff',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '16px',
+                    padding: '24px',
+                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.03)',
+                  }}
+                >
+                  {/* Center Header Banner */}
+                  <div
+                    style={{
+                      backgroundColor: '#f8fafc',
+                      border: '1px solid #e2e8f0',
+                      borderLeft: '5px solid #2563eb',
+                      borderRadius: '12px',
+                      padding: '14px 20px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '12px',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div
+                        style={{
+                          width: '42px',
+                          height: '42px',
+                          borderRadius: '10px',
+                          backgroundColor: '#eff6ff',
+                          color: '#2563eb',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <IconBuilding size={22} />
+                      </div>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '0.74rem', fontWeight: '800', color: '#2563eb', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                            Center
+                          </span>
+                          <h3
+                            style={{
+                              margin: 0,
+                              fontSize: '1.15rem',
+                              fontWeight: '800',
+                              color: '#0f172a',
+                            }}
+                          >
+                            {cName}
+                          </h3>
+                        </div>
+                        <div style={{ fontSize: '0.82rem', color: '#64748b', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                          {chUser ? (
+                            <>
+                              <span>Centre Head (CH):</span>
+                              <strong style={{ color: '#b45309' }}>{chUser.name}</strong>
+                              <span style={{ color: '#94a3b8' }}>({chUser.email})</span>
+                            </>
+                          ) : (
+                            <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>No Centre Head Assigned</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span
+                        style={{
+                          fontSize: '0.78rem',
+                          fontWeight: '700',
+                          color: '#1d4ed8',
+                          backgroundColor: '#eff6ff',
+                          border: '1px solid #bfdbfe',
+                          padding: '4px 12px',
+                          borderRadius: '16px',
+                        }}
+                      >
+                        {deptNames.length} {deptNames.length === 1 ? 'Department' : 'Departments'} • {centerPeriods.length} {centerPeriods.length === 1 ? 'Period' : 'Periods'}
+                      </span>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          executeDownloadCombinedDocx({ center: cName });
+                        }}
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: '8px',
+                          fontSize: '0.78rem',
+                          fontWeight: '700',
+                          border: '1px solid #cbd5e1',
+                          backgroundColor: '#ffffff',
+                          color: '#334155',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                        }}
+                        title={`Download combined newsletter for ${cName} Center`}
+                      >
+                        <IconDownload size={14} />
+                        <span>Center DOCX</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Departments within this Center */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                    {deptNames.map((deptName, dIdx) => {
+                      const deptPeriods = deptsInCenter[deptName];
+                      const deptMonthCards = groupPeriodsIntoMonthCards(deptPeriods);
+                      const ghPeriod = deptPeriods.find((p) => p.creator_name);
+                      const ghName = ghPeriod?.creator_name;
+
+                      return (
+                        <div key={deptName} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                          {/* Department Section Header */}
+                          <div
+                            style={{
+                              backgroundColor: '#ffffff',
+                              border: '1px solid #e2e8f0',
+                              borderLeft: '4px solid #2563eb',
+                              borderRadius: '10px',
+                              padding: '10px 16px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              flexWrap: 'wrap',
+                              gap: '10px',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <div
+                                style={{
+                                  width: '32px',
+                                  height: '32px',
+                                  borderRadius: '6px',
+                                  backgroundColor: '#eff6ff',
+                                  color: '#2563eb',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  flexShrink: 0,
+                                }}
+                              >
+                                <IconUsersGroup size={16} />
+                              </div>
+                              <div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '600' }}>Department:</span>
+                                  <h4 style={{ margin: 0, fontSize: '0.94rem', fontWeight: '800', color: '#0f172a' }}>
+                                    {deptName}
+                                  </h4>
+                                </div>
+                                {ghName && (
+                                  <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '1px' }}>
+                                    Group Head (GH): <strong style={{ color: '#334155' }}>{ghName}</strong>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            <span
+                              style={{
+                                fontSize: '0.74rem',
+                                fontWeight: '700',
+                                color: '#1d4ed8',
+                                backgroundColor: '#eff6ff',
+                                border: '1px solid #bfdbfe',
+                                padding: '2px 8px',
+                                borderRadius: '12px',
+                              }}
+                            >
+                              {deptPeriods.length} {deptPeriods.length === 1 ? 'Period' : 'Periods'}
+                            </span>
+                          </div>
+
+                          {/* Month Cards Grid for this Department */}
+                          <div className="month-cards-grid">
+                            {deptMonthCards.map((monthData) => (
+                              <div key={monthData.yearMonthStr} className="month-card">
+                                <div className="month-card-header">
+                                  <h4 className="month-card-title">
+                                    <IconCalendarEvent size={18} className="month-card-icon" />
+                                    <span>{monthData.monthName}</span>
+                                  </h4>
+                                </div>
+
+                                <div className="month-card-body">
+                                  {renderHalfRow(monthData, 1)}
+                                  <div className="row-separator" />
+                                  {renderHalfRow(monthData, 2)}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Department Horizontal Divider */}
+                          {dIdx < deptNames.length - 1 && (
+                            <div
+                              style={{
+                                height: '1px',
+                                backgroundColor: '#e2e8f0',
+                                margin: '8px 0 4px 0',
+                              }}
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            });
+          })()}
+        </div>
+      ) : (isChUser || (isAdmin && selectedCenter !== 'all')) && selectedGroup === 'all' ? (
+        /* Single Center Multi-Department Sectioned View (One Dept Section -> Divider -> Next Dept Section) */
         <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
           {(() => {
             const groupedDepts = {};
@@ -1532,12 +1993,13 @@ const Periods = () => {
                     : 'Exporting document containing only entries created by the selected contributor.'}
                 </span>
 
-                {isChUser && (
+                {(isAdmin || isChUser) && (
                   <div style={{ marginTop: '10px', paddingTop: '12px', borderTop: '1px dashed #cbd5e1' }}>
                     <button
                       type="button"
                       onClick={() => {
                         executeDownloadCombinedDocx({
+                          center: isAdmin ? (downloadModalPeriod.center || 'all') : user.center,
                           start_date: downloadModalPeriod.start_date,
                           end_date: downloadModalPeriod.end_date,
                         });
@@ -1547,7 +2009,7 @@ const Periods = () => {
                         width: '100%',
                         padding: '9px 14px',
                         borderRadius: '8px',
-                        background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+                        background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
                         color: '#ffffff',
                         border: 'none',
                         fontSize: '0.84rem',
@@ -1557,18 +2019,22 @@ const Periods = () => {
                         justifyContent: 'center',
                         gap: '8px',
                         cursor: downloadingCombined ? 'not-allowed' : 'pointer',
-                        boxShadow: '0 2px 6px rgba(5, 150, 105, 0.25)',
+                        boxShadow: '0 2px 6px rgba(37, 99, 235, 0.25)',
                       }}
                     >
                       {downloadingCombined ? (
                         <>
                           <IconLoader2 size={16} className="animate-spin" />
-                          <span>Generating Center Combined Doc...</span>
+                          <span>Generating Combined Doc...</span>
                         </>
                       ) : (
                         <>
                           <IconDownload size={16} />
-                          <span>Download Combined for All Departments in this Period ({user.center || 'Center'})</span>
+                          <span>
+                            {isAdmin
+                              ? `Download Combined for this Period (${downloadModalPeriod.center ? downloadModalPeriod.center + ' Center' : 'All Centers'})`
+                              : `Download Combined for All Departments in this Period (${user.center || 'Center'})`}
+                          </span>
                         </>
                       )}
                     </button>
@@ -1644,7 +2110,7 @@ const Periods = () => {
         </div>
       )}
 
-      {/* CH Role: Download Combined Center Newsletter Modal */}
+      {/* Download Combined Newsletter Modal (Admin & CH Role) */}
       {showCombinedModal && (
         <div
           className="modal-backdrop"
@@ -1667,7 +2133,7 @@ const Periods = () => {
             style={{
               backgroundColor: '#ffffff',
               borderRadius: '16px',
-              maxWidth: '520px',
+              maxWidth: '540px',
               width: '100%',
               boxShadow:
                 '0 24px 38px -6px rgba(0, 0, 0, 0.18), 0 10px 14px -6px rgba(0, 0, 0, 0.08)',
@@ -1684,7 +2150,7 @@ const Periods = () => {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                background: 'linear-gradient(135deg, #064e3b 0%, #065f46 100%)',
+                background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
                 color: '#ffffff',
               }}
             >
@@ -1694,23 +2160,27 @@ const Periods = () => {
                     width: '38px',
                     height: '38px',
                     borderRadius: '10px',
-                    backgroundColor: 'rgba(52, 211, 153, 0.2)',
-                    color: '#34d399',
+                    backgroundColor: 'rgba(56, 189, 248, 0.15)',
+                    color: '#38bdf8',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     flexShrink: 0,
-                    border: '1px solid rgba(52, 211, 153, 0.3)',
+                    border: '1px solid rgba(56, 189, 248, 0.3)',
                   }}
                 >
                   <IconDownload size={22} />
                 </div>
                 <div>
                   <h3 style={{ margin: 0, fontSize: '1.08rem', color: '#f8fafc', fontWeight: '800' }}>
-                    Download Combined Center Document
+                    {isAdmin && selectedCombinedCenter === 'all'
+                      ? 'Download Institutional Combined Document'
+                      : `Download Combined ${isAdmin ? selectedCombinedCenter : user.center || ''} Document`}
                   </h3>
-                  <span style={{ fontSize: '0.78rem', color: '#a7f3d0' }}>
-                    Consolidate all departments under {user.center || 'your center'}
+                  <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+                    {isAdmin && selectedCombinedCenter === 'all'
+                      ? 'Consolidate all centers and all departments across CMTI'
+                      : `Consolidate all departments under ${isAdmin ? selectedCombinedCenter : user.center || 'Center'}`}
                   </span>
                 </div>
               </div>
@@ -1734,11 +2204,47 @@ const Periods = () => {
 
             {/* Modal Body */}
             <div style={{ padding: '22px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
-              {/* Center Overview Pill */}
+              {/* Admin Center Scope Selector */}
+              {isAdmin && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <IconBuilding size={16} style={{ color: '#2563eb' }} />
+                    <span>Select Export Center Scope:</span>
+                  </label>
+                  <select
+                    value={selectedCombinedCenter}
+                    onChange={(e) => setSelectedCombinedCenter(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      border: '1.5px solid #cbd5e1',
+                      fontSize: '0.88rem',
+                      fontWeight: '700',
+                      color: '#0f172a',
+                      backgroundColor: '#f8fafc',
+                      cursor: 'pointer',
+                      outline: 'none',
+                    }}
+                  >
+                    <option value="all">🌐 All Centers Combined (Institutional Full Overview)</option>
+                    {allCenters.map((cName) => {
+                      const chUser = chMapByCenter[cName];
+                      return (
+                        <option key={cName} value={cName}>
+                          🏢 {cName} Center {chUser ? `— CH: ${chUser.name}` : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              )}
+
+              {/* Target Overview Pill */}
               <div
                 style={{
-                  background: '#f0fdf4',
-                  border: '1px solid #bbf7d0',
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
                   borderRadius: '10px',
                   padding: '12px 16px',
                   display: 'flex',
@@ -1747,25 +2253,43 @@ const Periods = () => {
                 }}
               >
                 <div>
-                  <span style={{ fontSize: '0.72rem', fontWeight: '700', color: '#166534', textTransform: 'uppercase' }}>
-                    Target Center
+                  <span
+                    style={{
+                      fontSize: '0.72rem',
+                      fontWeight: '700',
+                      color: '#64748b',
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    Export Target
                   </span>
-                  <h4 style={{ margin: '2px 0 0 0', color: '#14532d', fontSize: '1rem', fontWeight: '800' }}>
-                    {user.center || 'All Centers'} Center
+                  <h4
+                    style={{
+                      margin: '2px 0 0 0',
+                      color: '#0f172a',
+                      fontSize: '0.98rem',
+                      fontWeight: '800',
+                    }}
+                  >
+                    {isAdmin && selectedCombinedCenter === 'all'
+                      ? 'CMTI All Centers Combined'
+                      : `${isAdmin ? selectedCombinedCenter : user.center || 'All Centers'} Center`}
                   </h4>
                 </div>
                 <span
                   style={{
                     fontSize: '0.76rem',
                     fontWeight: '700',
-                    backgroundColor: '#dcfce7',
-                    color: '#15803d',
+                    backgroundColor: '#eff6ff',
+                    color: '#1d4ed8',
                     padding: '4px 10px',
                     borderRadius: '20px',
-                    border: '1px solid #86efac',
+                    border: '1px solid #bfdbfe',
                   }}
                 >
-                  {centerGroups.length} {centerGroups.length === 1 ? 'Department' : 'Departments'}
+                  {isAdmin && selectedCombinedCenter === 'all'
+                    ? `${allCenters.length} Centers • ${allChs.length} CHs`
+                    : `${centerGroups.length || 'All'} Departments`}
                 </span>
               </div>
 
@@ -1783,9 +2307,9 @@ const Periods = () => {
                       borderRadius: '8px',
                       fontSize: '0.82rem',
                       fontWeight: '700',
-                      border: combinedScope === 'period' ? '2px solid #059669' : '1px solid #cbd5e1',
-                      backgroundColor: combinedScope === 'period' ? '#ecfdf5' : '#ffffff',
-                      color: combinedScope === 'period' ? '#065f46' : '#64748b',
+                      border: combinedScope === 'period' ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                      backgroundColor: combinedScope === 'period' ? '#eff6ff' : '#ffffff',
+                      color: combinedScope === 'period' ? '#1d4ed8' : '#64748b',
                       cursor: 'pointer',
                       textAlign: 'center',
                       transition: 'all 0.15s ease',
@@ -1802,9 +2326,9 @@ const Periods = () => {
                       borderRadius: '8px',
                       fontSize: '0.82rem',
                       fontWeight: '700',
-                      border: combinedScope === 'month' ? '2px solid #059669' : '1px solid #cbd5e1',
-                      backgroundColor: combinedScope === 'month' ? '#ecfdf5' : '#ffffff',
-                      color: combinedScope === 'month' ? '#065f46' : '#64748b',
+                      border: combinedScope === 'month' ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                      backgroundColor: combinedScope === 'month' ? '#eff6ff' : '#ffffff',
+                      color: combinedScope === 'month' ? '#1d4ed8' : '#64748b',
                       cursor: 'pointer',
                       textAlign: 'center',
                       transition: 'all 0.15s ease',
@@ -1821,9 +2345,9 @@ const Periods = () => {
                       borderRadius: '8px',
                       fontSize: '0.82rem',
                       fontWeight: '700',
-                      border: combinedScope === 'year' ? '2px solid #059669' : '1px solid #cbd5e1',
-                      backgroundColor: combinedScope === 'year' ? '#ecfdf5' : '#ffffff',
-                      color: combinedScope === 'year' ? '#065f46' : '#64748b',
+                      border: combinedScope === 'year' ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                      backgroundColor: combinedScope === 'year' ? '#eff6ff' : '#ffffff',
+                      color: combinedScope === 'year' ? '#1d4ed8' : '#64748b',
                       cursor: 'pointer',
                       textAlign: 'center',
                       transition: 'all 0.15s ease',
@@ -1842,7 +2366,7 @@ const Periods = () => {
                   </label>
                   {uniquePeriodRanges.length === 0 ? (
                     <div style={{ fontSize: '0.85rem', color: '#64748b', fontStyle: 'italic' }}>
-                      No active periods recorded in this center.
+                      No active periods recorded for this selection.
                     </div>
                   ) : (
                     <select
@@ -1973,7 +2497,13 @@ const Periods = () => {
                   borderRadius: '8px',
                 }}
               >
-                ℹ️ The generated Word document (.docx) will automatically organize entries <strong>department-by-department</strong>, including Group Head names, sequential numbering, and centered high-resolution photos.
+                ℹ️ The generated Word document (.docx) will automatically organize entries{' '}
+                <strong>
+                  {isAdmin && selectedCombinedCenter === 'all'
+                    ? 'Center-by-Center and Department-by-Department'
+                    : 'Department-by-Department'}
+                </strong>
+                , including Centre Head / Group Head attributions, sequential numbering, and centered high-resolution photos.
               </div>
             </div>
 
@@ -2016,14 +2546,14 @@ const Periods = () => {
                   fontSize: '0.86rem',
                   fontWeight: '700',
                   borderRadius: '8px',
-                  background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+                  background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
                   border: 'none',
                   color: '#ffffff',
                   cursor: downloadingCombined ? 'not-allowed' : 'pointer',
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: '8px',
-                  boxShadow: '0 2px 8px rgba(5, 150, 105, 0.35)',
+                  boxShadow: '0 2px 8px rgba(37, 99, 235, 0.3)',
                   opacity: downloadingCombined ? 0.75 : 1,
                 }}
               >
@@ -2035,7 +2565,11 @@ const Periods = () => {
                 ) : (
                   <>
                     <IconDownload size={16} />
-                    <span>Download Combined (.docx)</span>
+                    <span>
+                      {isAdmin && selectedCombinedCenter === 'all'
+                        ? 'Download Institutional Combined (.docx)'
+                        : 'Download Combined (.docx)'}
+                    </span>
                   </>
                 )}
               </button>

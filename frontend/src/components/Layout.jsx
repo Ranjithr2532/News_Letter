@@ -38,8 +38,9 @@ const Layout = () => {
 
   if (!user) return null;
 
-  const isGhUser = user.role?.toLowerCase() === 'gh';
+  const isAdmin = user.role?.toLowerCase() === 'admin';
   const isChUser = user.role?.toLowerCase() === 'ch';
+  const isGhUser = user.role?.toLowerCase() === 'gh';
 
   // Compute initials (e.g., "VITHUN S N" -> "VN" or "VS")
   const getInitials = (name) => {
@@ -52,6 +53,7 @@ const Layout = () => {
   const formatRole = (role) => {
     if (!role) return 'Scientist';
     const lower = role.toLowerCase().trim();
+    if (lower === 'admin') return 'System Administrator';
     if (lower === 'ch') return 'Centre Head (CH)';
     if (lower === 'gh') return 'Group Head (GH)';
     if (lower === 'scientist') return 'Scientist';
@@ -108,8 +110,8 @@ const Layout = () => {
         </div>
 
         <div className="topbar-right">
-          {/* Notification Bell (for GH and Scientists, not CH) */}
-          {!isChUser && <NotificationBell />}
+          {/* Notification Bell (for GH and Scientists, not Admin or CH) */}
+          {!isAdmin && !isChUser && <NotificationBell />}
 
           {/* Profile Avatar Button with Hover/Click Popover */}
           <div
@@ -165,7 +167,9 @@ const Layout = () => {
                       </span>
                       <span
                         className={`detail-value role-badge ${
-                          isChUser
+                          isAdmin
+                            ? 'role-admin'
+                            : isChUser
                             ? 'role-ch'
                             : isGhUser
                             ? 'role-gh'
@@ -228,8 +232,8 @@ const Layout = () => {
             )}
           </div>
 
-          {/* Admin Settings Icon Button Beside Logout (Group Head Only) */}
-          {isGhUser && (
+          {/* Admin Settings Icon Button Beside Logout (Admin & Group Head) */}
+          {(isAdmin || isGhUser) && (
             <NavLink
               to="/customize"
               className={({ isActive }) =>

@@ -45,10 +45,11 @@ const Categories = () => {
   const [downloading, setDownloading] = useState(false);
   const [downloadingCategoryId, setDownloadingCategoryId] = useState(null);
 
+  const isAdmin = user?.role?.trim().toLowerCase() === 'admin';
   const isChUser = user?.role?.trim().toLowerCase() === 'ch';
   const isGhUser = user?.role?.trim().toLowerCase() === 'gh';
-  const isViewOnly = isChUser || period?.edit === false;
-  const canViewAll = isChUser || isGhUser || isViewOnly;
+  const isViewOnly = isAdmin || isChUser || period?.edit === false;
+  const canViewAll = isAdmin || isChUser || isGhUser || isViewOnly;
 
   // Accordion state: ID of currently expanded category (only one expanded at a time)
   const [expandedCategoryId, setExpandedCategoryId] = useState(null);

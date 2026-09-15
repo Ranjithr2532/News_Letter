@@ -433,9 +433,9 @@ body {
 }
 
 .detail-value.role-badge.role-gh {
-  background-color: rgba(168, 85, 247, 0.15);
-  color: #c084fc;
-  border-color: rgba(168, 85, 247, 0.3);
+  background-color: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  border-color: rgba(59, 130, 246, 0.3);
 }
 
 .detail-value.role-badge.role-ch {
@@ -2132,10 +2132,25 @@ body {
   border: 1px solid #e2e8f0;
 }
 
+.role-badge.role-admin {
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+  font-weight: 700;
+}
+
+.role-badge.role-ch {
+  background-color: #fffbeb;
+  color: #b45309;
+  border-color: #fde68a;
+  font-weight: 700;
+}
+
 .role-badge.role-gh {
-  background-color: #fdf2f8;
-  color: #db2777;
-  border-color: #fbcfe8;
+  background-color: #f8fafc;
+  color: #334155;
+  border-color: #cbd5e1;
+  font-weight: 700;
 }
 
 .role-badge.role-tech {
