@@ -123,3 +123,26 @@ def test_center_combined_docx_generation(client, test_user, db_session):
         assert dept_docx_res.status_code == 200
         assert dept_docx_res.headers["content-type"] == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
+
+# ============================================================================
+# TEST 6: Finalize and Re-open Period
+# ============================================================================
+def test_finalize_and_reopen_period(client, test_user):
+    with freeze_time("2026-09-10"):
+        res = client.post(
+            f"/periods/ensure-current?group_name={test_user.group_name}&created_by={test_user.id}"
+        )
+        assert res.status_code == 200
+        period_id = res.json()["id"]
+
+        # 1. Finalize period -> edit should become False
+        fin_res = client.post(f"/periods/{period_id}/finalize")
+        assert fin_res.status_code == 200
+        assert fin_res.json()["edit"] is False
+
+        # 2. Re-open period -> edit should become True
+        reopen_res = client.post(f"/periods/{period_id}/reopen")
+        assert reopen_res.status_code == 200
+        assert reopen_res.json()["edit"] is True
+
+

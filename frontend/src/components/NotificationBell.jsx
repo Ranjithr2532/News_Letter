@@ -60,7 +60,7 @@ const NotificationBell = () => {
       setUnreadCount((prev) => Math.max(0, prev - 1));
       if (periodId) {
         setIsOpen(false);
-        navigate(`/periods/${periodId}/categories`);
+        navigate(`/categories/${periodId}`);
       }
     } catch (err) {
       console.error('Failed to mark notification as read:', err);
@@ -83,15 +83,13 @@ const NotificationBell = () => {
       await handleMarkRead(null, notif.id, notif.period_id);
     } else if (notif.period_id) {
       setIsOpen(false);
-      navigate(`/periods/${notif.period_id}/categories`);
+      navigate(`/categories/${notif.period_id}`);
     }
   };
 
-  if (!user) return null;
+  if (!user || isAdmin || isChUser) return null;
 
   const unreadNotifications = allNotifications.filter((n) => !n.is_read);
-  if (isChUser) return null;
-
   const readNotifications = allNotifications.filter((n) => n.is_read);
   const displayedNotifications = activeTab === 'unread' ? unreadNotifications : readNotifications;
 

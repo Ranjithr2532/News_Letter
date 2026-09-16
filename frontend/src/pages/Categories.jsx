@@ -27,7 +27,6 @@ import {
   IconUser,
   IconFilter,
   IconUserCheck,
-  IconAlertCircle,
 } from '@tabler/icons-react';
 
 const Categories = () => {

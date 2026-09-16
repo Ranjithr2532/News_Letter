@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, ConfigDict
 from datetime import date, datetime
 from typing import Optional, List
 
@@ -10,6 +10,8 @@ class UserLogin(BaseModel):
 
 
 class UserRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     name: str
     email: str
@@ -18,9 +20,6 @@ class UserRead(BaseModel):
     center: Optional[str] = None
     group: Optional[str] = None
     type: Optional[str] = None
-
-    class Config:
-        from_attributes = True
 
 
 class UserCreate(BaseModel):
@@ -59,14 +58,13 @@ class CategoryUpdate(BaseModel):
 
 
 class CategoryRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     name: str
     stage_number: int
     is_active: bool
     period_id: Optional[int] = None
-
-    class Config:
-        from_attributes = True
 
 
 # ---------- Newsletter Period ----------
@@ -74,8 +72,8 @@ class PeriodCreate(BaseModel):
     title: str
     start_date: date
     end_date: date
-    created_by: Optional[int] = None   # user id — sent from frontend since no JWT yet
-    group_name: str    # sent from frontend (from logged-in user object) since no JWT yet
+    created_by: Optional[int] = None
+    group_name: str
     edit: Optional[bool] = True
 
 
@@ -87,6 +85,8 @@ class PeriodUpdate(BaseModel):
 
 
 class PeriodRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     group_name: str
     title: str
@@ -98,12 +98,11 @@ class PeriodRead(BaseModel):
     creator_name: Optional[str] = None
     center: Optional[str] = None
 
-    class Config:
-        from_attributes = True
-
 
 # ---------- Entry Photo ----------
 class PhotoRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     entry_id: int
     file_path: str
@@ -111,9 +110,6 @@ class PhotoRead(BaseModel):
     uploaded_by: int
     display_order: int
     uploaded_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 # ---------- Newsletter Entry ----------
@@ -131,10 +127,12 @@ class EntryUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     display_order: Optional[int] = None
-    updated_by: int   # required — who is making this edit
+    updated_by: int
 
 
 class EntryRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     period_id: int
     group_name: str
@@ -150,12 +148,11 @@ class EntryRead(BaseModel):
     updated_at: datetime
     photos: List[PhotoRead] = []
 
-    class Config:
-        from_attributes = True
-
 
 # ---------- Entry Edit History ----------
 class HistoryRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     entry_id: int
     edited_by: int
@@ -163,12 +160,11 @@ class HistoryRead(BaseModel):
     old_description: Optional[str] = None
     edited_at: datetime
 
-    class Config:
-        from_attributes = True
-
 
 # ---------- Notification ----------
 class NotificationRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     user_id: int
     period_id: int
@@ -177,9 +173,6 @@ class NotificationRead(BaseModel):
     notification_type: str
     is_read: bool
     created_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 class NotificationUpdate(BaseModel):

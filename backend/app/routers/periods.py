@@ -1,16 +1,25 @@
-from typing import List
+import os
+import io
+import calendar
+from datetime import date, timedelta
+from typing import List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
-from docx import Document
-import os
+from sqlalchemy import extract
 from sqlalchemy.orm import Session
+from PIL import Image
+from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Inches, Pt, RGBColor
+
 from app.database import get_db
 from app import models, schemas
-from datetime import date
-import calendar
-
 
 router = APIRouter()
+
+GENERATED_DIR = "generated_docs"
+os.makedirs(GENERATED_DIR, exist_ok=True)
 
 
 @router.post("/", response_model=schemas.PeriodRead)
@@ -36,10 +45,6 @@ def create_period(payload: schemas.PeriodCreate, db: Session = Depends(get_db)):
     db.refresh(period)
     return period
 
-
-from typing import List, Optional
-from datetime import date, timedelta
-from sqlalchemy import extract
 
 @router.get("/", response_model=List[schemas.PeriodRead])
 def list_periods(
@@ -136,6 +141,17 @@ def finalize_period(period_id: int, db: Session = Depends(get_db)):
     return period
 
 
+@router.post("/{period_id}/reopen", response_model=schemas.PeriodRead)
+def reopen_period(period_id: int, db: Session = Depends(get_db)):
+    period = db.query(models.NewsletterPeriod).filter(models.NewsletterPeriod.id == period_id).first()
+    if not period:
+        raise HTTPException(status_code=404, detail="Period not found")
+    period.edit = True
+    db.commit()
+    db.refresh(period)
+    return period
+
+
 @router.delete("/{period_id}")
 def delete_period(period_id: int, db: Session = Depends(get_db)):
     period = db.query(models.NewsletterPeriod).filter(models.NewsletterPeriod.id == period_id).first()
@@ -144,14 +160,6 @@ def delete_period(period_id: int, db: Session = Depends(get_db)):
     db.delete(period)
     db.commit()
     return {"detail": "Period deleted"}
-
-import io
-from PIL import Image
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.shared import Inches, Pt, RGBColor
-
-GENERATED_DIR = "generated_docs"
-os.makedirs(GENERATED_DIR, exist_ok=True)
 
 
 def build_newsletter_docx(period_title: str, entries: list) -> Document:

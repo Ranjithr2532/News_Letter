@@ -12,16 +12,14 @@ import {
   IconCheck,
   IconUsers,
   IconShield,
-  IconBriefcase,
   IconBuilding,
   IconMail,
   IconLoader2,
   IconX,
-  IconFolderPlus,
-  IconAdjustments,
   IconFilter,
+  IconAdjustments,
   IconRotateClockwise,
-  IconLock,
+  IconFolderPlus,
 } from '@tabler/icons-react';
 
 const Customize = () => {
