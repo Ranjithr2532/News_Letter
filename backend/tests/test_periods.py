@@ -1,3 +1,4 @@
+from urllib.parse import quote
 import pytest
 from freezegun import freeze_time
 from app import models
@@ -119,9 +120,19 @@ def test_center_combined_docx_generation(client, test_user, db_session):
         assert docx_res.headers["content-type"] == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
         # Request docx for specific department under SMPM
-        dept_docx_res = client.get(f"/periods/center/generate-combined-docx?center=SMPM&group_name={test_user.group_name}")
+        dept_docx_res = client.get(f"/periods/center/generate-combined-docx?center=SMPM&group_name={quote(test_user.group_name or '')}")
         assert dept_docx_res.status_code == 200
         assert dept_docx_res.headers["content-type"] == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+        # Request docx with exact half start_date & end_date
+        date_docx_res = client.get("/periods/center/generate-combined-docx?center=SMPM&start_date=2026-09-01&end_date=2026-09-15")
+        assert date_docx_res.status_code == 200
+        assert date_docx_res.headers["content-type"] == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+        # Request docx with year & month
+        ym_docx_res = client.get("/periods/center/generate-combined-docx?center=SMPM&year=2026&month=9")
+        assert ym_docx_res.status_code == 200
+        assert ym_docx_res.headers["content-type"] == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
 # ============================================================================
@@ -144,5 +155,158 @@ def test_finalize_and_reopen_period(client, test_user):
         reopen_res = client.post(f"/periods/{period_id}/reopen")
         assert reopen_res.status_code == 200
         assert reopen_res.json()["edit"] is True
+
+
+# ============================================================================
+# TEST 7: Auto-Ensure Current Periods for Center (CH Login Flow)
+# ============================================================================
+def test_ensure_current_periods_for_center(client, test_user, db_session):
+    test_user.center = "CAIR"
+    test_user.group = "AMC&NV"
+
+    # Create another user in a second department under same center
+    user2 = models.User(
+        name="Dept2 Head",
+        email="dept2@test.com",
+        password="hashedpassword",
+        center="CAIR",
+        group="SMC",
+        role="gh",
+    )
+    db_session.add(user2)
+    db_session.commit()
+
+    with freeze_time("2026-09-10"):
+        res = client.post(f"/periods/ensure-current-center?center=CAIR&created_by={test_user.id}")
+        assert res.status_code == 200
+        periods = res.json()
+
+        # Both departments in CAIR center must have their period created
+        dept_names = {p["group_name"] for p in periods}
+        assert "AMC&NV" in dept_names
+        assert "SMC" in dept_names
+
+        # Both must share identical start_date and end_date bounds
+        for p in periods:
+            assert p["start_date"] == "2026-09-01"
+            assert p["end_date"] == "2026-09-15"
+            assert p["edit"] is True
+
+
+# ============================================================================
+# TEST 8: Gap Period Backfilling (Multi-Month Inactivity Scenario)
+# ============================================================================
+def test_ensure_current_period_backfills_gaps(client, test_user, db_session):
+    test_user.group = "AMC&NV"
+    db_session.commit()
+
+    # Step 1: User logs in Sept 1st half (Sept 10, 2026)
+    with freeze_time("2026-09-10"):
+        res1 = client.post(
+            f"/periods/ensure-current?group_name={quote(test_user.group_name)}&created_by={test_user.id}"
+        )
+        assert res1.status_code == 200
+        assert res1.json()["start_date"] == "2026-09-01"
+        assert res1.json()["end_date"] == "2026-09-15"
+
+    # Step 2: User doesn't log in for over 3 months, then logs in Dec 2nd half (Dec 20, 2026)
+    with freeze_time("2026-12-20"):
+        res2 = client.post(
+            f"/periods/ensure-current?group_name={quote(test_user.group_name)}&created_by={test_user.id}"
+        )
+        assert res2.status_code == 200
+        assert res2.json()["start_date"] == "2026-12-16"
+        assert res2.json()["end_date"] == "2026-12-31"
+
+        # Query all periods created for this group in 2026
+        list_res = client.get(f"/periods/?group_name={quote(test_user.group_name)}&year=2026")
+        assert list_res.status_code == 200
+        periods = list_res.json()
+
+        expected_ranges = [
+            ("2026-09-01", "2026-09-15"),  # Sept 1st half
+            ("2026-09-16", "2026-09-30"),  # Sept 2nd half
+            ("2026-10-01", "2026-10-15"),  # Oct 1st half
+            ("2026-10-16", "2026-10-31"),  # Oct 2nd half
+            ("2026-11-01", "2026-11-15"),  # Nov 1st half
+            ("2026-11-16", "2026-11-30"),  # Nov 2nd half
+            ("2026-12-01", "2026-12-15"),  # Dec 1st half
+            ("2026-12-16", "2026-12-31"),  # Dec 2nd half
+        ]
+
+        actual_ranges = [(p["start_date"], p["end_date"]) for p in periods]
+        for exp in expected_ranges:
+            assert exp in actual_ranges
+
+
+# ============================================================================
+# TEST 9: Center-Wide Gap Period Backfilling (CH Login Flow)
+# ============================================================================
+def test_ensure_current_center_backfills_all_departments(client, test_user, db_session):
+    test_user.center = "SMPM"
+    test_user.group = "AMC&NV"
+
+    user2 = models.User(
+        name="SMC Head",
+        email="smc@test.com",
+        password="hashedpassword",
+        center="SMPM",
+        group="SMC",
+        role="gh",
+    )
+    db_session.add(user2)
+    db_session.commit()
+
+    # Step 1: Initial login in Sept 1st half
+    with freeze_time("2026-09-10"):
+        res = client.post(f"/periods/ensure-current-center?center=SMPM&created_by={test_user.id}")
+        assert res.status_code == 200
+
+    # Step 2: CH logs in Dec 2nd half -> all departments backfilled up to Dec 2nd half
+    with freeze_time("2026-12-20"):
+        res2 = client.post(f"/periods/ensure-current-center?center=SMPM&created_by={test_user.id}")
+        assert res2.status_code == 200
+
+        for dept in ["AMC&NV", "SMC"]:
+            list_res = client.get(f"/periods/?group_name={quote(dept)}&year=2026")
+            assert list_res.status_code == 200
+            periods = list_res.json()
+            actual_ranges = [(p["start_date"], p["end_date"]) for p in periods]
+            assert ("2026-09-16", "2026-09-30") in actual_ranges
+            assert ("2026-10-01", "2026-10-15") in actual_ranges
+            assert ("2026-10-16", "2026-10-31") in actual_ranges
+            assert ("2026-11-01", "2026-11-15") in actual_ranges
+            assert ("2026-11-16", "2026-11-30") in actual_ranges
+            assert ("2026-12-01", "2026-12-15") in actual_ranges
+            assert ("2026-12-16", "2026-12-31") in actual_ranges
+
+
+# ============================================================================
+# TEST 10: First login in 2nd half automatically creates 1st half of that month
+# ============================================================================
+def test_first_login_in_second_half_creates_first_half(client, test_user, db_session):
+    test_user.group = "SPMA"
+    test_user.center = "CAIR"
+    db_session.commit()
+
+    # User / CH logs in on Sept 20, 2026 (2nd half) for the first time
+    with freeze_time("2026-09-20"):
+        res = client.post(
+            f"/periods/ensure-current?group_name={quote(test_user.group_name)}&created_by={test_user.id}"
+        )
+        assert res.status_code == 200
+
+        # Query all periods for SPMA in 2026
+        list_res = client.get(f"/periods/?group_name={quote(test_user.group_name)}&year=2026")
+        assert list_res.status_code == 200
+        periods = list_res.json()
+        ranges = [(p["start_date"], p["end_date"]) for p in periods]
+
+        # Both Sept 1st half and Sept 2nd half MUST exist
+        assert ("2026-09-01", "2026-09-15") in ranges
+        assert ("2026-09-16", "2026-09-30") in ranges
+
+
+
 
 

@@ -21,7 +21,6 @@ import {
   IconUsersGroup,
   IconBuilding,
   IconShield,
-  IconPlus,
   IconFolder,
   IconArrowLeft,
   IconHome,
@@ -34,7 +33,6 @@ const Periods = () => {
   const isAdmin = user?.role?.toLowerCase() === 'admin';
   const isChUser = user?.role?.toLowerCase() === 'ch';
   const isGhUser = user?.role?.toLowerCase() === 'gh';
-  const canCreatePeriod = !isAdmin && !isChUser;
   const currentYearStr = String(new Date().getFullYear());
 
   const [periods, setPeriods] = useState([]);
@@ -81,21 +79,13 @@ const Periods = () => {
   const [selectedContributorId, setSelectedContributorId] = useState('');
   const [loadingContributors, setLoadingContributors] = useState(false);
 
-  // Manual Period Creation Modal state
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [createYear, setCreateYear] = useState(currentYearStr);
-  const [createMonth, setCreateMonth] = useState(String(new Date().getMonth() + 1));
-  const [createHalf, setCreateHalf] = useState(1);
-  const [submittingCreate, setSubmittingCreate] = useState(false);
-  const [createError, setCreateError] = useState('');
-  const [createSuccess, setCreateSuccess] = useState('');
-
   // Defaults to current year (e.g. '2026') on mount
   const [filterMode, setFilterMode] = useState(currentYearStr);
 
-  // Top Specific Filter (Year & Month)
+  // Top Specific Filter (Year & Month & Half)
   const [selectedFilterYear, setSelectedFilterYear] = useState('');
   const [selectedFilterMonth, setSelectedFilterMonth] = useState('');
+  const [selectedFilterHalf, setSelectedFilterHalf] = useState('');
 
   useEffect(() => {
     if (!user) {
@@ -106,7 +96,7 @@ const Periods = () => {
     const userGroup = user.group || user.group_name || '';
 
     const initPeriods = async () => {
-      // 1. Silently auto-ensure today's real half-month period exists (for GH/Users with a group)
+      // 1. Silently auto-ensure today's real half-month period exists
       if (userGroup && !isChUser && !isAdmin) {
         try {
           await api.post(
@@ -116,6 +106,17 @@ const Periods = () => {
           );
         } catch (err) {
           console.error('Failed to ensure current period:', err);
+        }
+      } else if (isChUser && user?.center) {
+        // Auto-ensure identical current half-month period across all departments in CH center
+        try {
+          await api.post(
+            `/periods/ensure-current-center?center=${encodeURIComponent(
+              user.center
+            )}&created_by=${user.id}`
+          );
+        } catch (err) {
+          console.error('Failed to ensure center periods for CH:', err);
         }
       }
 
@@ -152,16 +153,11 @@ const Periods = () => {
       }
 
       // 4. Fetch available years and load current year's periods
-      if (!isChUser) {
-        const initialCenter = isAdmin ? 'all' : undefined;
-        fetchAvailableYears('all', initialCenter);
-        fetchPeriods(currentYearStr, '', '', 'all', initialCenter);
-      } else {
-        setLoading(false);
-        setPeriods([]);
-        setSelectedGroup('');
-        fetchAvailableYears('', user?.center);
-      }
+      const initialCenter = isAdmin ? 'all' : (isChUser ? user?.center : undefined);
+      const initialGroup = 'all';
+      setSelectedGroup('all');
+      fetchAvailableYears(initialGroup, initialCenter);
+      fetchPeriods(currentYearStr, '', '', initialGroup, initialCenter);
     };
 
     initPeriods();
@@ -223,12 +219,6 @@ const Periods = () => {
     grp = selectedGroup,
     targetCenter = (isAdmin ? selectedCenter : isChUser ? user?.center : undefined)
   ) => {
-    // For CH role, require selecting a specific department
-    if (isChUser && (!grp || grp === 'all')) {
-      setPeriods([]);
-      setLoading(false);
-      return;
-    }
     setLoading(true);
     setError('');
     setFilterMode(mode);
@@ -274,6 +264,11 @@ const Periods = () => {
       fetchAvailableYears('all', 'all');
     } else {
       try {
+        await api.post(`/periods/ensure-current-center?center=${encodeURIComponent(centerName)}&created_by=${user.id}`);
+      } catch (e) {
+        console.error('Failed to ensure center periods on select:', e);
+      }
+      try {
         const gRes = await api.get(`/users/groups/list?center=${encodeURIComponent(centerName)}`);
         setCenterGroups(gRes.data || []);
       } catch (e) {
@@ -286,6 +281,37 @@ const Periods = () => {
 
   const handleOpenDownloadModal = async (e, period) => {
     if (e) e.stopPropagation();
+    if (!period) return;
+
+    // For CH: do NOT ask for individual contributors; download the complete period docx directly!
+    if (isChUser) {
+      setDownloadingId(period.id);
+      try {
+        const response = await api.get(`/periods/${period.id}/generate-docx`, {
+          responseType: 'blob',
+        });
+        const blob = new Blob([response.data], {
+          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        });
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        const filename = `${period.title.replace(/\s+/g, '_')}.docx`;
+        link.setAttribute('download', filename);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(downloadUrl);
+      } catch (err) {
+        console.error('Failed to download period docx for CH:', err);
+        alert('Failed to download period document.');
+      } finally {
+        setDownloadingId(null);
+      }
+      return;
+    }
+
+    // For GH / regular users: show the contributor download options modal
     setDownloadModalPeriod(period);
     setSelectedContributorId('');
     setLoadingContributors(true);
@@ -383,90 +409,6 @@ const Periods = () => {
     }
   };
 
-  const allMonthNames = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
-  ];
-
-  // Helper to compute start_date, end_date, and title based on Year, Month, and Half
-  const getPeriodComputedDetails = (yearVal, monthVal, halfVal) => {
-    const y = parseInt(yearVal, 10) || new Date().getFullYear();
-    const m = parseInt(monthVal, 10) || (new Date().getMonth() + 1);
-    const h = parseInt(halfVal, 10) || 1;
-    const mName = allMonthNames[m - 1] || 'January';
-    const mStr = String(m).padStart(2, '0');
-
-    const lastDay = new Date(y, m, 0).getDate();
-    const sDay = h === 1 ? '01' : '16';
-    const eDay = h === 1 ? '15' : String(lastDay).padStart(2, '0');
-
-    const startDate = `${y}-${mStr}-${sDay}`;
-    const endDate = `${y}-${mStr}-${eDay}`;
-    const title = `${mName} ${y} - ${h === 1 ? '1st Half' : '2nd Half'}`;
-    const dateRangeLabel = `${mName.slice(0, 3)} ${parseInt(sDay, 10)} – ${mName.slice(0, 3)} ${parseInt(eDay, 10)}, ${y}`;
-
-    return { y, m, h, mName, startDate, endDate, title, dateRangeLabel, lastDay };
-  };
-
-  // Open Create Period Modal (with optional preset dates from unscheduled half row)
-  const handleOpenCreateModal = (presetMonthData, halfNum) => {
-    setCreateError('');
-    setCreateSuccess('');
-
-    if (presetMonthData && halfNum) {
-      setCreateYear(String(presetMonthData.year));
-      setCreateMonth(String(presetMonthData.monthIndex + 1));
-      setCreateHalf(halfNum);
-    } else {
-      const today = new Date();
-      setCreateYear(String(today.getFullYear()));
-      setCreateMonth(String(today.getMonth() + 1));
-      setCreateHalf(today.getDate() <= 15 ? 1 : 2);
-    }
-
-    setShowCreateModal(true);
-  };
-
-  // Submit Manual Period Creation to Backend API
-  const handleCreatePeriodSubmit = async (e) => {
-    e.preventDefault();
-    setCreateError('');
-    setCreateSuccess('');
-
-    const computed = getPeriodComputedDetails(createYear, createMonth, createHalf);
-    const groupToUse = user?.group || user?.group_name || 'General';
-
-    setSubmittingCreate(true);
-    try {
-      const payload = {
-        title: computed.title,
-        start_date: computed.startDate,
-        end_date: computed.endDate,
-        group_name: groupToUse,
-        created_by: user?.id || 1,
-        edit: true,
-      };
-
-      await api.post('/periods/', payload);
-      setCreateSuccess(`Newsletter period "${computed.title}" created successfully!`);
-      setTimeout(() => {
-        setShowCreateModal(false);
-        setCreateSuccess('');
-      }, 1000);
-
-      // Re-fetch periods list
-      fetchPeriods(filterMode, selectedFilterYear, selectedFilterMonth, selectedGroup, selectedCenter);
-      fetchAvailableYears(selectedGroup, selectedCenter);
-    } catch (err) {
-      console.error('Failed to create period:', err);
-      const detail = err.response?.data?.detail || 'Failed to create period. Please check details.';
-      setCreateError(detail);
-    } finally {
-      setSubmittingCreate(false);
-    }
-  };
-
-
   const executeDownloadCombinedDocx = async (overrideParams = null) => {
     const targetCenter =
       overrideParams?.center ||
@@ -491,6 +433,19 @@ const Periods = () => {
       if (overrideParams?.start_date && overrideParams?.end_date) {
         url += `&start_date=${overrideParams.start_date}&end_date=${overrideParams.end_date}`;
         filenameLabel = `_${overrideParams.start_date}_to_${overrideParams.end_date}`;
+      } else if (overrideParams) {
+        if (overrideParams.year) {
+          url += `&year=${overrideParams.year}`;
+          filenameLabel += `_Year_${overrideParams.year}`;
+        }
+        if (overrideParams.month) {
+          const padMo = String(overrideParams.month).padStart(2, '0');
+          url += `&month=${overrideParams.month}`;
+          filenameLabel += `_Month_${padMo}`;
+        }
+        if (!overrideParams.year && !overrideParams.month) {
+          filenameLabel += '_All_Periods';
+        }
       } else {
         const yr = parseInt(selectedCombinedYear || currentYearStr, 10);
         const mo = parseInt(selectedCombinedMonth || String(new Date().getMonth() + 1), 10);
@@ -643,6 +598,23 @@ const Periods = () => {
   const handleHalfDownloadClick = (e, periodsInHalf, rangeLabel, monthData, halfNum) => {
     if (e) e.stopPropagation();
     if (!periodsInHalf || periodsInHalf.length === 0) return;
+
+    if (isChUser && selectedGroup === 'all') {
+      const targetCenter = user?.center;
+      const yr = monthData.year;
+      const mo = monthData.monthIndex + 1;
+      const padMo = String(mo).padStart(2, '0');
+      const lastDay = monthData.lastDayOfMonth;
+      const sDate = halfNum === 1 ? `${yr}-${padMo}-01` : `${yr}-${padMo}-16`;
+      const eDate = halfNum === 1 ? `${yr}-${padMo}-15` : `${yr}-${padMo}-${String(lastDay).padStart(2, '0')}`;
+      executeDownloadCombinedDocx({
+        center: targetCenter,
+        group_name: 'all',
+        start_date: sDate,
+        end_date: eDate,
+      });
+      return;
+    }
 
     if (periodsInHalf.length === 1) {
       handleOpenDownloadModal(e, periodsInHalf[0]);
@@ -814,44 +786,19 @@ const Periods = () => {
             </div>
           </div>
 
-          {canCreatePeriod ? (
-            <button
-              type="button"
-              onClick={() => handleOpenCreateModal(monthData, halfNum)}
-              style={{
-                padding: '6px 14px',
-                fontSize: '0.78rem',
-                fontWeight: '700',
-                borderRadius: '8px',
-                backgroundColor: '#eff6ff',
-                color: '#2563eb',
-                border: '1px solid #bfdbfe',
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '5px',
-                transition: 'all 0.15s ease',
-              }}
-              title={`Create newsletter period for ${rangeLabel}`}
-            >
-              <IconPlus size={14} strokeWidth={2.4} />
-              <span>Create Period</span>
-            </button>
-          ) : (
-            <span
-              style={{
-                fontSize: '0.74rem',
-                color: '#94a3b8',
-                fontWeight: '600',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-              }}
-            >
-              <IconClock size={13} />
-              {isFuture ? 'Upcoming' : 'Pending'}
-            </span>
-          )}
+          <span
+            style={{
+              fontSize: '0.74rem',
+              color: '#94a3b8',
+              fontWeight: '600',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+            }}
+          >
+            <IconClock size={13} />
+            {isFuture ? 'Upcoming' : 'Pending'}
+          </span>
         </div>
       );
     }
@@ -894,39 +841,8 @@ const Periods = () => {
           </p>
         </div>
 
-        {/* Live Overview Stats & Combined Download Button */}
+        {/* Live Overview Stats */}
         <div className="periods-stats-strip">
-          {(isAdmin || isChUser) && (
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedCombinedCenter(isAdmin ? selectedCenter : user?.center || 'all');
-                setSelectedCombinedGroup(selectedGroup || 'all');
-                setShowCombinedModal(true);
-              }}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '10px 18px',
-                borderRadius: '12px',
-                background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
-                color: '#ffffff',
-                border: 'none',
-                fontSize: '0.86rem',
-                fontWeight: '700',
-                cursor: 'pointer',
-                boxShadow: '0 4px 12px rgba(37, 99, 235, 0.28)',
-                transition: 'all 0.18s ease',
-                height: 'fit-content',
-                alignSelf: 'center',
-              }}
-              title="Download newsletter (.docx)"
-            >
-              <IconDownload size={18} strokeWidth={2.2} />
-              <span>Download (.docx)</span>
-            </button>
-          )}
 
           {isAdmin && (
             <div className="stat-pill">
@@ -1267,14 +1183,24 @@ const Periods = () => {
               </span>
               <select
                 value={selectedGroup}
-                onChange={(e) => {
+                onChange={async (e) => {
                   const grp = e.target.value;
                   setSelectedGroup(grp);
-                  if (grp) {
+                  if (grp && grp !== 'all') {
+                    try {
+                      await api.post(
+                        `/periods/ensure-current?group_name=${encodeURIComponent(
+                          grp
+                        )}&created_by=${user.id}`
+                      );
+                    } catch (err) {
+                      console.error('Failed to ensure period on select:', err);
+                    }
                     fetchPeriods(filterMode, selectedFilterYear, selectedFilterMonth, grp, user?.center);
                     fetchAvailableYears(grp, user?.center);
                   } else {
-                    setPeriods([]);
+                    fetchPeriods(filterMode, selectedFilterYear, selectedFilterMonth, 'all', user?.center);
+                    fetchAvailableYears('all', user?.center);
                   }
                 }}
                 style={{
@@ -1291,7 +1217,7 @@ const Periods = () => {
                   boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
                 }}
               >
-                <option value="">-- Select Department --</option>
+                <option value="all">All Departments ({user?.center || 'Center'})</option>
                 {centerGroups.map((grp) => (
                   <option key={grp} value={grp}>
                     📁 {grp}
@@ -1348,6 +1274,9 @@ const Periods = () => {
                 onChange={(e) => {
                   const val = e.target.value;
                   setSelectedFilterMonth(val);
+                  if (!val) {
+                    setSelectedFilterHalf('');
+                  }
                   if (selectedGroup) {
                     fetchPeriods('custom', selectedFilterYear, val, selectedGroup, user?.center);
                   }
@@ -1381,14 +1310,47 @@ const Periods = () => {
               </select>
             </div>
 
+            {/* Half / Period Dropdown Filter */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '0.84rem', fontWeight: '700', color: selectedFilterMonth ? '#475569' : '#94a3b8' }}>
+                Half:
+              </span>
+              <select
+                className="custom-select-input"
+                value={selectedFilterHalf}
+                disabled={!selectedFilterMonth}
+                onChange={(e) => {
+                  setSelectedFilterHalf(e.target.value);
+                }}
+                style={{
+                  padding: '7px 12px',
+                  borderRadius: '10px',
+                  border: '1.5px solid #cbd5e1',
+                  backgroundColor: selectedFilterMonth ? '#ffffff' : '#f1f5f9',
+                  fontSize: '0.84rem',
+                  fontWeight: '600',
+                  color: selectedFilterMonth ? '#1e293b' : '#94a3b8',
+                  cursor: selectedFilterMonth ? 'pointer' : 'not-allowed',
+                  minWidth: '150px',
+                  outline: 'none',
+                }}
+                title={!selectedFilterMonth ? 'Select a month first to filter by half' : 'Select specific half period'}
+              >
+                <option value="">Both Halves (Entire Month)</option>
+                <option value="1">1st Half (1 – 15)</option>
+                <option value="2">2nd Half (16 – End)</option>
+              </select>
+            </div>
+
             {/* Reset Filter Button */}
-            {(selectedFilterYear || selectedFilterMonth) && (
+            {(selectedFilterYear || selectedFilterMonth || selectedFilterHalf) && (
               <button
                 type="button"
                 className="filter-reset-btn"
                 onClick={() => {
                   setSelectedFilterYear('');
                   setSelectedFilterMonth('');
+                  setSelectedFilterHalf('');
                   if (selectedGroup) {
                     fetchPeriods(currentYearStr, '', '', selectedGroup, user?.center);
                   }
@@ -1413,45 +1375,93 @@ const Periods = () => {
               </button>
             )}
           </div>
+
+          {/* Right: Download based on Active Filters */}
+          <div>
+            <button
+              type="button"
+              disabled={downloadingCombined}
+              onClick={() => {
+                const yr = selectedFilterYear || (filterMode !== 'all' && filterMode ? filterMode : currentYearStr);
+                const mo = selectedFilterMonth ? parseInt(selectedFilterMonth, 10) : null;
+                const grp = selectedGroup || 'all';
+                const ctr = user?.center || 'all';
+
+                if (mo && selectedFilterHalf) {
+                  const padMo = String(mo).padStart(2, '0');
+                  const yrNum = parseInt(yr, 10);
+                  if (selectedFilterHalf === '1') {
+                    const sDate = `${yrNum}-${padMo}-01`;
+                    const eDate = `${yrNum}-${padMo}-15`;
+                    executeDownloadCombinedDocx({
+                      center: ctr,
+                      group_name: grp,
+                      start_date: sDate,
+                      end_date: eDate,
+                    });
+                  } else if (selectedFilterHalf === '2') {
+                    const lastDay = new Date(yrNum, mo, 0).getDate();
+                    const sDate = `${yrNum}-${padMo}-16`;
+                    const eDate = `${yrNum}-${padMo}-${String(lastDay).padStart(2, '0')}`;
+                    executeDownloadCombinedDocx({
+                      center: ctr,
+                      group_name: grp,
+                      start_date: sDate,
+                      end_date: eDate,
+                    });
+                  }
+                } else {
+                  executeDownloadCombinedDocx({
+                    center: ctr,
+                    group_name: grp,
+                    year: yr ? parseInt(yr, 10) : null,
+                    month: mo,
+                  });
+                }
+              }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 18px',
+                borderRadius: '10px',
+                background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                color: '#ffffff',
+                border: 'none',
+                fontSize: '0.84rem',
+                fontWeight: '700',
+                cursor: downloadingCombined ? 'not-allowed' : 'pointer',
+                opacity: downloadingCombined ? 0.7 : 1,
+                boxShadow: '0 2px 8px rgba(37, 99, 235, 0.28)',
+                transition: 'all 0.18s ease',
+              }}
+              title={
+                selectedFilterMonth && selectedFilterHalf === '1'
+                  ? `Download 1st Half newsletter for ${selectedGroup && selectedGroup !== 'all' ? selectedGroup : 'All Departments'}`
+                  : selectedFilterMonth && selectedFilterHalf === '2'
+                  ? `Download 2nd Half newsletter for ${selectedGroup && selectedGroup !== 'all' ? selectedGroup : 'All Departments'}`
+                  : selectedFilterMonth
+                  ? `Download entire month newsletter for ${selectedGroup && selectedGroup !== 'all' ? selectedGroup : 'All Departments'}`
+                  : `Download newsletter based on active filters`
+              }
+            >
+              {downloadingCombined ? (
+                <>
+                  <IconLoader2 size={16} className="animate-spin" />
+                  <span>Downloading...</span>
+                </>
+              ) : (
+                <>
+                  <IconDownload size={16} strokeWidth={2.2} />
+                  <span>Download (.docx)</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Action Row: Create Period Manually (Positioned in the middle between Overview and Filter panels, aligned right) */}
-      {canCreatePeriod && (
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'flex-end',
-            alignItems: 'center',
-            marginTop: '-6px',
-            marginBottom: '-6px',
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => handleOpenCreateModal()}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '9px 18px',
-              borderRadius: '10px',
-              background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
-              color: '#ffffff',
-              border: 'none',
-              fontSize: '0.86rem',
-              fontWeight: '700',
-              cursor: 'pointer',
-              boxShadow: '0 2px 8px rgba(37, 99, 235, 0.28)',
-              transition: 'all 0.18s ease',
-            }}
-            title="Create a new newsletter period manually"
-          >
-            <IconPlus size={16} strokeWidth={2.5} />
-            <span>Create</span>
-          </button>
-        </div>
-      )}
+
 
       {/* 2. Control & Filter Panel */}
       <div className="periods-control-panel">
@@ -1472,11 +1482,7 @@ const Periods = () => {
                 onClick={() => {
                   setSelectedFilterYear('');
                   setSelectedFilterMonth('');
-                  if (isChUser && !selectedGroup) {
-                    setFilterMode(String(yr));
-                  } else {
-                    fetchPeriods(String(yr), '', '', selectedGroup, isAdmin ? selectedCenter : user?.center);
-                  }
+                  fetchPeriods(String(yr), '', '', selectedGroup, isAdmin ? selectedCenter : user?.center);
                 }}
               >
                 <span>{yr}</span>
@@ -1493,11 +1499,7 @@ const Periods = () => {
             onClick={() => {
               setSelectedFilterYear('');
               setSelectedFilterMonth('');
-              if (isChUser && !selectedGroup) {
-                setFilterMode('all');
-              } else {
-                fetchPeriods('all', '', '', selectedGroup, isAdmin ? selectedCenter : user?.center);
-              }
+              fetchPeriods('all', '', '', selectedGroup, isAdmin ? selectedCenter : user?.center);
             }}
           >
             <span>All Years</span>
@@ -1537,6 +1539,9 @@ const Periods = () => {
               onChange={(e) => {
                 const val = e.target.value;
                 setSelectedFilterMonth(val);
+                if (!val) {
+                  setSelectedFilterHalf('');
+                }
                 fetchPeriods('custom', selectedFilterYear, val, selectedGroup, isAdmin ? selectedCenter : user?.center);
               }}
             >
@@ -1555,13 +1560,29 @@ const Periods = () => {
               <option value="12">December</option>
             </select>
 
-            {(selectedFilterYear || selectedFilterMonth) && (
+            {/* Half filter for non-CH roles */}
+            <select
+              className="custom-select-input"
+              value={selectedFilterHalf}
+              disabled={!selectedFilterMonth}
+              onChange={(e) => {
+                setSelectedFilterHalf(e.target.value);
+              }}
+              title={!selectedFilterMonth ? 'Select a month first to filter by half' : 'Select specific half period'}
+            >
+              <option value="">Both Halves (Month)</option>
+              <option value="1">1st Half (1 – 15)</option>
+              <option value="2">2nd Half (16 – End)</option>
+            </select>
+
+            {(selectedFilterYear || selectedFilterMonth || selectedFilterHalf) && (
               <button
                 type="button"
                 className="filter-reset-btn"
                 onClick={() => {
                   setSelectedFilterYear('');
                   setSelectedFilterMonth('');
+                  setSelectedFilterHalf('');
                   fetchPeriods(currentYearStr, '', '', selectedGroup, isAdmin ? selectedCenter : user?.center);
                 }}
                 title="Reset Filters"
@@ -1596,41 +1617,6 @@ const Periods = () => {
         </div>
       ) : error ? (
         <div className="error-message">{error}</div>
-      ) : isChUser && !selectedGroup ? (
-        <div
-          style={{
-            background: '#ffffff',
-            borderRadius: '16px',
-            border: '1px solid #e2e8f0',
-            padding: '54px 24px',
-            textAlign: 'center',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '12px',
-          }}
-        >
-          <div
-            style={{
-              width: '52px',
-              height: '52px',
-              borderRadius: '14px',
-              backgroundColor: '#eff6ff',
-              color: '#2563eb',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <IconBuilding size={26} />
-          </div>
-          <h4 style={{ margin: 0, color: '#0f172a', fontSize: '1.05rem', fontWeight: '800' }}>
-            Select a Department to View Periods
-          </h4>
-          <p style={{ margin: 0, color: '#64748b', fontSize: '0.86rem', maxWidth: '420px', lineHeight: '1.5' }}>
-            Please select a specific department from the department filter above to view its publication schedule and periods.
-          </p>
-        </div>
       ) : periods.length === 0 ? (
         <div
           style={{
@@ -1836,9 +1822,9 @@ const Periods = () => {
                       </div>
 
                       <div className="month-card-body">
-                        {renderHalfRow(monthData, 1)}
-                        <div className="row-separator" />
-                        {renderHalfRow(monthData, 2)}
+                        {(!selectedFilterHalf || selectedFilterHalf === '1') && renderHalfRow(monthData, 1)}
+                        {!selectedFilterHalf && <div className="row-separator" />}
+                        {(!selectedFilterHalf || selectedFilterHalf === '2') && renderHalfRow(monthData, 2)}
                       </div>
                     </div>
                   ))}
@@ -1860,9 +1846,9 @@ const Periods = () => {
               </div>
 
               <div className="month-card-body">
-                {renderHalfRow(monthData, 1)}
-                <div className="row-separator" />
-                {renderHalfRow(monthData, 2)}
+                {(!selectedFilterHalf || selectedFilterHalf === '1') && renderHalfRow(monthData, 1)}
+                {!selectedFilterHalf && <div className="row-separator" />}
+                {(!selectedFilterHalf || selectedFilterHalf === '2') && renderHalfRow(monthData, 2)}
               </div>
             </div>
           ))}
@@ -3310,359 +3296,7 @@ const Periods = () => {
         </div>
       )}
 
-      {/* Manual Create Period Modal */}
-      {showCreateModal && (() => {
-        const computed = getPeriodComputedDetails(createYear, createMonth, createHalf);
-        return (
-          <div
-            style={{
-              position: 'fixed',
-              inset: 0,
-              zIndex: 1000,
-              backgroundColor: 'rgba(15, 23, 42, 0.65)',
-              backdropFilter: 'blur(4px)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '16px',
-            }}
-            onClick={() => setShowCreateModal(false)}
-          >
-            <div
-              style={{
-                backgroundColor: '#ffffff',
-                borderRadius: '16px',
-                maxWidth: '500px',
-                width: '100%',
-                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-                overflow: 'hidden',
-                border: '1px solid #e2e8f0',
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Modal Header */}
-              <div
-                style={{
-                  padding: '18px 24px',
-                  borderBottom: '1px solid #e2e8f0',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  backgroundColor: '#f8fafc',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <div
-                    style={{
-                      width: '36px',
-                      height: '36px',
-                      borderRadius: '10px',
-                      backgroundColor: '#eff6ff',
-                      color: '#2563eb',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <IconCalendarEvent size={20} />
-                  </div>
-                  <div>
-                    <h3 style={{ margin: 0, fontSize: '1.08rem', fontWeight: '800', color: '#0f172a' }}>
-                      Create Newsletter Period
-                    </h3>
-                    <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
-                      Select Year, Month, and 1st or 2nd Half
-                    </span>
-                  </div>
-                </div>
 
-                <button
-                  type="button"
-                  onClick={() => setShowCreateModal(false)}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: '#64748b',
-                    cursor: 'pointer',
-                    padding: '4px',
-                    borderRadius: '6px',
-                  }}
-                >
-                  <IconX size={20} />
-                </button>
-              </div>
-
-              {/* Modal Form Body */}
-              <form onSubmit={handleCreatePeriodSubmit} style={{ padding: '20px 24px' }}>
-                {createSuccess && (
-                  <div
-                    style={{
-                      marginBottom: '16px',
-                      padding: '10px 14px',
-                      borderRadius: '8px',
-                      backgroundColor: '#f0fdf4',
-                      border: '1px solid #bbf7d0',
-                      color: '#15803d',
-                      fontSize: '0.84rem',
-                      fontWeight: '600',
-                    }}
-                  >
-                    ✓ {createSuccess}
-                  </div>
-                )}
-
-                {createError && (
-                  <div
-                    style={{
-                      marginBottom: '16px',
-                      padding: '10px 14px',
-                      borderRadius: '8px',
-                      backgroundColor: '#fef2f2',
-                      border: '1px solid #fecaca',
-                      color: '#b91c1c',
-                      fontSize: '0.84rem',
-                      fontWeight: '600',
-                    }}
-                  >
-                    ⚠️ {createError}
-                  </div>
-                )}
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  {/* 1. Year and Month Selectors */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
-                        Select Year *
-                      </label>
-                      <select
-                        value={createYear}
-                        onChange={(e) => setCreateYear(e.target.value)}
-                        style={{
-                          width: '100%',
-                          padding: '10px 12px',
-                          borderRadius: '8px',
-                          border: '1px solid #cbd5e1',
-                          fontSize: '0.9rem',
-                          fontWeight: '600',
-                          color: '#0f172a',
-                          backgroundColor: '#ffffff',
-                          outline: 'none',
-                          boxSizing: 'border-box',
-                        }}
-                      >
-                        {[2024, 2025, 2026, 2027, 2028, 2029, 2030].map((y) => (
-                          <option key={y} value={y}>
-                            {y}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
-                        Select Month *
-                      </label>
-                      <select
-                        value={createMonth}
-                        onChange={(e) => setCreateMonth(e.target.value)}
-                        style={{
-                          width: '100%',
-                          padding: '10px 12px',
-                          borderRadius: '8px',
-                          border: '1px solid #cbd5e1',
-                          fontSize: '0.9rem',
-                          fontWeight: '600',
-                          color: '#0f172a',
-                          backgroundColor: '#ffffff',
-                          outline: 'none',
-                          boxSizing: 'border-box',
-                        }}
-                      >
-                        {allMonthNames.map((mName, idx) => (
-                          <option key={mName} value={idx + 1}>
-                            {mName}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* 2. Half Period Selection (1st Half vs 2nd Half) */}
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '8px' }}>
-                      Select Period Half *
-                    </label>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                      {/* 1st Half Card */}
-                      <div
-                        onClick={() => setCreateHalf(1)}
-                        style={{
-                          padding: '12px 14px',
-                          borderRadius: '10px',
-                          border: createHalf === 1 ? '2px solid #2563eb' : '1px solid #cbd5e1',
-                          backgroundColor: createHalf === 1 ? '#eff6ff' : '#ffffff',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '4px',
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <span style={{ fontSize: '0.92rem', fontWeight: '800', color: createHalf === 1 ? '#1d4ed8' : '#0f172a' }}>
-                            1st Half
-                          </span>
-                          <span
-                            style={{
-                              width: '18px',
-                              height: '18px',
-                              borderRadius: '50%',
-                              border: createHalf === 1 ? '5px solid #2563eb' : '2px solid #cbd5e1',
-                              backgroundColor: '#ffffff',
-                              boxSizing: 'border-box',
-                            }}
-                          />
-                        </div>
-                        <span style={{ fontSize: '0.76rem', color: createHalf === 1 ? '#2563eb' : '#64748b', fontWeight: '600' }}>
-                          1st – 15th of the month
-                        </span>
-                      </div>
-
-                      {/* 2nd Half Card */}
-                      <div
-                        onClick={() => setCreateHalf(2)}
-                        style={{
-                          padding: '12px 14px',
-                          borderRadius: '10px',
-                          border: createHalf === 2 ? '2px solid #2563eb' : '1px solid #cbd5e1',
-                          backgroundColor: createHalf === 2 ? '#eff6ff' : '#ffffff',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '4px',
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <span style={{ fontSize: '0.92rem', fontWeight: '800', color: createHalf === 2 ? '#1d4ed8' : '#0f172a' }}>
-                            2nd Half
-                          </span>
-                          <span
-                            style={{
-                              width: '18px',
-                              height: '18px',
-                              borderRadius: '50%',
-                              border: createHalf === 2 ? '5px solid #2563eb' : '2px solid #cbd5e1',
-                              backgroundColor: '#ffffff',
-                              boxSizing: 'border-box',
-                            }}
-                          />
-                        </div>
-                        <span style={{ fontSize: '0.76rem', color: createHalf === 2 ? '#2563eb' : '#64748b', fontWeight: '600' }}>
-                          16th – End of month
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 3. Live Auto-Generated Summary Card */}
-                  <div
-                    style={{
-                      backgroundColor: '#f8fafc',
-                      border: '1px solid #e2e8f0',
-                      borderRadius: '10px',
-                      padding: '12px 16px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '6px',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ fontSize: '0.75rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                        Auto-Generated Period
-                      </span>
-                      <span style={{ fontSize: '0.75rem', fontWeight: '700', color: '#2563eb', backgroundColor: '#eff6ff', padding: '2px 8px', borderRadius: '6px' }}>
-                        {user?.group || user?.group_name || 'Department'}
-                      </span>
-                    </div>
-
-                    <div style={{ fontSize: '0.92rem', fontWeight: '800', color: '#0f172a' }}>
-                      {computed.title}
-                    </div>
-
-                    <div style={{ fontSize: '0.78rem', color: '#475569', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <IconCalendar size={14} style={{ color: '#2563eb' }} />
-                      <span>{computed.dateRangeLabel} ({computed.startDate} to {computed.endDate})</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Modal Action Buttons */}
-                <div
-                  style={{
-                    marginTop: '22px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'flex-end',
-                    gap: '10px',
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setShowCreateModal(false)}
-                    disabled={submittingCreate}
-                    style={{
-                      padding: '8px 18px',
-                      fontSize: '0.86rem',
-                      fontWeight: '600',
-                      borderRadius: '8px',
-                      backgroundColor: '#ffffff',
-                      border: '1px solid #cbd5e1',
-                      color: '#475569',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Cancel
-                  </button>
-
-                  <button
-                    type="submit"
-                    disabled={submittingCreate}
-                    style={{
-                      padding: '8px 22px',
-                      fontSize: '0.86rem',
-                      fontWeight: '700',
-                      borderRadius: '8px',
-                      background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
-                      border: 'none',
-                      color: '#ffffff',
-                      cursor: submittingCreate ? 'not-allowed' : 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      boxShadow: '0 2px 8px rgba(37, 99, 235, 0.3)',
-                      opacity: submittingCreate ? 0.75 : 1,
-                    }}
-                  >
-                    {submittingCreate ? (
-                      <>
-                        <IconLoader2 size={16} className="animate-spin" />
-                        <span>Creating Period...</span>
-                      </>
-                    ) : (
-                      <>
-                        <IconPlus size={16} />
-                        <span>Create Period</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        );
-      })()}
 
       {/* Deadline Reminder Modal Popup (Presented on First Page After Login) */}
       <DeadlineModal />

@@ -2,7 +2,7 @@ import os
 import io
 import calendar
 from datetime import date, timedelta
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
@@ -685,7 +685,7 @@ def generate_category_docx(period_id: int, category_id: int, created_by: Optiona
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
 
-def get_current_period_bounds():
+def get_current_period_bounds() -> Tuple[date, date]:
     """Returns (start_date, end_date) for whichever half of the current 
     month today's real date falls into."""
     today = date.today()
@@ -702,11 +702,129 @@ def get_current_period_bounds():
     return start, end
 
 
+def get_half_month_bounds(year: int, month: int, half: int) -> Tuple[date, date]:
+    """Returns (start_date, end_date) for a specific year, month, and half (1 or 2)."""
+    if half == 1:
+        return date(year, month, 1), date(year, month, 15)
+    else:
+        last_day = calendar.monthrange(year, month)[1]
+        return date(year, month, 16), date(year, month, last_day)
+
+
+def get_all_period_bounds_up_to_today(start_from: Optional[date] = None) -> List[Tuple[date, date]]:
+    """
+    Returns a chronological list of (start_date, end_date) tuples for every half-month
+    from start_from (or Jan 1st of current year if None / past year) up to today's current half-month.
+    """
+    today = date.today()
+    curr_year = today.year
+    curr_month = today.month
+    curr_half = 1 if today.day <= 15 else 2
+
+    if start_from is None or start_from.year < curr_year:
+        start_year = curr_year
+        start_month = curr_month
+        start_half = 1
+    else:
+        start_year = start_from.year
+        start_month = start_from.month
+        start_half = 1 if start_from.day <= 15 else 2
+
+    bounds = []
+    y = start_year
+    m = start_month
+    h = start_half
+
+    while (y < curr_year) or (y == curr_year and m < curr_month) or (y == curr_year and m == curr_month and h <= curr_half):
+        s_date, e_date = get_half_month_bounds(y, m, h)
+        bounds.append((s_date, e_date))
+        if h == 1:
+            h = 2
+        else:
+            h = 1
+            m += 1
+            if m > 12:
+                m = 1
+                y += 1
+
+    return bounds
+
+
+def ensure_all_periods_for_group(group_name: str, created_by: int, db: Session) -> models.NewsletterPeriod:
+    """
+    Backfills and auto-creates all missing half-month periods for this group from either
+    the earliest existing period in the current year (or Jan 1st of current year) up to and
+    including today's current half-month period.
+    Returns today's current period.
+    """
+    today = date.today()
+    curr_start, curr_end = get_current_period_bounds()
+
+    # Find earliest existing period in current year for this group
+    earliest_period = (
+        db.query(models.NewsletterPeriod)
+        .filter(
+            models.NewsletterPeriod.group_name == group_name,
+            extract('year', models.NewsletterPeriod.start_date) == today.year
+        )
+        .order_by(models.NewsletterPeriod.start_date.asc())
+        .first()
+    )
+
+    start_anchor = earliest_period.start_date if earliest_period else None
+    all_bounds = get_all_period_bounds_up_to_today(start_anchor)
+
+    current_period = None
+
+    for s_date, e_date in all_bounds:
+        existing = (
+            db.query(models.NewsletterPeriod)
+            .filter(
+                models.NewsletterPeriod.group_name == group_name,
+                models.NewsletterPeriod.start_date == s_date,
+                models.NewsletterPeriod.end_date == e_date,
+            )
+            .first()
+        )
+        if existing:
+            if s_date == curr_start and e_date == curr_end:
+                current_period = existing
+            continue
+
+        month_name = s_date.strftime("%b")
+        title = f"{group_name} Event Details — {month_name} {s_date.day}-{e_date.day}, {s_date.year}"
+        new_period = models.NewsletterPeriod(
+            group_name=group_name,
+            title=title,
+            start_date=s_date,
+            end_date=e_date,
+            created_by=created_by,
+        )
+        db.add(new_period)
+        if s_date == curr_start and e_date == curr_end:
+            current_period = new_period
+
+    db.commit()
+
+    if current_period:
+        db.refresh(current_period)
+    else:
+        current_period = (
+            db.query(models.NewsletterPeriod)
+            .filter(
+                models.NewsletterPeriod.group_name == group_name,
+                models.NewsletterPeriod.start_date == curr_start,
+                models.NewsletterPeriod.end_date == curr_end,
+            )
+            .first()
+        )
+    return current_period
+
+
 @router.post("/ensure-current", response_model=schemas.PeriodRead)
 def ensure_current_period(group_name: str, created_by: int, db: Session = Depends(get_db)):
-    """Auto-creates today's current half-month period for this group, 
-    if it doesn't already exist. Safe to call repeatedly — never creates 
-    duplicates, never creates anything outside the current year."""
+    """Auto-creates all missing half-month periods for this group up to today's current
+    half-month period, ensuring continuous history across months without gaps."""
     today = date.today()
     start, end = get_current_period_bounds()
 
@@ -717,32 +835,56 @@ def ensure_current_period(group_name: str, created_by: int, db: Session = Depend
     if start.year != today.year or end.year != today.year:
         raise HTTPException(status_code=400, detail="Cannot create period outside current year")
 
-    existing = (
-        db.query(models.NewsletterPeriod)
+    return ensure_all_periods_for_group(group_name, created_by, db)
+
+
+@router.post("/ensure-current-center", response_model=List[schemas.PeriodRead])
+def ensure_current_periods_for_center(center: str, created_by: int, db: Session = Depends(get_db)):
+    """Auto-creates all missing half-month periods up to today for all departments/groups 
+    under the given center, ensuring synchronized and gapless periods across all departments."""
+    today = date.today()
+    start, end = get_current_period_bounds()
+
+    if not center or center.strip().lower() in ("", "undefined", "null", "none"):
+        raise HTTPException(status_code=400, detail="Invalid center provided")
+
+    # Safety guard — never create a period outside the current year
+    if start.year != today.year or end.year != today.year:
+        raise HTTPException(status_code=400, detail="Cannot create period outside current year")
+
+    # Get all distinct groups belonging to this center from users table
+    groups_query = (
+        db.query(models.User.group)
         .filter(
-            models.NewsletterPeriod.group_name == group_name,
-            models.NewsletterPeriod.start_date == start,
-            models.NewsletterPeriod.end_date == end,
+            models.User.center == center,
+            models.User.group.isnot(None),
+            models.User.group != ""
         )
-        .first()
+        .distinct()
+        .all()
     )
-    if existing:
-        return existing
+    center_groups = sorted(list({g[0].strip() for g in groups_query if g[0] and g[0].strip()}))
 
-    month_name = start.strftime("%b")
-    title = f"{group_name} Event Details — {month_name} {start.day}-{end.day}, {start.year}"
+    ensured_periods = []
 
-    period = models.NewsletterPeriod(
-        group_name=group_name,
-        title=title,
-        start_date=start,
-        end_date=end,
-        created_by=created_by,
-    )
-    db.add(period)
-    db.commit()
-    db.refresh(period)
-    return period
+    for group_name in center_groups:
+        # Find the GH for this group (if any) or fallback to created_by (e.g. CH)
+        gh_user = (
+            db.query(models.User)
+            .filter(
+                models.User.center == center,
+                models.User.group == group_name,
+                models.User.role.ilike("gh")
+            )
+            .first()
+        )
+        creator_id = gh_user.id if gh_user else created_by
+
+        current_p = ensure_all_periods_for_group(group_name, creator_id, db)
+        if current_p:
+            ensured_periods.append(current_p)
+
+    return ensured_periods
 
 
 @router.get("/{period_id}/contributors")
