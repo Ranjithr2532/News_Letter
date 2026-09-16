@@ -602,7 +602,7 @@ const Categories = () => {
               <IconUsersGroup size={13} />
               {period?.group_name || user.group || user.group_name || 'General'}
             </span>
-            {isChUser && (
+            {(isChUser || isAdmin) && (
               <>
                 <span>•</span>
                 <span>Center:</span>
@@ -617,7 +617,7 @@ const Categories = () => {
                     fontWeight: '700',
                   }}
                 >
-                  {user.center || 'Center'} (CH Oversight)
+                  {period?.center || user.center || 'Center'} ({isAdmin ? 'Admin Oversight' : 'CH Oversight'})
                 </span>
               </>
             )}
@@ -628,10 +628,10 @@ const Categories = () => {
                 <IconLock size={12} />
                 <span>Finalized (View-Only)</span>
               </span>
-            ) : isChUser ? (
+            ) : (isChUser || isAdmin) ? (
               <span className="status-badge-open" style={{ backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }}>
                 <IconEye size={12} />
-                <span>CH Review Mode (Open)</span>
+                <span>{isAdmin ? 'Admin Review Mode (Open)' : 'CH Review Mode (Open)'}</span>
               </span>
             ) : (
               <span className="status-badge-open">
@@ -741,8 +741,8 @@ const Categories = () => {
         </div>
       )} */}
 
-      {/* 4. Finalized Notice Banner (if applicable) */}
-      {isViewOnly && (
+      {/* 4. Finalized Notice Banner (if applicable for GH/Contributors) */}
+      {period?.edit === false && !isChUser && !isAdmin && (
         <div
           style={{
             backgroundColor: '#f0fdf4',

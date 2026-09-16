@@ -470,24 +470,36 @@ def generate_center_combined_docx(
     if not periods:
         raise HTTPException(status_code=404, detail="No newsletter periods found for this selection.")
 
-    # Pre-fetch CHs for center mapping
+    # Pre-fetch CHs and GHs for accurate hierarchy mapping
     all_chs = db.query(models.User).filter(models.User.role.ilike("ch")).all()
-    ch_by_center = {ch.center: ch.name for ch in all_chs if ch.center}
+    ch_by_center = {ch.center.strip().upper(): ch.name.strip() for ch in all_chs if ch.center}
+    all_ghs = db.query(models.User).filter(models.User.role.ilike("gh")).all()
+    gh_by_center_group = {
+        f"{(gh.center or '').strip().upper()}_{(gh.group or '').strip().upper()}": gh.name.strip()
+        for gh in all_ghs if gh.group
+    }
+    gh_by_group = {
+        (gh.group or '').strip().upper(): gh.name.strip()
+        for gh in all_ghs if gh.group
+    }
 
     if is_all:
         structure_data = {}
         for p in periods:
             c_name = p.creator.center if (p.creator and p.creator.center) else "General"
             dept = p.group_name or "General"
+            c_key = c_name.strip().upper()
+            d_key = dept.strip().upper()
+            official_gh = gh_by_center_group.get(f"{c_key}_{d_key}") or gh_by_group.get(d_key) or p.creator_name
 
             if c_name not in structure_data:
                 structure_data[c_name] = {
-                    "ch_name": ch_by_center.get(c_name, ""),
+                    "ch_name": ch_by_center.get(c_key, ""),
                     "depts": {},
                 }
             if dept not in structure_data[c_name]["depts"]:
                 structure_data[c_name]["depts"][dept] = {
-                    "gh_name": p.creator_name,
+                    "gh_name": official_gh,
                     "entries": [],
                 }
 
@@ -514,10 +526,15 @@ def generate_center_combined_docx(
     else:
         structure_data = {}
         for p in periods:
+            c_name = p.creator.center if (p.creator and p.creator.center) else (center or "General")
             dept = p.group_name or "General"
+            c_key = c_name.strip().upper()
+            d_key = dept.strip().upper()
+            official_gh = gh_by_center_group.get(f"{c_key}_{d_key}") or gh_by_group.get(d_key) or p.creator_name
+
             if dept not in structure_data:
                 structure_data[dept] = {
-                    "gh_name": p.creator_name,
+                    "gh_name": official_gh,
                     "entries": [],
                 }
 

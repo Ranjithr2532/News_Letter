@@ -24,6 +24,8 @@ import {
   IconShield,
   IconPlus,
   IconFolder,
+  IconArrowLeft,
+  IconHome,
 } from '@tabler/icons-react';
 
 const Periods = () => {
@@ -42,9 +44,10 @@ const Periods = () => {
   const [error, setError] = useState('');
   const [downloadingId, setDownloadingId] = useState(null);
 
-  // Admin & CH Role: Centers and Centre Heads data
+  // Admin & CH Role: Centers, Centre Heads, and Group Heads data
   const [allCenters, setAllCenters] = useState([]);
   const [allChs, setAllChs] = useState([]);
+  const [allGhs, setAllGhs] = useState([]);
   const [selectedCenter, setSelectedCenter] = useState('all');
   const [centerGroups, setCenterGroups] = useState([]);
   const [selectedGroup, setSelectedGroup] = useState('all');
@@ -107,22 +110,28 @@ const Periods = () => {
         }
       }
 
-      // 2. If Admin, fetch all centers and all Centre Heads
-      if (isAdmin) {
+      // 2. Fetch Centers, Centre Heads, and Group Heads for accurate institutional hierarchy
+      if (isAdmin || isChUser) {
         try {
-          const [cRes, chRes] = await Promise.all([
-            api.get('/users/centers/list'),
-            api.get('/users/chs/list'),
-          ]);
-          setAllCenters(cRes.data || []);
-          setAllChs(chRes.data || []);
+          const promises = [api.get('/users/ghs/list')];
+          if (isAdmin) {
+            promises.push(api.get('/users/centers/list'));
+            promises.push(api.get('/users/chs/list'));
+          }
+          const [ghRes, cRes, chRes] = await Promise.all(promises);
+          setAllGhs(ghRes?.data || []);
+          if (isAdmin) {
+            setAllCenters(cRes?.data || []);
+            setAllChs(chRes?.data || []);
+          }
         } catch (adminErr) {
-          console.error('Failed to fetch centers/chs for admin:', adminErr);
+          console.error('Failed to fetch centers/chs/ghs:', adminErr);
         }
       }
 
       // 3. If CH, fetch all active groups under this center
       if (isChUser && user?.center) {
+        setSelectedCenter(user.center);
         try {
           const gRes = await api.get(
             `/users/groups/list?center=${encodeURIComponent(user.center)}`
@@ -149,6 +158,23 @@ const Periods = () => {
     });
     return map;
   }, [allChs]);
+
+  const ghMapByGroup = useMemo(() => {
+    const map = {};
+    allGhs.forEach((gh) => {
+      const grp = (gh.group || gh.group_name || '').trim().toUpperCase();
+      const ctr = (gh.center || '').trim().toUpperCase();
+      if (grp) {
+        if (ctr) {
+          map[`${ctr}_${grp}`] = gh;
+        }
+        if (!map[grp]) {
+          map[grp] = gh;
+        }
+      }
+    });
+    return map;
+  }, [allGhs]);
 
   const fetchAvailableYears = async (
     grp = selectedGroup,
@@ -574,7 +600,7 @@ const Periods = () => {
               });
             }
           }}
-          title={isAdmin ? `Period: ${period.title} (Use Download to export combined newsletter)` : `Click to view entries for ${period.title}`}
+          title={isAdmin ? `Period: ${period.title} (Use Download to export)` : `Click to view entries for ${period.title}`}
           style={isAdmin ? { cursor: 'default' } : {}}
         >
           {/* Left side: Badge + Date Range */}
@@ -587,7 +613,15 @@ const Periods = () => {
               <span className="half-date-label">{rangeLabel}</span>
               <span className="half-sub-label">
                 {subLabel}
-                {period.creator_name ? ` • GH: ${period.creator_name}` : ''}
+                {(() => {
+                  const pCenter = (period.center || (isAdmin ? selectedCenter : user?.center) || '').trim().toUpperCase();
+                  const pDept = (period.group_name || '').trim().toUpperCase();
+                  const ghUser = (pCenter && pCenter !== 'ALL')
+                    ? (ghMapByGroup[`${pCenter}_${pDept}`] || ghMapByGroup[pDept])
+                    : ghMapByGroup[pDept];
+                  const ghName = ghUser?.name?.trim();
+                  return ghName ? ` • GH: ${ghName}` : '';
+                })()}
               </span>
             </div>
           </div>
@@ -751,24 +785,15 @@ const Periods = () => {
           </h2>
           <p>
             {isAdmin ? (
-              <>
-                <span className="role-badge role-admin" style={{ padding: '3px 10px', fontSize: '0.78rem' }}>
-                  <IconShield size={14} />
-                  System Administrator
-                </span>
-                <span style={{ color: '#2563eb', fontWeight: '700' }}>• Institutional Oversight</span>
-                <span>• Viewing all {allCenters.length} centers & all {allChs.length} Centre Heads</span>
-              </>
+              <span className="role-badge role-admin" style={{ padding: '3px 10px', fontSize: '0.78rem' }}>
+                <IconShield size={14} />
+                System Administrator
+              </span>
             ) : isChUser ? (
-              <>
-                <span>Center:</span>
-                <span className="group-badge-hero" style={{ backgroundColor: '#fffbeb', color: '#b45309', border: '1px solid #fde68a' }}>
-                  <IconBuilding size={14} />
-                  {user.center || 'All Centers'}
-                </span>
-                <span style={{ color: '#d97706', fontWeight: '700' }}>• Centre Head (CH) Access</span>
-                <span>• Viewing newsletter periods across all groups</span>
-              </>
+              <span className="role-badge" style={{ backgroundColor: '#fffbeb', color: '#b45309', border: '1px solid #fde68a', padding: '3px 10px', fontSize: '0.78rem' }}>
+                <IconBuilding size={14} />
+                Centre Head (CH) • {user.center || 'Center'}
+              </span>
             ) : (
               <>
                 <span>Department:</span>
@@ -809,10 +834,10 @@ const Periods = () => {
                 height: 'fit-content',
                 alignSelf: 'center',
               }}
-              title={isAdmin ? "Download Combined Institutional DOCX" : "Download DOCX"}
+              title="Download newsletter (.docx)"
             >
               <IconDownload size={18} strokeWidth={2.2} />
-              <span>{isAdmin ? 'Download Institutional Combined (.docx)' : 'Download'}</span>
+              <span>Download (.docx)</span>
             </button>
           )}
 
@@ -824,6 +849,18 @@ const Periods = () => {
               <div className="stat-pill-info">
                 <span className="stat-pill-count">{allCenters.length}</span>
                 <span className="stat-pill-label">Centers</span>
+              </div>
+            </div>
+          )}
+
+          {isChUser && (
+            <div className="stat-pill">
+              <div className="stat-pill-icon blue" style={{ backgroundColor: '#eff6ff', color: '#2563eb' }}>
+                <IconUsersGroup size={18} />
+              </div>
+              <div className="stat-pill-info">
+                <span className="stat-pill-count">{centerGroups.length}</span>
+                <span className="stat-pill-label">Departments</span>
               </div>
             </div>
           )}
@@ -850,136 +887,276 @@ const Periods = () => {
         </div>
       </div>
 
-      {/* 1.4 Admin Center Selector Toolbar */}
+      {/* 1.4 Admin Filter Toolbar: Center & Department Dropdowns */}
       {isAdmin && (
         <div
           style={{
             backgroundColor: '#ffffff',
             border: '1px solid #e2e8f0',
             borderRadius: '14px',
-            padding: '14px 20px',
+            padding: '12px 20px',
             display: 'flex',
-            flexDirection: 'column',
-            gap: '12px',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '14px',
             boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+            {/* Center Dropdown */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <IconBuilding size={20} style={{ color: '#2563eb' }} />
-              <span style={{ fontSize: '0.9rem', fontWeight: '800', color: '#1e293b' }}>
-                Select Center (Institutional Filter):
+              <IconBuilding size={18} style={{ color: '#2563eb' }} />
+              <span style={{ fontSize: '0.86rem', fontWeight: '700', color: '#1e293b' }}>
+                Center:
               </span>
+              <select
+                value={selectedCenter}
+                onChange={(e) => handleSelectCenter(e.target.value)}
+                style={{
+                  padding: '7px 14px',
+                  borderRadius: '10px',
+                  border: '1.5px solid #cbd5e1',
+                  backgroundColor: '#ffffff',
+                  fontSize: '0.84rem',
+                  fontWeight: '600',
+                  color: '#1e293b',
+                  cursor: 'pointer',
+                  minWidth: '220px',
+                  outline: 'none',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+                }}
+              >
+                <option value="all">🌐 All Centers ({allCenters.length})</option>
+                {allCenters.map((cName) => {
+                  const chUser = chMapByCenter[cName];
+                  return (
+                    <option key={cName} value={cName}>
+                      🏢 {cName} {chUser ? `— CH: ${chUser.name}` : ''}
+                    </option>
+                  );
+                })}
+              </select>
             </div>
-            <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
-              {allChs.length} Centre Heads active
-            </span>
-          </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              onClick={() => handleSelectCenter('all')}
-              style={{
-                padding: '6px 16px',
-                borderRadius: '20px',
-                fontSize: '0.82rem',
-                fontWeight: '700',
-                border: selectedCenter === 'all' ? '2px solid #2563eb' : '1px solid #cbd5e1',
-                backgroundColor: selectedCenter === 'all' ? '#eff6ff' : '#ffffff',
-                color: selectedCenter === 'all' ? '#1d4ed8' : '#475569',
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                transition: 'all 0.15s ease',
-                boxShadow: selectedCenter === 'all' ? '0 1px 4px rgba(37,99,235,0.2)' : 'none',
-              }}
-            >
-              <IconBuilding size={15} style={{ color: selectedCenter === 'all' ? '#2563eb' : '#64748b' }} />
-              <span>All Centers ({allCenters.length})</span>
-            </button>
-
-            {allCenters.map((cName) => {
-              const isSelected = selectedCenter === cName;
-              const chUser = chMapByCenter[cName];
-              return (
-                <button
-                  key={cName}
-                  type="button"
-                  onClick={() => handleSelectCenter(cName)}
-                  style={{
-                    padding: '6px 14px',
-                    borderRadius: '20px',
-                    fontSize: '0.82rem',
-                    fontWeight: '700',
-                    border: isSelected ? '2px solid #2563eb' : '1px solid #cbd5e1',
-                    backgroundColor: isSelected ? '#eff6ff' : '#ffffff',
-                    color: isSelected ? '#1d4ed8' : '#475569',
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    transition: 'all 0.15s ease',
-                    boxShadow: isSelected ? '0 1px 4px rgba(37,99,235,0.2)' : 'none',
+            {/* Department Dropdown (only when a specific center is selected) */}
+            {selectedCenter !== 'all' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <IconUsersGroup size={18} style={{ color: '#2563eb' }} />
+                <span style={{ fontSize: '0.86rem', fontWeight: '700', color: '#1e293b' }}>
+                  Department:
+                </span>
+                <select
+                  value={selectedGroup}
+                  onChange={(e) => {
+                    const grp = e.target.value;
+                    setSelectedGroup(grp);
+                    fetchPeriods(filterMode, selectedFilterYear, selectedFilterMonth, grp, selectedCenter);
+                    fetchAvailableYears(grp, selectedCenter);
                   }}
-                  title={chUser ? `Center: ${cName} • Centre Head: ${chUser.name}` : `Center: ${cName} (No CH assigned)`}
+                  style={{
+                    padding: '7px 14px',
+                    borderRadius: '10px',
+                    border: '1.5px solid #cbd5e1',
+                    backgroundColor: '#ffffff',
+                    fontSize: '0.84rem',
+                    fontWeight: '600',
+                    color: '#1e293b',
+                    cursor: 'pointer',
+                    minWidth: '200px',
+                    outline: 'none',
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+                  }}
                 >
-                  <span>{cName}</span>
-                  {chUser && (
-                    <span
-                      style={{
-                        fontSize: '0.72rem',
-                        backgroundColor: isSelected ? '#dbeafe' : '#f1f5f9',
-                        color: isSelected ? '#1e40af' : '#64748b',
-                        padding: '1px 6px',
-                        borderRadius: '10px',
-                        fontWeight: '600',
-                      }}
-                    >
-                      CH: {chUser.name.split(' ')[0]}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+                  <option value="all">
+                    All Departments {centerGroups.length > 0 ? `(${centerGroups.length})` : ''}
+                  </option>
+                  {centerGroups.map((grp) => (
+                    <option key={grp} value={grp}>
+                      📁 {grp}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
 
-          {/* Active Center Info Bar */}
-          {selectedCenter !== 'all' && (
-            <div
-              style={{
-                marginTop: '4px',
-                padding: '8px 12px',
-                borderRadius: '8px',
-                backgroundColor: '#f8fafc',
-                border: '1px solid #e2e8f0',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                flexWrap: 'wrap',
-                gap: '8px',
-                fontSize: '0.82rem',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ fontWeight: '700', color: '#1e293b' }}>Active Center:</span>
-                <span style={{ color: '#2563eb', fontWeight: '800' }}>{selectedCenter}</span>
-                {chMapByCenter[selectedCenter] ? (
-                  <span style={{ color: '#475569' }}>
-                    • Centre Head: <strong style={{ color: '#b45309' }}>{chMapByCenter[selectedCenter].name}</strong> ({chMapByCenter[selectedCenter].email})
-                  </span>
-                ) : (
-                  <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>• No Centre Head assigned</span>
-                )}
-              </div>
+          {/* Right side: Centre Head Info (only when assigned) */}
+          {selectedCenter !== 'all' && chMapByCenter[selectedCenter] ? (
+            <div style={{ fontSize: '0.82rem', color: '#475569' }}>
+              Centre Head: <strong style={{ color: '#1e293b' }}>{chMapByCenter[selectedCenter].name}</strong>
             </div>
-          )}
+          ) : null}
         </div>
       )}
 
-      {/* 1.5 Department Filter Toolbar (For CH or when Admin has selected a specific center) */}
-      {(isChUser || (isAdmin && selectedCenter !== 'all')) && (
+      {/* 1.6 Interactive Breadcrumb & 1-Click Back Navigation Strip */}
+      {(isAdmin ? (selectedCenter !== 'all' || selectedGroup !== 'all') : (selectedGroup !== 'all')) && (
+        <div
+          style={{
+            backgroundColor: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderRadius: '12px',
+            padding: '10px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '10px',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
+          }}
+        >
+          {/* Left: Interactive Breadcrumb Path */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', fontSize: '0.84rem' }}>
+            {isAdmin && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => handleSelectCenter('all')}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    background: 'none',
+                    border: 'none',
+                    color: selectedCenter === 'all' ? '#0f172a' : '#2563eb',
+                    fontWeight: selectedCenter === 'all' ? '700' : '600',
+                    cursor: selectedCenter === 'all' ? 'default' : 'pointer',
+                    padding: '3px 6px',
+                    borderRadius: '6px',
+                  }}
+                  title="Return to Centers Directory"
+                >
+                  <IconHome size={15} />
+                  <span>Centers</span>
+                </button>
+                <IconChevronRight size={14} style={{ color: '#94a3b8' }} />
+              </>
+            )}
+
+            {(isAdmin ? selectedCenter !== 'all' : (user?.center && selectedGroup !== 'all')) && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (selectedGroup !== 'all') {
+                      setSelectedGroup('all');
+                      fetchPeriods(filterMode, selectedFilterYear, selectedFilterMonth, 'all', isAdmin ? selectedCenter : user?.center);
+                      fetchAvailableYears('all', isAdmin ? selectedCenter : user?.center);
+                    }
+                  }}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    background: 'none',
+                    border: 'none',
+                    color: selectedGroup === 'all' ? '#0f172a' : '#2563eb',
+                    fontWeight: selectedGroup === 'all' ? '700' : '600',
+                    cursor: selectedGroup === 'all' ? 'default' : 'pointer',
+                    padding: '3px 6px',
+                    borderRadius: '6px',
+                  }}
+                  title={selectedGroup !== 'all' ? `View all ${isAdmin ? selectedCenter : user?.center} departments` : ''}
+                >
+                  <IconBuilding size={15} />
+                  <span>{isAdmin ? selectedCenter : user?.center} Center</span>
+                </button>
+                {selectedGroup !== 'all' && (
+                  <IconChevronRight size={14} style={{ color: '#94a3b8' }} />
+                )}
+              </>
+            )}
+
+            {selectedGroup !== 'all' && (
+              <span style={{ fontWeight: '700', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <IconFolder size={15} style={{ color: '#2563eb' }} />
+                <span>{selectedGroup} Department</span>
+              </span>
+            )}
+          </div>
+
+          {/* Right: Quick 1-Click Back Button */}
+          <div>
+            {selectedGroup !== 'all' ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedGroup('all');
+                  fetchPeriods(filterMode, selectedFilterYear, selectedFilterMonth, 'all', isAdmin ? selectedCenter : user?.center);
+                  fetchAvailableYears('all', isAdmin ? selectedCenter : user?.center);
+                }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 14px',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
+                  backgroundColor: '#f8fafc',
+                  color: '#334155',
+                  fontSize: '0.8rem',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#eff6ff';
+                  e.currentTarget.style.borderColor = '#93c5fd';
+                  e.currentTarget.style.color = '#1d4ed8';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#f8fafc';
+                  e.currentTarget.style.borderColor = '#cbd5e1';
+                  e.currentTarget.style.color = '#334155';
+                }}
+                title={isAdmin ? `Back to ${selectedCenter} department list` : 'Back to departments list'}
+              >
+                <IconArrowLeft size={15} />
+                <span>Back to {isAdmin && selectedCenter !== 'all' ? `${selectedCenter} ` : ''}Departments</span>
+              </button>
+            ) : selectedCenter !== 'all' && isAdmin ? (
+              <button
+                type="button"
+                onClick={() => handleSelectCenter('all')}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 14px',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
+                  backgroundColor: '#f8fafc',
+                  color: '#334155',
+                  fontSize: '0.8rem',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#eff6ff';
+                  e.currentTarget.style.borderColor = '#93c5fd';
+                  e.currentTarget.style.color = '#1d4ed8';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#f8fafc';
+                  e.currentTarget.style.borderColor = '#cbd5e1';
+                  e.currentTarget.style.color = '#334155';
+                }}
+                title="Back to Centers Directory"
+              >
+                <IconArrowLeft size={15} />
+                <span>Back to Centers</span>
+              </button>
+            ) : null}
+          </div>
+        </div>
+      )}
+
+      {/* 1.5 Department Filter Toolbar (For CH only) */}
+      {isChUser && (
         <div
           style={{
             backgroundColor: '#ffffff',
@@ -998,18 +1175,17 @@ const Periods = () => {
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <IconBuilding size={18} style={{ color: '#2563eb' }} />
               <span style={{ fontSize: '0.86rem', fontWeight: '700', color: '#1e293b' }}>
-                Department ({isAdmin ? selectedCenter : user?.center}):
+                Department ({user?.center || 'Center'}):
               </span>
             </div>
 
-            {/* Clean Department Dropdown */}
             <select
               value={selectedGroup}
               onChange={(e) => {
                 const grp = e.target.value;
                 setSelectedGroup(grp);
-                fetchPeriods(filterMode, selectedFilterYear, selectedFilterMonth, grp, isAdmin ? selectedCenter : undefined);
-                fetchAvailableYears(grp, isAdmin ? selectedCenter : undefined);
+                fetchPeriods(filterMode, selectedFilterYear, selectedFilterMonth, grp, user?.center);
+                fetchAvailableYears(grp, user?.center);
               }}
               style={{
                 padding: '7px 14px',
@@ -1030,7 +1206,7 @@ const Periods = () => {
               </option>
               {centerGroups.map((grp) => (
                 <option key={grp} value={grp}>
-                  {grp}
+                  📁 {grp}
                 </option>
               ))}
             </select>
@@ -1231,261 +1407,139 @@ const Periods = () => {
           </p>
         </div>
       ) : isAdmin && selectedCenter === 'all' && selectedGroup === 'all' ? (
-        /* Admin All Centers Multi-Center & Multi-Department Grouped View */
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '40px' }}>
-          {(() => {
-            const periodsByCenter = {};
-            periods.forEach((p) => {
-              const c = p.center || 'General';
-              if (!periodsByCenter[c]) periodsByCenter[c] = [];
-              periodsByCenter[c].push(p);
-            });
+        /* Executive Institutional Overview: Clean Center Summary Cards */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+            <h3 style={{ margin: 0, fontSize: '1.05rem', color: '#0f172a', fontWeight: '800' }}>
+              Centers
+            </h3>
+          </div>
 
-            const centerKeys = Object.keys(periodsByCenter).sort();
-
-            return centerKeys.map((cName) => {
-              const centerPeriods = periodsByCenter[cName];
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+              gap: '18px',
+            }}
+          >
+            {allCenters.map((cName) => {
+              const centerPeriods = periods.filter(
+                (p) => (p.center || '').toLowerCase() === cName.toLowerCase()
+              );
               const chUser = chMapByCenter[cName];
-
-              // Group departments inside this center
-              const deptsInCenter = {};
-              centerPeriods.forEach((p) => {
-                const g = p.group_name || 'General';
-                if (!deptsInCenter[g]) deptsInCenter[g] = [];
-                deptsInCenter[g].push(p);
-              });
-              const deptNames = Object.keys(deptsInCenter).sort();
+              const deptsSet = new Set(centerPeriods.map((p) => p.group_name).filter(Boolean));
+              const deptCount = deptsSet.size;
+              const finalizedCount = centerPeriods.filter((p) => p.edit === false).length;
+              const openCount = centerPeriods.length - finalizedCount;
 
               return (
                 <div
                   key={cName}
+                  onClick={() => handleSelectCenter(cName)}
                   style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '20px',
                     backgroundColor: '#ffffff',
                     border: '1px solid #e2e8f0',
-                    borderRadius: '16px',
-                    padding: '24px',
-                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.03)',
+                    borderTop: '4px solid #2563eb',
+                    borderRadius: '14px',
+                    padding: '18px 20px',
+                    cursor: 'pointer',
+                    transition: 'all 0.18s ease',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    gap: '14px',
                   }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.borderColor = '#93c5fd';
+                    e.currentTarget.style.borderTopColor = '#1d4ed8';
+                    e.currentTarget.style.boxShadow = '0 6px 18px rgba(37,99,235,0.1)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'none';
+                    e.currentTarget.style.borderColor = '#e2e8f0';
+                    e.currentTarget.style.borderTopColor = '#2563eb';
+                    e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.03)';
+                  }}
+                  title={`Click to view ${cName} Center departments`}
                 >
-                  {/* Center Header Banner */}
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div
+                          style={{
+                            width: '36px',
+                            height: '36px',
+                            borderRadius: '8px',
+                            backgroundColor: '#eff6ff',
+                            color: '#2563eb',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <IconBuilding size={18} />
+                        </div>
+                        <div>
+                          <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '800', color: '#0f172a' }}>
+                            {cName} Center
+                          </h4>
+                        </div>
+                      </div>
+
+                      <span
+                        style={{
+                          fontSize: '0.74rem',
+                          fontWeight: '700',
+                          color: '#2563eb',
+                          backgroundColor: '#eff6ff',
+                          padding: '2px 8px',
+                          borderRadius: '10px',
+                          border: '1px solid #bfdbfe',
+                        }}
+                      >
+                        {deptCount} {deptCount === 1 ? 'Dept' : 'Depts'}
+                      </span>
+                    </div>
+
+                    {chUser && (
+                      <div style={{ marginTop: '10px', fontSize: '0.8rem', color: '#64748b' }}>
+                        Centre Head: <strong style={{ color: '#1e293b' }}>{chUser.name}</strong>
+                      </div>
+                    )}
+                  </div>
+
                   <div
                     style={{
-                      backgroundColor: '#f8fafc',
-                      border: '1px solid #e2e8f0',
-                      borderLeft: '5px solid #2563eb',
-                      borderRadius: '12px',
-                      padding: '14px 20px',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
-                      flexWrap: 'wrap',
-                      gap: '12px',
-                      boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
+                      paddingTop: '10px',
+                      borderTop: '1px solid #f1f5f9',
+                      fontSize: '0.78rem',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <div
-                        style={{
-                          width: '42px',
-                          height: '42px',
-                          borderRadius: '10px',
-                          backgroundColor: '#eff6ff',
-                          color: '#2563eb',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          flexShrink: 0,
-                        }}
-                      >
-                        <IconBuilding size={22} />
-                      </div>
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ fontSize: '0.74rem', fontWeight: '800', color: '#2563eb', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                            Center
-                          </span>
-                          <h3
-                            style={{
-                              margin: 0,
-                              fontSize: '1.15rem',
-                              fontWeight: '800',
-                              color: '#0f172a',
-                            }}
-                          >
-                            {cName}
-                          </h3>
-                        </div>
-                        <div style={{ fontSize: '0.82rem', color: '#64748b', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                          {chUser ? (
-                            <>
-                              <span>Centre Head (CH):</span>
-                              <strong style={{ color: '#b45309' }}>{chUser.name}</strong>
-                              <span style={{ color: '#94a3b8' }}>({chUser.email})</span>
-                            </>
-                          ) : (
-                            <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>No Centre Head Assigned</span>
-                          )}
-                        </div>
-                      </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ color: '#16a34a', fontWeight: '700' }}>● {openCount} Active</span>
+                      {finalizedCount > 0 && (
+                        <span style={{ color: '#64748b' }}>• {finalizedCount} Finalized</span>
+                      )}
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <span
-                        style={{
-                          fontSize: '0.78rem',
-                          fontWeight: '700',
-                          color: '#1d4ed8',
-                          backgroundColor: '#eff6ff',
-                          border: '1px solid #bfdbfe',
-                          padding: '4px 12px',
-                          borderRadius: '16px',
-                        }}
-                      >
-                        {deptNames.length} {deptNames.length === 1 ? 'Department' : 'Departments'} • {centerPeriods.length} {centerPeriods.length === 1 ? 'Period' : 'Periods'}
-                      </span>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          executeDownloadCombinedDocx({ center: cName });
-                        }}
-                        style={{
-                          padding: '6px 12px',
-                          borderRadius: '8px',
-                          fontSize: '0.78rem',
-                          fontWeight: '700',
-                          border: '1px solid #cbd5e1',
-                          backgroundColor: '#ffffff',
-                          color: '#334155',
-                          cursor: 'pointer',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '5px',
-                        }}
-                        title={`Download combined newsletter for ${cName} Center`}
-                      >
-                        <IconDownload size={14} />
-                        <span>Center DOCX</span>
-                      </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#2563eb', fontWeight: '700' }}>
+                      <span>View Center</span>
+                      <IconChevronRight size={15} />
                     </div>
-                  </div>
-
-                  {/* Departments within this Center */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                    {deptNames.map((deptName, dIdx) => {
-                      const deptPeriods = deptsInCenter[deptName];
-                      const deptMonthCards = groupPeriodsIntoMonthCards(deptPeriods);
-                      const ghPeriod = deptPeriods.find((p) => p.creator_name);
-                      const ghName = ghPeriod?.creator_name;
-
-                      return (
-                        <div key={deptName} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                          {/* Department Section Header */}
-                          <div
-                            style={{
-                              backgroundColor: '#ffffff',
-                              border: '1px solid #e2e8f0',
-                              borderLeft: '4px solid #2563eb',
-                              borderRadius: '10px',
-                              padding: '10px 16px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              flexWrap: 'wrap',
-                              gap: '10px',
-                            }}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <div
-                                style={{
-                                  width: '32px',
-                                  height: '32px',
-                                  borderRadius: '6px',
-                                  backgroundColor: '#eff6ff',
-                                  color: '#2563eb',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  flexShrink: 0,
-                                }}
-                              >
-                                <IconUsersGroup size={16} />
-                              </div>
-                              <div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                  <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '600' }}>Department:</span>
-                                  <h4 style={{ margin: 0, fontSize: '0.94rem', fontWeight: '800', color: '#0f172a' }}>
-                                    {deptName}
-                                  </h4>
-                                </div>
-                                {ghName && (
-                                  <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '1px' }}>
-                                    Group Head (GH): <strong style={{ color: '#334155' }}>{ghName}</strong>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-
-                            <span
-                              style={{
-                                fontSize: '0.74rem',
-                                fontWeight: '700',
-                                color: '#1d4ed8',
-                                backgroundColor: '#eff6ff',
-                                border: '1px solid #bfdbfe',
-                                padding: '2px 8px',
-                                borderRadius: '12px',
-                              }}
-                            >
-                              {deptPeriods.length} {deptPeriods.length === 1 ? 'Period' : 'Periods'}
-                            </span>
-                          </div>
-
-                          {/* Month Cards Grid for this Department */}
-                          <div className="month-cards-grid">
-                            {deptMonthCards.map((monthData) => (
-                              <div key={monthData.yearMonthStr} className="month-card">
-                                <div className="month-card-header">
-                                  <h4 className="month-card-title">
-                                    <IconCalendarEvent size={18} className="month-card-icon" />
-                                    <span>{monthData.monthName}</span>
-                                  </h4>
-                                </div>
-
-                                <div className="month-card-body">
-                                  {renderHalfRow(monthData, 1)}
-                                  <div className="row-separator" />
-                                  {renderHalfRow(monthData, 2)}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-
-                          {/* Department Horizontal Divider */}
-                          {dIdx < deptNames.length - 1 && (
-                            <div
-                              style={{
-                                height: '1px',
-                                backgroundColor: '#e2e8f0',
-                                margin: '8px 0 4px 0',
-                              }}
-                            />
-                          )}
-                        </div>
-                      );
-                    })}
                   </div>
                 </div>
               );
-            });
-          })()}
+            })}
+          </div>
         </div>
       ) : (isChUser || (isAdmin && selectedCenter !== 'all')) && selectedGroup === 'all' ? (
         /* Executive Center Hub View for CH / Admin: Clean Department Summary Cards */
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {/* Department Summary Cards Grid */}
           <div
             style={{
@@ -1499,7 +1553,6 @@ const Periods = () => {
                 (p) => (p.group_name || '').toLowerCase() === deptName.toLowerCase()
               );
               const ghPeriod = deptPeriods.find((p) => p.creator_name);
-              const ghName = ghPeriod?.creator_name || 'Assigned GH';
               const finalizedCount = deptPeriods.filter((p) => p.edit === false).length;
               const openCount = deptPeriods.length - finalizedCount;
 
@@ -1539,44 +1592,58 @@ const Periods = () => {
                   }}
                   title={`Click to view ${deptName} department calendar`}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <div
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div
+                          style={{
+                            width: '36px',
+                            height: '36px',
+                            borderRadius: '10px',
+                            backgroundColor: '#eff6ff',
+                            color: '#2563eb',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <IconBuilding size={18} />
+                        </div>
+                        <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: '800', color: '#0f172a' }}>
+                          {deptName}
+                        </h4>
+                      </div>
+                      <span
                         style={{
-                          width: '36px',
-                          height: '36px',
-                          borderRadius: '10px',
+                          fontSize: '0.76rem',
+                          fontWeight: '700',
+                          color: '#1d4ed8',
                           backgroundColor: '#eff6ff',
-                          color: '#2563eb',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          flexShrink: 0,
+                          padding: '3px 10px',
+                          borderRadius: '14px',
+                          border: '1px solid #bfdbfe',
                         }}
                       >
-                        <IconBuilding size={18} />
-                      </div>
-                      <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: '800', color: '#0f172a' }}>
-                        {deptName}
-                      </h4>
+                        {deptPeriods.length} {deptPeriods.length === 1 ? 'Period' : 'Periods'}
+                      </span>
                     </div>
-                    <span
-                      style={{
-                        fontSize: '0.76rem',
-                        fontWeight: '700',
-                        color: '#1d4ed8',
-                        backgroundColor: '#eff6ff',
-                        padding: '3px 10px',
-                        borderRadius: '14px',
-                        border: '1px solid #bfdbfe',
-                      }}
-                    >
-                      {deptPeriods.length} {deptPeriods.length === 1 ? 'Period' : 'Periods'}
-                    </span>
-                  </div>
 
-                  <div style={{ fontSize: '0.82rem', color: '#64748b' }}>
-                    Group Head: <strong style={{ color: '#334155' }}>{ghName}</strong>
+                    {(() => {
+                      const currentCenter = (isAdmin ? selectedCenter : user?.center || '').trim().toUpperCase();
+                      const dKey = deptName.trim().toUpperCase();
+                      const ghUser = (currentCenter && currentCenter !== 'ALL')
+                        ? (ghMapByGroup[`${currentCenter}_${dKey}`] || ghMapByGroup[dKey])
+                        : ghMapByGroup[dKey];
+                      const ghDisplayName = ghUser?.name?.trim();
+
+                      if (!ghDisplayName) return null;
+                      return (
+                        <div style={{ marginTop: '10px', fontSize: '0.82rem', color: '#64748b' }}>
+                          Group Head: <strong style={{ color: '#334155' }}>{ghDisplayName}</strong>
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   <div
@@ -2078,54 +2145,6 @@ const Periods = () => {
                     ? "Exporting full combined document with all members' entries."
                     : 'Exporting document containing only entries created by the selected contributor.'}
                 </span>
-
-                {(isAdmin || isChUser) && (
-                  <div style={{ marginTop: '10px', paddingTop: '12px', borderTop: '1px dashed #cbd5e1' }}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        executeDownloadCombinedDocx({
-                          center: isAdmin ? (downloadModalPeriod.center || 'all') : user.center,
-                          start_date: downloadModalPeriod.start_date,
-                          end_date: downloadModalPeriod.end_date,
-                        });
-                      }}
-                      disabled={downloadingCombined}
-                      style={{
-                        width: '100%',
-                        padding: '9px 14px',
-                        borderRadius: '8px',
-                        background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
-                        color: '#ffffff',
-                        border: 'none',
-                        fontSize: '0.84rem',
-                        fontWeight: '700',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '8px',
-                        cursor: downloadingCombined ? 'not-allowed' : 'pointer',
-                        boxShadow: '0 2px 6px rgba(37, 99, 235, 0.25)',
-                      }}
-                    >
-                      {downloadingCombined ? (
-                        <>
-                          <IconLoader2 size={16} className="animate-spin" />
-                          <span>Generating Combined Doc...</span>
-                        </>
-                      ) : (
-                        <>
-                          <IconDownload size={16} />
-                          <span>
-                            {isAdmin
-                              ? `Download Combined for this Period (${downloadModalPeriod.center ? downloadModalPeriod.center + ' Center' : 'All Centers'})`
-                              : `Download Combined for All Departments in this Period (${user.center || 'Center'})`}
-                          </span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                )}
               </div>
             </div>
 
@@ -2259,18 +2278,10 @@ const Periods = () => {
                 </div>
                 <div>
                   <h3 style={{ margin: 0, fontSize: '1.08rem', color: '#f8fafc', fontWeight: '800' }}>
-                    {isAdmin && selectedCombinedCenter === 'all'
-                      ? 'Download Institutional Combined Document'
-                      : selectedCombinedGroup !== 'all'
-                        ? `Download ${selectedCombinedGroup} Department Document`
-                        : `Download Combined ${isAdmin ? selectedCombinedCenter : user.center || ''} Document`}
+                    Download Newsletter (.docx)
                   </h3>
                   <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
-                    {isAdmin && selectedCombinedCenter === 'all'
-                      ? 'Consolidate all centers and all departments across CMTI'
-                      : selectedCombinedGroup !== 'all'
-                        ? `Generate newsletter document for ${selectedCombinedGroup} under ${isAdmin ? selectedCombinedCenter : user.center || 'Center'}`
-                        : `Consolidate all departments under ${isAdmin ? selectedCombinedCenter : user.center || 'Center'}`}
+                    Export newsletter document
                   </span>
                 </div>
               </div>
@@ -2293,13 +2304,12 @@ const Periods = () => {
             </div>
 
             {/* Modal Body */}
-            <div style={{ padding: '22px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
-              {/* Admin Center Scope Selector */}
+            <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {/* Center Selector (if Admin) */}
               {isAdmin && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <IconBuilding size={16} style={{ color: '#2563eb' }} />
-                    <span>Select Export Center Scope:</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                  <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#334155' }}>
+                    Center:
                   </label>
                   <select
                     value={selectedCombinedCenter}
@@ -2318,122 +2328,63 @@ const Periods = () => {
                     }}
                     style={{
                       width: '100%',
-                      padding: '10px 14px',
+                      padding: '8px 12px',
                       borderRadius: '8px',
                       border: '1.5px solid #cbd5e1',
-                      fontSize: '0.88rem',
-                      fontWeight: '700',
-                      color: '#0f172a',
-                      backgroundColor: '#f8fafc',
-                      cursor: 'pointer',
-                      outline: 'none',
-                    }}
-                  >
-                    <option value="all">🌐 All Centers Combined (Institutional Full Overview)</option>
-                    {allCenters.map((cName) => {
-                      const chUser = chMapByCenter[cName];
-                      return (
-                        <option key={cName} value={cName}>
-                          🏢 {cName} Center {chUser ? `— CH: ${chUser.name}` : ''}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </div>
-              )}
-
-              {/* Target Overview Pill */}
-              <div
-                style={{
-                  background: '#f8fafc',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '10px',
-                  padding: '12px 16px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                }}
-              >
-                <div>
-                  <span
-                    style={{
-                      fontSize: '0.72rem',
-                      fontWeight: '700',
-                      color: '#64748b',
-                      textTransform: 'uppercase',
-                    }}
-                  >
-                    Export Target
-                  </span>
-                  <h4
-                    style={{
-                      margin: '2px 0 0 0',
-                      color: '#0f172a',
-                      fontSize: '0.98rem',
-                      fontWeight: '800',
-                    }}
-                  >
-                    {isAdmin && selectedCombinedCenter === 'all'
-                      ? 'CMTI All Centers Combined'
-                      : `${isAdmin ? selectedCombinedCenter : user.center || 'All Centers'} Center`}
-                  </h4>
-                </div>
-                <span
-                  style={{
-                    fontSize: '0.76rem',
-                    fontWeight: '700',
-                    backgroundColor: '#eff6ff',
-                    color: '#1d4ed8',
-                    padding: '4px 10px',
-                    borderRadius: '20px',
-                    border: '1px solid #bfdbfe',
-                  }}
-                >
-                  {isAdmin && selectedCombinedCenter === 'all'
-                    ? `${allCenters.length} Centers • ${allChs.length} CHs`
-                    : selectedCombinedGroup !== 'all'
-                      ? `${selectedCombinedGroup} Dept`
-                      : `${centerGroups.length || 'All'} Departments`}
-                </span>
-              </div>
-
-              {/* Department Scope Selector (if single center is selected) */}
-              {(!isAdmin || selectedCombinedCenter !== 'all') && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <IconFolder size={16} style={{ color: '#2563eb' }} />
-                    <span>Department Selection:</span>
-                  </label>
-                  <select
-                    value={selectedCombinedGroup}
-                    onChange={(e) => setSelectedCombinedGroup(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '9px 12px',
-                      borderRadius: '8px',
-                      border: '1.5px solid #cbd5e1',
-                      fontSize: '0.88rem',
-                      fontWeight: '700',
+                      fontSize: '0.86rem',
+                      fontWeight: '600',
                       color: '#0f172a',
                       backgroundColor: '#ffffff',
                       cursor: 'pointer',
                       outline: 'none',
                     }}
                   >
-                    <option value="all">🌟 All Departments (Combined Full Edition)</option>
-                    {centerGroups.map((grp) => (
-                      <option key={grp} value={grp}>
-                        📁 {grp} Department
+                    <option value="all">All Centers</option>
+                    {allCenters.map((cName) => (
+                      <option key={cName} value={cName}>
+                        {cName} Center
                       </option>
                     ))}
                   </select>
                 </div>
               )}
 
-              {/* Step 1: Select Year & Month */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: '12px' }}>
+              {/* Department Selector (if single center is selected or CH) */}
+              {(!isAdmin || selectedCombinedCenter !== 'all') && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                  <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#334155' }}>
+                    Department:
+                  </label>
+                  <select
+                    value={selectedCombinedGroup}
+                    onChange={(e) => setSelectedCombinedGroup(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      border: '1.5px solid #cbd5e1',
+                      fontSize: '0.86rem',
+                      fontWeight: '600',
+                      color: '#0f172a',
+                      backgroundColor: '#ffffff',
+                      cursor: 'pointer',
+                      outline: 'none',
+                    }}
+                  >
+                    <option value="all">All Departments</option>
+                    {centerGroups.map((grp) => (
+                      <option key={grp} value={grp}>
+                        {grp}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Year & Month Grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: '10px' }}>
                 <div>
-                  <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#0f172a', display: 'block', marginBottom: '6px' }}>
+                  <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#334155', display: 'block', marginBottom: '5px' }}>
                     Year:
                   </label>
                   <select
@@ -2441,10 +2392,10 @@ const Periods = () => {
                     onChange={(e) => setSelectedCombinedYear(e.target.value)}
                     style={{
                       width: '100%',
-                      padding: '9px 12px',
+                      padding: '8px 12px',
                       borderRadius: '8px',
                       border: '1px solid #cbd5e1',
-                      fontSize: '0.88rem',
+                      fontSize: '0.86rem',
                       fontWeight: '600',
                       color: '#0f172a',
                       backgroundColor: '#ffffff',
@@ -2460,7 +2411,7 @@ const Periods = () => {
                 </div>
 
                 <div>
-                  <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#0f172a', display: 'block', marginBottom: '6px' }}>
+                  <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#334155', display: 'block', marginBottom: '5px' }}>
                     Month:
                   </label>
                   <select
@@ -2468,10 +2419,10 @@ const Periods = () => {
                     onChange={(e) => setSelectedCombinedMonth(e.target.value)}
                     style={{
                       width: '100%',
-                      padding: '9px 12px',
+                      padding: '8px 12px',
                       borderRadius: '8px',
                       border: '1px solid #cbd5e1',
-                      fontSize: '0.88rem',
+                      fontSize: '0.86rem',
                       fontWeight: '600',
                       color: '#0f172a',
                       backgroundColor: '#ffffff',
@@ -2494,16 +2445,14 @@ const Periods = () => {
                 </div>
               </div>
 
-              {/* Step 2: 1-Click Edition / Period Scope Selector */}
+              {/* Edition Selector */}
               <div>
-                <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '8px', display: 'block' }}>
-                  Select Newsletter Edition:
+                <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '6px', display: 'block' }}>
+                  Period:
                 </label>
                 {(() => {
                   const yrNum = parseInt(selectedCombinedYear || currentYearStr, 10);
                   const moNum = parseInt(selectedCombinedMonth || String(new Date().getMonth() + 1), 10);
-                  const shortMonthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-                  const shortMo = shortMonthNames[moNum - 1] || 'Sep';
                   const lastDay = new Date(yrNum, moNum, 0).getDate();
 
                   return (
@@ -2512,144 +2461,87 @@ const Periods = () => {
                         type="button"
                         onClick={() => setCombinedScope('h1')}
                         style={{
-                          padding: '10px 12px',
-                          borderRadius: '10px',
-                          fontSize: '0.84rem',
-                          fontWeight: '700',
+                          padding: '9px 12px',
+                          borderRadius: '8px',
+                          fontSize: '0.82rem',
+                          fontWeight: '600',
                           border: combinedScope === 'h1' ? '2px solid #2563eb' : '1px solid #cbd5e1',
                           backgroundColor: combinedScope === 'h1' ? '#eff6ff' : '#ffffff',
                           color: combinedScope === 'h1' ? '#1d4ed8' : '#334155',
                           cursor: 'pointer',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          gap: '2px',
+                          textAlign: 'center',
                           transition: 'all 0.15s ease',
-                          boxShadow: combinedScope === 'h1' ? '0 2px 6px rgba(37,99,235,0.15)' : 'none',
                         }}
                       >
-                        <span>1st Half (Day 1 – 15)</span>
-                        <span style={{ fontSize: '0.72rem', fontWeight: '500', color: combinedScope === 'h1' ? '#2563eb' : '#64748b' }}>
-                          {shortMo} 1 – 15, {yrNum}
-                        </span>
+                        1st Half (1 – 15)
                       </button>
 
                       <button
                         type="button"
                         onClick={() => setCombinedScope('h2')}
                         style={{
-                          padding: '10px 12px',
-                          borderRadius: '10px',
-                          fontSize: '0.84rem',
-                          fontWeight: '700',
+                          padding: '9px 12px',
+                          borderRadius: '8px',
+                          fontSize: '0.82rem',
+                          fontWeight: '600',
                           border: combinedScope === 'h2' ? '2px solid #2563eb' : '1px solid #cbd5e1',
                           backgroundColor: combinedScope === 'h2' ? '#eff6ff' : '#ffffff',
                           color: combinedScope === 'h2' ? '#1d4ed8' : '#334155',
                           cursor: 'pointer',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          gap: '2px',
+                          textAlign: 'center',
                           transition: 'all 0.15s ease',
-                          boxShadow: combinedScope === 'h2' ? '0 2px 6px rgba(37,99,235,0.15)' : 'none',
                         }}
                       >
-                        <span>2nd Half (Day 16 – {lastDay})</span>
-                        <span style={{ fontSize: '0.72rem', fontWeight: '500', color: combinedScope === 'h2' ? '#2563eb' : '#64748b' }}>
-                          {shortMo} 16 – {lastDay}, {yrNum}
-                        </span>
+                        2nd Half (16 – {lastDay})
                       </button>
 
                       <button
                         type="button"
                         onClick={() => setCombinedScope('month')}
                         style={{
-                          padding: '8px 12px',
-                          borderRadius: '10px',
-                          fontSize: '0.8rem',
+                          padding: '9px 12px',
+                          borderRadius: '8px',
+                          fontSize: '0.82rem',
                           fontWeight: '600',
                           border: combinedScope === 'month' ? '2px solid #2563eb' : '1px solid #cbd5e1',
                           backgroundColor: combinedScope === 'month' ? '#eff6ff' : '#ffffff',
-                          color: combinedScope === 'month' ? '#1d4ed8' : '#64748b',
+                          color: combinedScope === 'month' ? '#1d4ed8' : '#334155',
                           cursor: 'pointer',
                           textAlign: 'center',
                           transition: 'all 0.15s ease',
                         }}
                       >
-                        Full Month ({shortMo} 1–{lastDay})
+                        Full Month
                       </button>
 
                       <button
                         type="button"
                         onClick={() => setCombinedScope('year')}
                         style={{
-                          padding: '8px 12px',
-                          borderRadius: '10px',
-                          fontSize: '0.8rem',
+                          padding: '9px 12px',
+                          borderRadius: '8px',
+                          fontSize: '0.82rem',
                           fontWeight: '600',
                           border: combinedScope === 'year' ? '2px solid #2563eb' : '1px solid #cbd5e1',
                           backgroundColor: combinedScope === 'year' ? '#eff6ff' : '#ffffff',
-                          color: combinedScope === 'year' ? '#1d4ed8' : '#64748b',
+                          color: combinedScope === 'year' ? '#1d4ed8' : '#334155',
                           cursor: 'pointer',
                           textAlign: 'center',
                           transition: 'all 0.15s ease',
                         }}
                       >
-                        Full Year (All {yrNum} Months)
+                        Full Year
                       </button>
                     </div>
                   );
                 })()}
               </div>
-
-              {/* Real-time Summary Box */}
-              {(() => {
-                const yrNum = parseInt(selectedCombinedYear || currentYearStr, 10);
-                const moNum = parseInt(selectedCombinedMonth || String(new Date().getMonth() + 1), 10);
-                const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-                const moName = monthNames[moNum - 1] || 'September';
-                const lastDay = new Date(yrNum, moNum, 0).getDate();
-
-                let scopeLabel = '';
-                if (combinedScope === 'h1') scopeLabel = `1st Half (${moName} 1 – 15, ${yrNum})`;
-                else if (combinedScope === 'h2') scopeLabel = `2nd Half (${moName} 16 – ${lastDay}, ${yrNum})`;
-                else if (combinedScope === 'month') scopeLabel = `Full Month (${moName} ${yrNum})`;
-                else if (combinedScope === 'year') scopeLabel = `Full Year (${yrNum})`;
-
-                return (
-                  <div
-                    style={{
-                      fontSize: '0.8rem',
-                      color: '#1e293b',
-                      lineHeight: '1.45',
-                      backgroundColor: '#eff6ff',
-                      border: '1px solid #bfdbfe',
-                      padding: '11px 14px',
-                      borderRadius: '10px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                    }}
-                  >
-                    <IconFileText size={18} style={{ color: '#2563eb', flexShrink: 0 }} />
-                    <div>
-                      <span>Exporting: </span>
-                      <strong style={{ color: '#1d4ed8' }}>{scopeLabel}</strong>
-                      <span style={{ color: '#64748b', fontSize: '0.74rem', display: 'block', marginTop: '1px' }}>
-                        {selectedCombinedGroup !== 'all'
-                          ? `Generates newsletter document exclusively for ${selectedCombinedGroup} department under ${isAdmin ? selectedCombinedCenter : user.center || 'Center'}.`
-                          : `Consolidates all department entries in ${isAdmin && selectedCombinedCenter === 'all' ? 'all centers' : (isAdmin ? selectedCombinedCenter : user.center || 'Center')} into a structured Word document.`}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })()}
             </div>
 
             {/* Modal Footer */}
             <div
               style={{
-                padding: '14px 22px',
+                padding: '12px 20px',
                 borderTop: '1px solid #f1f5f9',
                 display: 'flex',
                 alignItems: 'center',
@@ -2663,8 +2555,8 @@ const Periods = () => {
                 onClick={() => setShowCombinedModal(false)}
                 disabled={downloadingCombined}
                 style={{
-                  padding: '8px 18px',
-                  fontSize: '0.86rem',
+                  padding: '7px 16px',
+                  fontSize: '0.84rem',
                   fontWeight: '600',
                   borderRadius: '8px',
                   backgroundColor: '#ffffff',
@@ -2681,8 +2573,8 @@ const Periods = () => {
                 onClick={() => executeDownloadCombinedDocx()}
                 disabled={downloadingCombined}
                 style={{
-                  padding: '9px 22px',
-                  fontSize: '0.88rem',
+                  padding: '8px 18px',
+                  fontSize: '0.84rem',
                   fontWeight: '700',
                   borderRadius: '8px',
                   background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
@@ -2692,24 +2584,20 @@ const Periods = () => {
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: '6px',
-                  boxShadow: '0 2px 8px rgba(37, 99, 235, 0.3)',
+                  boxShadow: '0 2px 6px rgba(37, 99, 235, 0.25)',
                   opacity: downloadingCombined ? 0.75 : 1,
                   transition: 'all 0.15s ease',
                 }}
               >
                 {downloadingCombined ? (
                   <>
-                    <IconLoader2 size={16} className="animate-spin" />
-                    <span>Generating Document...</span>
+                    <IconLoader2 size={15} className="animate-spin" />
+                    <span>Generating...</span>
                   </>
                 ) : (
                   <>
-                    <IconDownload size={16} />
-                    <span>
-                      {selectedCombinedGroup !== 'all'
-                        ? `Download ${selectedCombinedGroup} (.docx)`
-                        : 'Download Combined (.docx)'}
-                    </span>
+                    <IconDownload size={15} />
+                    <span>Download (.docx)</span>
                   </>
                 )}
               </button>

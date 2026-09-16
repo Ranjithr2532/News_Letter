@@ -102,6 +102,12 @@ def list_centre_heads(db: Session = Depends(get_db)):
     return chs
 
 
+@router.get("/ghs/list", response_model=List[schemas.UserRead])
+def list_group_heads(db: Session = Depends(get_db)):
+    ghs = db.query(models.User).filter(models.User.role.ilike("gh")).order_by(models.User.center.asc(), models.User.group.asc(), models.User.name.asc()).all()
+    return ghs
+
+
 @router.get("/{user_id}", response_model=schemas.UserRead)
 def get_user(user_id: int, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == user_id).first()
