@@ -232,15 +232,15 @@ const Layout = () => {
             )}
           </div>
 
-          {/* Admin Settings Icon Button Beside Logout (Admin & Group Head) */}
-          {(isAdmin || isGhUser) && (
+          {/* Settings Icon Button (Group Head only, hidden for Admin) */}
+          {isGhUser && !isAdmin && (
             <NavLink
               to="/customize"
               className={({ isActive }) =>
                 `topbar-admin-btn ${isActive ? 'active' : ''}`
               }
-              title="Admin & Settings"
-              aria-label="Admin Settings"
+              title="Settings & Team Management"
+              aria-label="Settings"
             >
               <IconSettings size={18} />
             </NavLink>

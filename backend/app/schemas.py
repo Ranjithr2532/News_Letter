@@ -74,7 +74,7 @@ class PeriodCreate(BaseModel):
     title: str
     start_date: date
     end_date: date
-    created_by: int   # user id — sent from frontend since no JWT yet
+    created_by: Optional[int] = None   # user id — sent from frontend since no JWT yet
     group_name: str    # sent from frontend (from logged-in user object) since no JWT yet
     edit: Optional[bool] = True
 

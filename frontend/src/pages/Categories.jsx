@@ -98,9 +98,13 @@ const Categories = () => {
       navigate('/');
       return;
     }
+    if (isAdmin) {
+      navigate('/periods', { replace: true });
+      return;
+    }
     fetchPeriod();
     fetchCategories();
-  }, [user, periodId, navigate]);
+  }, [user, periodId, isAdmin, navigate]);
 
   const fetchPeriod = async () => {
     try {

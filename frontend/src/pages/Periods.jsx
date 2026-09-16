@@ -22,6 +22,7 @@ import {
   IconCircleCheck,
   IconBuilding,
   IconShield,
+  IconPlus,
 } from '@tabler/icons-react';
 
 const Periods = () => {
@@ -31,6 +32,7 @@ const Periods = () => {
   const isAdmin = user?.role?.toLowerCase() === 'admin';
   const isChUser = user?.role?.toLowerCase() === 'ch';
   const isGhUser = user?.role?.toLowerCase() === 'gh';
+  const canCreatePeriod = !isAdmin && !isChUser;
   const currentYearStr = String(new Date().getFullYear());
 
   const [periods, setPeriods] = useState([]);
@@ -64,6 +66,16 @@ const Periods = () => {
   const [periodContributors, setPeriodContributors] = useState([]);
   const [selectedContributorId, setSelectedContributorId] = useState('');
   const [loadingContributors, setLoadingContributors] = useState(false);
+
+  // Manual Period Creation Modal state
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createTitle, setCreateTitle] = useState('');
+  const [createStartDate, setCreateStartDate] = useState('');
+  const [createEndDate, setCreateEndDate] = useState('');
+  const [createGroupName, setCreateGroupName] = useState('');
+  const [submittingCreate, setSubmittingCreate] = useState(false);
+  const [createError, setCreateError] = useState('');
+  const [createSuccess, setCreateSuccess] = useState('');
 
   // Defaults to current year (e.g. '2026') on mount
   const [filterMode, setFilterMode] = useState(currentYearStr);
@@ -303,6 +315,98 @@ const Periods = () => {
     }
   };
 
+  // Open Create Period Modal (with optional preset dates from unscheduled half row)
+  const handleOpenCreateModal = (presetMonthData, halfNum) => {
+    setCreateError('');
+    setCreateSuccess('');
+
+    if (presetMonthData && halfNum) {
+      const year = presetMonthData.year;
+      const monthIdx = presetMonthData.monthIndex;
+      const monthName = presetMonthData.monthName;
+      const lastDay = presetMonthData.lastDayOfMonth;
+
+      const startDay = halfNum === 1 ? 1 : 16;
+      const endDay = halfNum === 1 ? 15 : lastDay;
+
+      const sDayStr = String(startDay).padStart(2, '0');
+      const eDayStr = String(endDay).padStart(2, '0');
+      const mStr = String(monthIdx + 1).padStart(2, '0');
+
+      setCreateTitle(`${monthName} ${year} - ${halfNum === 1 ? '1st Half' : '2nd Half'}`);
+      setCreateStartDate(`${year}-${mStr}-${sDayStr}`);
+      setCreateEndDate(`${year}-${mStr}-${eDayStr}`);
+    } else {
+      const today = new Date();
+      const year = today.getFullYear();
+      const mStr = String(today.getMonth() + 1).padStart(2, '0');
+      const monthName = today.toLocaleString('default', { month: 'long' });
+      const isH1 = today.getDate() <= 15;
+
+      const lastDay = new Date(year, today.getMonth() + 1, 0).getDate();
+      const startDay = isH1 ? '01' : '16';
+      const endDay = isH1 ? '15' : String(lastDay).padStart(2, '0');
+
+      setCreateTitle(`${monthName} ${year} - ${isH1 ? '1st Half' : '2nd Half'}`);
+      setCreateStartDate(`${year}-${mStr}-${startDay}`);
+      setCreateEndDate(`${year}-${mStr}-${endDay}`);
+    }
+
+    setCreateGroupName(user?.group || user?.group_name || 'General');
+    setShowCreateModal(true);
+  };
+
+  // Submit Manual Period Creation to Backend API
+  const handleCreatePeriodSubmit = async (e) => {
+    e.preventDefault();
+    setCreateError('');
+    setCreateSuccess('');
+
+    if (!createTitle.trim()) {
+      setCreateError('Please enter a period title.');
+      return;
+    }
+    if (!createStartDate || !createEndDate) {
+      setCreateError('Please select both start and end dates.');
+      return;
+    }
+    if (createStartDate > createEndDate) {
+      setCreateError('Start date cannot be after end date.');
+      return;
+    }
+
+    const groupToUse = isAdmin ? (createGroupName || 'General') : (user?.group || user?.group_name || 'General');
+
+    setSubmittingCreate(true);
+    try {
+      const payload = {
+        title: createTitle.trim(),
+        start_date: createStartDate,
+        end_date: createEndDate,
+        group_name: groupToUse,
+        created_by: user?.id || 1,
+        edit: true,
+      };
+
+      await api.post('/periods/', payload);
+      setCreateSuccess('Newsletter period created successfully!');
+      setTimeout(() => {
+        setShowCreateModal(false);
+        setCreateSuccess('');
+      }, 1000);
+
+      // Re-fetch periods list
+      fetchPeriods(filterMode, selectedFilterYear, selectedFilterMonth, selectedGroup, selectedCenter);
+      fetchAvailableYears(selectedGroup, selectedCenter);
+    } catch (err) {
+      console.error('Failed to create period:', err);
+      const detail = err.response?.data?.detail || 'Failed to create period. Please check details.';
+      setCreateError(detail);
+    } finally {
+      setSubmittingCreate(false);
+    }
+  };
+
   // Extract unique half-month date ranges across all periods for CH
   const uniquePeriodRanges = useMemo(() => {
     const map = new Map();
@@ -483,13 +587,16 @@ const Periods = () => {
 
       return (
         <div
-          className="half-row clickable"
-          onClick={() =>
-            navigate(`/categories/${period.id}`, {
-              state: { periodTitle: period.title },
-            })
-          }
-          title={`Click to view entries for ${period.title}`}
+          className={`half-row ${isAdmin ? '' : 'clickable'}`}
+          onClick={() => {
+            if (!isAdmin) {
+              navigate(`/categories/${period.id}`, {
+                state: { periodTitle: period.title },
+              });
+            }
+          }}
+          title={isAdmin ? `Period: ${period.title} (Use Download to export combined newsletter)` : `Click to view entries for ${period.title}`}
+          style={isAdmin ? { cursor: 'default' } : {}}
         >
           {/* Left side: Badge + Date Range */}
           <div className="half-left-meta">
@@ -556,20 +663,22 @@ const Periods = () => {
               )}
             </button>
 
-            {/* View Chevron Link */}
-            <div
-              className="chevron-arrow"
-              onClick={() =>
-                navigate(`/categories/${period.id}`, {
-                  state: { periodTitle: period.title },
-                })
-              }
-              title="View Categories"
-              role="button"
-              tabIndex={0}
-            >
-              <IconChevronRight size={18} />
-            </div>
+            {/* View Chevron Link - Only for non-admin users */}
+            {!isAdmin && (
+              <div
+                className="chevron-arrow"
+                onClick={() =>
+                  navigate(`/categories/${period.id}`, {
+                    state: { periodTitle: period.title },
+                  })
+                }
+                title="View Categories"
+                role="button"
+                tabIndex={0}
+              >
+                <IconChevronRight size={18} />
+              </div>
+            )}
           </div>
         </div>
       );
@@ -605,19 +714,44 @@ const Periods = () => {
             </div>
           </div>
 
-          <span
-            style={{
-              fontSize: '0.74rem',
-              color: '#94a3b8',
-              fontWeight: '600',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-            }}
-          >
-            <IconClock size={13} />
-            {isFuture ? 'Upcoming' : 'Pending'}
-          </span>
+          {canCreatePeriod ? (
+            <button
+              type="button"
+              onClick={() => handleOpenCreateModal(monthData, halfNum)}
+              style={{
+                padding: '6px 14px',
+                fontSize: '0.78rem',
+                fontWeight: '700',
+                borderRadius: '8px',
+                backgroundColor: '#eff6ff',
+                color: '#2563eb',
+                border: '1px solid #bfdbfe',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                transition: 'all 0.15s ease',
+              }}
+              title={`Create newsletter period for ${rangeLabel}`}
+            >
+              <IconPlus size={14} strokeWidth={2.4} />
+              <span>Create Period</span>
+            </button>
+          ) : (
+            <span
+              style={{
+                fontSize: '0.74rem',
+                color: '#94a3b8',
+                fontWeight: '600',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+              }}
+            >
+              <IconClock size={13} />
+              {isFuture ? 'Upcoming' : 'Pending'}
+            </span>
+          )}
         </div>
       );
     }
@@ -671,6 +805,34 @@ const Periods = () => {
 
         {/* Live Overview Stats & Combined Download Button */}
         <div className="periods-stats-strip">
+          {canCreatePeriod && (
+            <button
+              type="button"
+              onClick={() => handleOpenCreateModal()}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '7px',
+                padding: '10px 16px',
+                borderRadius: '12px',
+                backgroundColor: '#ffffff',
+                color: '#2563eb',
+                border: '1.5px solid #2563eb',
+                fontSize: '0.86rem',
+                fontWeight: '700',
+                cursor: 'pointer',
+                boxShadow: '0 2px 6px rgba(37, 99, 235, 0.12)',
+                transition: 'all 0.18s ease',
+                height: 'fit-content',
+                alignSelf: 'center',
+              }}
+              title="Create a new newsletter period manually"
+            >
+              <IconPlus size={18} strokeWidth={2.4} />
+              <span>Create Period Manually</span>
+            </button>
+          )}
+
           {(isAdmin || isChUser) && (
             <button
               type="button"
@@ -2574,6 +2736,279 @@ const Periods = () => {
                 )}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manual Create Period Modal */}
+      {showCreateModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1000,
+            backgroundColor: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+          }}
+          onClick={() => setShowCreateModal(false)}
+        >
+          <div
+            style={{
+              backgroundColor: '#ffffff',
+              borderRadius: '16px',
+              maxWidth: '520px',
+              width: '100%',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+              overflow: 'hidden',
+              border: '1px solid #e2e8f0',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                padding: '18px 24px',
+                borderBottom: '1px solid #e2e8f0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                backgroundColor: '#f8fafc',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div
+                  style={{
+                    width: '36px',
+                    height: '36px',
+                    borderRadius: '10px',
+                    backgroundColor: '#eff6ff',
+                    color: '#2563eb',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <IconCalendarEvent size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.08rem', fontWeight: '800', color: '#0f172a' }}>
+                    Create Newsletter Period
+                  </h3>
+                  <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                    Manually define a new period for newsletter entries
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#64748b',
+                  cursor: 'pointer',
+                  padding: '4px',
+                  borderRadius: '6px',
+                }}
+              >
+                <IconX size={20} />
+              </button>
+            </div>
+
+            {/* Modal Form Body */}
+            <form onSubmit={handleCreatePeriodSubmit} style={{ padding: '20px 24px' }}>
+              {createSuccess && (
+                <div
+                  style={{
+                    marginBottom: '16px',
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    backgroundColor: '#f0fdf4',
+                    border: '1px solid #bbf7d0',
+                    color: '#15803d',
+                    fontSize: '0.84rem',
+                    fontWeight: '600',
+                  }}
+                >
+                  ✓ {createSuccess}
+                </div>
+              )}
+
+              {createError && (
+                <div
+                  style={{
+                    marginBottom: '16px',
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    backgroundColor: '#fef2f2',
+                    border: '1px solid #fecaca',
+                    color: '#b91c1c',
+                    fontSize: '0.84rem',
+                    fontWeight: '600',
+                  }}
+                >
+                  ⚠️ {createError}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
+                    Period Title *
+                  </label>
+                  <input
+                    type="text"
+                    value={createTitle}
+                    onChange={(e) => setCreateTitle(e.target.value)}
+                    placeholder="e.g. September 2026 - 1st Half"
+                    required
+                    style={{
+                      width: '100%',
+                      padding: '9px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '0.88rem',
+                      outline: 'none',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
+                      Start Date *
+                    </label>
+                    <input
+                      type="date"
+                      value={createStartDate}
+                      onChange={(e) => setCreateStartDate(e.target.value)}
+                      required
+                      style={{
+                        width: '100%',
+                        padding: '9px 12px',
+                        borderRadius: '8px',
+                        border: '1px solid #cbd5e1',
+                        fontSize: '0.88rem',
+                        outline: 'none',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
+                      End Date *
+                    </label>
+                    <input
+                      type="date"
+                      value={createEndDate}
+                      onChange={(e) => setCreateEndDate(e.target.value)}
+                      required
+                      style={{
+                        width: '100%',
+                        padding: '9px 12px',
+                        borderRadius: '8px',
+                        border: '1px solid #cbd5e1',
+                        fontSize: '0.88rem',
+                        outline: 'none',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {isAdmin && (
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
+                      Department / Group *
+                    </label>
+                    <input
+                      type="text"
+                      value={createGroupName}
+                      onChange={(e) => setCreateGroupName(e.target.value)}
+                      placeholder="e.g. Design & Precision Engineering"
+                      required
+                      style={{
+                        width: '100%',
+                        padding: '9px 12px',
+                        borderRadius: '8px',
+                        border: '1px solid #cbd5e1',
+                        fontSize: '0.88rem',
+                        outline: 'none',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Action Buttons */}
+              <div
+                style={{
+                  marginTop: '22px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'flex-end',
+                  gap: '10px',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  disabled={submittingCreate}
+                  style={{
+                    padding: '8px 18px',
+                    fontSize: '0.86rem',
+                    fontWeight: '600',
+                    borderRadius: '8px',
+                    backgroundColor: '#ffffff',
+                    border: '1px solid #cbd5e1',
+                    color: '#475569',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={submittingCreate}
+                  style={{
+                    padding: '8px 22px',
+                    fontSize: '0.86rem',
+                    fontWeight: '700',
+                    borderRadius: '8px',
+                    background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                    border: 'none',
+                    color: '#ffffff',
+                    cursor: submittingCreate ? 'not-allowed' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    boxShadow: '0 2px 8px rgba(37, 99, 235, 0.3)',
+                    opacity: submittingCreate ? 0.75 : 1,
+                  }}
+                >
+                  {submittingCreate ? (
+                    <>
+                      <IconLoader2 size={16} className="animate-spin" />
+                      <span>Creating Period...</span>
+                    </>
+                  ) : (
+                    <>
+                      <IconPlus size={16} />
+                      <span>Create Period</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
