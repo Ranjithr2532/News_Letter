@@ -304,7 +304,13 @@ def _append_entry_to_doc(doc: Document, entry, counter: int):
     doc.add_paragraph("")  # spacing
 
 
-def build_combined_center_docx(center_name: str, period_label: str, structure_data: dict, is_all_centers: bool = False) -> Document:
+def build_combined_center_docx(
+    center_name: str,
+    period_label: str,
+    structure_data: dict,
+    is_all_centers: bool = False,
+    group_name: Optional[str] = None,
+) -> Document:
     doc = Document()
 
     # Word Header
@@ -313,6 +319,8 @@ def build_combined_center_docx(center_name: str, period_label: str, structure_da
     header_p = header.paragraphs[0]
     if is_all_centers:
         header_p.text = f"CMTI Institutional Newsletter — All Centers Combined ({period_label})"
+    elif group_name:
+        header_p.text = f"{center_name} Center — {group_name} Department ({period_label})"
     else:
         header_p.text = f"{center_name} Center — Combined Newsletter ({period_label})"
     for r in header_p.runs:
@@ -322,7 +330,12 @@ def build_combined_center_docx(center_name: str, period_label: str, structure_da
 
     # Document Main Title
     title_p = doc.add_paragraph()
-    title_text = "CMTI Institutional Newsletter" if is_all_centers else f"{center_name} Center Newsletter"
+    if is_all_centers:
+        title_text = "CMTI Institutional Newsletter"
+    elif group_name:
+        title_text = f"{center_name} — {group_name} Newsletter"
+    else:
+        title_text = f"{center_name} Center Newsletter"
     title_run = title_p.add_run(title_text)
     title_run.bold = True
     title_run.font.size = Pt(18)
@@ -330,7 +343,12 @@ def build_combined_center_docx(center_name: str, period_label: str, structure_da
     title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
     sub_p = doc.add_paragraph()
-    sub_text = f"Consolidated All Centers & Departments — {period_label}" if is_all_centers else f"Consolidated Department Activities — {period_label}"
+    if is_all_centers:
+        sub_text = f"Consolidated All Centers & Departments — {period_label}"
+    elif group_name:
+        sub_text = f"{group_name} Department Activities — {period_label}"
+    else:
+        sub_text = f"Consolidated Department Activities — {period_label}"
     sub_run = sub_p.add_run(sub_text)
     sub_run.italic = True
     sub_run.font.size = Pt(12)
@@ -419,6 +437,7 @@ def build_combined_center_docx(center_name: str, period_label: str, structure_da
 @router.get("/center/generate-combined-docx")
 def generate_center_combined_docx(
     center: Optional[str] = None,
+    group_name: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     year: Optional[int] = None,
@@ -426,6 +445,7 @@ def generate_center_combined_docx(
     db: Session = Depends(get_db),
 ):
     is_all = center is None or center.strip().lower() in ("all", "all centers", "", "undefined", "null")
+    is_all_groups = group_name is None or group_name.strip().lower() in ("all", "all departments", "all groups", "", "undefined", "null")
 
     query = (
         db.query(models.NewsletterPeriod)
@@ -433,6 +453,8 @@ def generate_center_combined_docx(
     )
     if not is_all:
         query = query.filter(models.User.center == center)
+    if not is_all_groups:
+        query = query.filter(models.NewsletterPeriod.group_name == group_name)
 
     if start_date and end_date:
         query = query.filter(
@@ -530,10 +552,17 @@ def generate_center_combined_docx(
         period_label = "Consolidated Edition"
 
     center_display = "All_Centers" if is_all else center.replace(' ', '_')
-    doc = build_combined_center_docx(center if not is_all else "CMTI", period_label, structure_data, is_all_centers=is_all)
+    group_display = f"_{group_name.replace(' ', '_')}" if not is_all_groups else ""
+    doc = build_combined_center_docx(
+        center if not is_all else "CMTI",
+        period_label,
+        structure_data,
+        is_all_centers=is_all,
+        group_name=group_name if not is_all_groups else None,
+    )
 
     clean_label = period_label.replace(' ', '_').replace('–', '-')
-    filename = f"CMTI_{center_display}_Newsletter_{clean_label}.docx"
+    filename = f"CMTI_{center_display}{group_display}_Newsletter_{clean_label}.docx"
     file_path = os.path.join(GENERATED_DIR, filename)
     doc.save(file_path)
 

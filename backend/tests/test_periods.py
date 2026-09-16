@@ -118,3 +118,8 @@ def test_center_combined_docx_generation(client, test_user, db_session):
         assert docx_res.status_code == 200
         assert docx_res.headers["content-type"] == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
+        # Request docx for specific department under SMPM
+        dept_docx_res = client.get(f"/periods/center/generate-combined-docx?center=SMPM&group_name={test_user.group_name}")
+        assert dept_docx_res.status_code == 200
+        assert dept_docx_res.headers["content-type"] == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+

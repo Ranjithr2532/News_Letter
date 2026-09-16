@@ -133,7 +133,7 @@ const DeadlineModal = () => {
                 border: `1px solid ${isGhUrgent ? 'rgba(245, 158, 11, 0.25)' : 'rgba(56, 189, 248, 0.25)'}`,
               }}
             >
-              {isGhUrgent ? '⚠️ Action Required' : '🔔 Submission Deadline'}
+              {isGhUrgent ? '⚠️ Action Required' : '🔔 Deadline Notice'}
             </span>
             <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '700', color: '#f8fafc', lineHeight: '1.35' }}>
               {activeNotif.title}
