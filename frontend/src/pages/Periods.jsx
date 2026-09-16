@@ -283,8 +283,8 @@ const Periods = () => {
     if (e) e.stopPropagation();
     if (!period) return;
 
-    // For CH: do NOT ask for individual contributors; download the complete period docx directly!
-    if (isChUser) {
+    // For CH & Admin: do NOT ask for individual contributors; download the complete period docx directly!
+    if (isChUser || isAdmin) {
       setDownloadingId(period.id);
       try {
         const response = await api.get(`/periods/${period.id}/generate-docx`, {
@@ -303,7 +303,7 @@ const Periods = () => {
         link.remove();
         window.URL.revokeObjectURL(downloadUrl);
       } catch (err) {
-        console.error('Failed to download period docx for CH:', err);
+        console.error('Failed to download period docx:', err);
         alert('Failed to download period document.');
       } finally {
         setDownloadingId(null);
@@ -599,8 +599,8 @@ const Periods = () => {
     if (e) e.stopPropagation();
     if (!periodsInHalf || periodsInHalf.length === 0) return;
 
-    if (isChUser && selectedGroup === 'all') {
-      const targetCenter = user?.center;
+    if ((isChUser && selectedGroup === 'all') || (isAdmin && (selectedCenter === 'all' || selectedGroup === 'all'))) {
+      const targetCenter = isAdmin ? selectedCenter : user?.center;
       const yr = monthData.year;
       const mo = monthData.monthIndex + 1;
       const padMo = String(mo).padStart(2, '0');
@@ -609,7 +609,7 @@ const Periods = () => {
       const eDate = halfNum === 1 ? `${yr}-${padMo}-15` : `${yr}-${padMo}-${String(lastDay).padStart(2, '0')}`;
       executeDownloadCombinedDocx({
         center: targetCenter,
-        group_name: 'all',
+        group_name: selectedGroup,
         start_date: sDate,
         end_date: eDate,
       });
@@ -890,276 +890,8 @@ const Periods = () => {
         </div>
       </div>
 
-      {/* 1.4 Admin Filter Toolbar: Center & Department Dropdowns */}
-      {isAdmin && (
-        <div
-          style={{
-            backgroundColor: '#ffffff',
-            border: '1px solid #e2e8f0',
-            borderRadius: '14px',
-            padding: '12px 20px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: '14px',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-            {/* Center Dropdown */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <IconBuilding size={18} style={{ color: '#2563eb' }} />
-              <span style={{ fontSize: '0.86rem', fontWeight: '700', color: '#1e293b' }}>
-                Center:
-              </span>
-              <select
-                value={selectedCenter}
-                onChange={(e) => handleSelectCenter(e.target.value)}
-                style={{
-                  padding: '7px 14px',
-                  borderRadius: '10px',
-                  border: '1.5px solid #cbd5e1',
-                  backgroundColor: '#ffffff',
-                  fontSize: '0.84rem',
-                  fontWeight: '600',
-                  color: '#1e293b',
-                  cursor: 'pointer',
-                  minWidth: '220px',
-                  outline: 'none',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
-                }}
-              >
-                <option value="all">🌐 All Centers ({allCenters.length})</option>
-                {allCenters.map((cName) => {
-                  const chUser = chMapByCenter[cName];
-                  return (
-                    <option key={cName} value={cName}>
-                      🏢 {cName} {chUser ? `— CH: ${chUser.name}` : ''}
-                    </option>
-                  );
-                })}
-              </select>
-            </div>
-
-            {/* Department Dropdown (only when a specific center is selected) */}
-            {selectedCenter !== 'all' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <IconUsersGroup size={18} style={{ color: '#2563eb' }} />
-                <span style={{ fontSize: '0.86rem', fontWeight: '700', color: '#1e293b' }}>
-                  Department:
-                </span>
-                <select
-                  value={selectedGroup}
-                  onChange={(e) => {
-                    const grp = e.target.value;
-                    setSelectedGroup(grp);
-                    fetchPeriods(filterMode, selectedFilterYear, selectedFilterMonth, grp, selectedCenter);
-                    fetchAvailableYears(grp, selectedCenter);
-                  }}
-                  style={{
-                    padding: '7px 14px',
-                    borderRadius: '10px',
-                    border: '1.5px solid #cbd5e1',
-                    backgroundColor: '#ffffff',
-                    fontSize: '0.84rem',
-                    fontWeight: '600',
-                    color: '#1e293b',
-                    cursor: 'pointer',
-                    minWidth: '200px',
-                    outline: 'none',
-                    boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
-                  }}
-                >
-                  <option value="all">
-                    All Departments {centerGroups.length > 0 ? `(${centerGroups.length})` : ''}
-                  </option>
-                  {centerGroups.map((grp) => (
-                    <option key={grp} value={grp}>
-                      📁 {grp}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-          </div>
-
-          {/* Right side: Centre Head Info (only when assigned) */}
-          {selectedCenter !== 'all' && chMapByCenter[selectedCenter] ? (
-            <div style={{ fontSize: '0.82rem', color: '#475569' }}>
-              Centre Head: <strong style={{ color: '#1e293b' }}>{chMapByCenter[selectedCenter].name}</strong>
-            </div>
-          ) : null}
-        </div>
-      )}
-
-      {/* 1.6 Interactive Breadcrumb & 1-Click Back Navigation Strip */}
-      {(isAdmin ? (selectedCenter !== 'all' || selectedGroup !== 'all') : (selectedGroup !== 'all')) && (
-        <div
-          style={{
-            backgroundColor: '#ffffff',
-            border: '1px solid #e2e8f0',
-            borderRadius: '12px',
-            padding: '10px 16px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: '10px',
-            boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
-          }}
-        >
-          {/* Left: Interactive Breadcrumb Path */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', fontSize: '0.84rem' }}>
-            {isAdmin && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => handleSelectCenter('all')}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                    background: 'none',
-                    border: 'none',
-                    color: selectedCenter === 'all' ? '#0f172a' : '#2563eb',
-                    fontWeight: selectedCenter === 'all' ? '700' : '600',
-                    cursor: selectedCenter === 'all' ? 'default' : 'pointer',
-                    padding: '3px 6px',
-                    borderRadius: '6px',
-                  }}
-                  title="Return to Centers Directory"
-                >
-                  <IconHome size={15} />
-                  <span>Centers</span>
-                </button>
-                <IconChevronRight size={14} style={{ color: '#94a3b8' }} />
-              </>
-            )}
-
-            {(isAdmin ? selectedCenter !== 'all' : (user?.center && selectedGroup !== 'all')) && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (selectedGroup !== 'all') {
-                      setSelectedGroup('all');
-                      fetchPeriods(filterMode, selectedFilterYear, selectedFilterMonth, 'all', isAdmin ? selectedCenter : user?.center);
-                      fetchAvailableYears('all', isAdmin ? selectedCenter : user?.center);
-                    }
-                  }}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                    background: 'none',
-                    border: 'none',
-                    color: selectedGroup === 'all' ? '#0f172a' : '#2563eb',
-                    fontWeight: selectedGroup === 'all' ? '700' : '600',
-                    cursor: selectedGroup === 'all' ? 'default' : 'pointer',
-                    padding: '3px 6px',
-                    borderRadius: '6px',
-                  }}
-                  title={selectedGroup !== 'all' ? `View all ${isAdmin ? selectedCenter : user?.center} departments` : ''}
-                >
-                  <IconBuilding size={15} />
-                  <span>{isAdmin ? selectedCenter : user?.center} Center</span>
-                </button>
-                {selectedGroup !== 'all' && (
-                  <IconChevronRight size={14} style={{ color: '#94a3b8' }} />
-                )}
-              </>
-            )}
-
-            {selectedGroup !== 'all' && (
-              <span style={{ fontWeight: '700', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                <IconFolder size={15} style={{ color: '#2563eb' }} />
-                <span>{selectedGroup} Department</span>
-              </span>
-            )}
-          </div>
-
-          {/* Right: Quick 1-Click Back Button */}
-          <div>
-            {selectedGroup !== 'all' ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedGroup('all');
-                  fetchPeriods(filterMode, selectedFilterYear, selectedFilterMonth, 'all', isAdmin ? selectedCenter : user?.center);
-                  fetchAvailableYears('all', isAdmin ? selectedCenter : user?.center);
-                }}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '6px 14px',
-                  borderRadius: '8px',
-                  border: '1px solid #cbd5e1',
-                  backgroundColor: '#f8fafc',
-                  color: '#334155',
-                  fontSize: '0.8rem',
-                  fontWeight: '700',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#eff6ff';
-                  e.currentTarget.style.borderColor = '#93c5fd';
-                  e.currentTarget.style.color = '#1d4ed8';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = '#f8fafc';
-                  e.currentTarget.style.borderColor = '#cbd5e1';
-                  e.currentTarget.style.color = '#334155';
-                }}
-                title={isAdmin ? `Back to ${selectedCenter} department list` : 'Back to departments list'}
-              >
-                <IconArrowLeft size={15} />
-                <span>Back to {isAdmin && selectedCenter !== 'all' ? `${selectedCenter} ` : ''}Departments</span>
-              </button>
-            ) : selectedCenter !== 'all' && isAdmin ? (
-              <button
-                type="button"
-                onClick={() => handleSelectCenter('all')}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '6px 14px',
-                  borderRadius: '8px',
-                  border: '1px solid #cbd5e1',
-                  backgroundColor: '#f8fafc',
-                  color: '#334155',
-                  fontSize: '0.8rem',
-                  fontWeight: '700',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#eff6ff';
-                  e.currentTarget.style.borderColor = '#93c5fd';
-                  e.currentTarget.style.color = '#1d4ed8';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = '#f8fafc';
-                  e.currentTarget.style.borderColor = '#cbd5e1';
-                  e.currentTarget.style.color = '#334155';
-                }}
-                title="Back to Centers Directory"
-              >
-                <IconArrowLeft size={15} />
-                <span>Back to Centers</span>
-              </button>
-            ) : null}
-          </div>
-        </div>
-      )}
-
-      {/* 1.5 Department Filter Toolbar (For CH only) */}
-      {isChUser && (
+      {/* 1.4 Unified Filter Toolbar (For Admin & CH) */}
+      {(isAdmin || isChUser) && (
         <div
           style={{
             backgroundColor: '#ffffff',
@@ -1174,19 +906,54 @@ const Periods = () => {
             boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+            {/* Center Dropdown (Admin only) */}
+            {isAdmin && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <IconBuilding size={18} style={{ color: '#2563eb' }} />
+                <span style={{ fontSize: '0.86rem', fontWeight: '700', color: '#1e293b' }}>
+                  Center:
+                </span>
+                <select
+                  value={selectedCenter}
+                  onChange={(e) => handleSelectCenter(e.target.value)}
+                  style={{
+                    padding: '7px 14px',
+                    borderRadius: '10px',
+                    border: '1.5px solid #cbd5e1',
+                    backgroundColor: '#ffffff',
+                    fontSize: '0.84rem',
+                    fontWeight: '600',
+                    color: '#1e293b',
+                    cursor: 'pointer',
+                    minWidth: '190px',
+                    outline: 'none',
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+                  }}
+                >
+                  <option value="all">🌐 All Centers ({allCenters.length})</option>
+                  {allCenters.map((cName) => (
+                    <option key={cName} value={cName}>
+                      🏢 {cName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {/* Department Dropdown */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <IconBuilding size={18} style={{ color: '#2563eb' }} />
+              <IconUsersGroup size={18} style={{ color: '#2563eb' }} />
               <span style={{ fontSize: '0.86rem', fontWeight: '700', color: '#1e293b' }}>
-                Department ({user?.center || 'Center'}):
+                Department{isChUser ? ` (${user?.center || 'Center'})` : ''}:
               </span>
               <select
                 value={selectedGroup}
                 onChange={async (e) => {
                   const grp = e.target.value;
                   setSelectedGroup(grp);
-                  if (grp && grp !== 'all') {
+                  const targetCenter = isAdmin ? selectedCenter : user?.center;
+                  if (grp && grp !== 'all' && !isAdmin) {
                     try {
                       await api.post(
                         `/periods/ensure-current?group_name=${encodeURIComponent(
@@ -1196,12 +963,9 @@ const Periods = () => {
                     } catch (err) {
                       console.error('Failed to ensure period on select:', err);
                     }
-                    fetchPeriods(filterMode, selectedFilterYear, selectedFilterMonth, grp, user?.center);
-                    fetchAvailableYears(grp, user?.center);
-                  } else {
-                    fetchPeriods(filterMode, selectedFilterYear, selectedFilterMonth, 'all', user?.center);
-                    fetchAvailableYears('all', user?.center);
                   }
+                  fetchPeriods(filterMode, selectedFilterYear, selectedFilterMonth, grp, targetCenter);
+                  fetchAvailableYears(grp, targetCenter);
                 }}
                 style={{
                   padding: '7px 14px',
@@ -1212,12 +976,14 @@ const Periods = () => {
                   fontWeight: '600',
                   color: '#1e293b',
                   cursor: 'pointer',
-                  minWidth: '200px',
+                  minWidth: '180px',
                   outline: 'none',
                   boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
                 }}
               >
-                <option value="all">All Departments ({user?.center || 'Center'})</option>
+                <option value="all">
+                  All Departments {centerGroups.length > 0 ? `(${centerGroups.length})` : ''}
+                </option>
                 {centerGroups.map((grp) => (
                   <option key={grp} value={grp}>
                     📁 {grp}
@@ -1237,9 +1003,8 @@ const Periods = () => {
                 onChange={(e) => {
                   const val = e.target.value;
                   setSelectedFilterYear(val);
-                  if (selectedGroup) {
-                    fetchPeriods('custom', val, selectedFilterMonth, selectedGroup, user?.center);
-                  }
+                  const targetCenter = isAdmin ? selectedCenter : user?.center;
+                  fetchPeriods('custom', val, selectedFilterMonth, selectedGroup, targetCenter);
                 }}
                 style={{
                   padding: '7px 12px',
@@ -1277,9 +1042,8 @@ const Periods = () => {
                   if (!val) {
                     setSelectedFilterHalf('');
                   }
-                  if (selectedGroup) {
-                    fetchPeriods('custom', selectedFilterYear, val, selectedGroup, user?.center);
-                  }
+                  const targetCenter = isAdmin ? selectedCenter : user?.center;
+                  fetchPeriods('custom', selectedFilterYear, val, selectedGroup, targetCenter);
                 }}
                 style={{
                   padding: '7px 12px',
@@ -1351,9 +1115,8 @@ const Periods = () => {
                   setSelectedFilterYear('');
                   setSelectedFilterMonth('');
                   setSelectedFilterHalf('');
-                  if (selectedGroup) {
-                    fetchPeriods(currentYearStr, '', '', selectedGroup, user?.center);
-                  }
+                  const targetCenter = isAdmin ? selectedCenter : user?.center;
+                  fetchPeriods(currentYearStr, '', '', selectedGroup, targetCenter);
                 }}
                 title="Reset Filters"
                 style={{
@@ -1385,7 +1148,7 @@ const Periods = () => {
                 const yr = selectedFilterYear || (filterMode !== 'all' && filterMode ? filterMode : currentYearStr);
                 const mo = selectedFilterMonth ? parseInt(selectedFilterMonth, 10) : null;
                 const grp = selectedGroup || 'all';
-                const ctr = user?.center || 'all';
+                const ctr = isAdmin ? selectedCenter : (user?.center || 'all');
 
                 if (mo && selectedFilterHalf) {
                   const padMo = String(mo).padStart(2, '0');
@@ -1437,11 +1200,11 @@ const Periods = () => {
               }}
               title={
                 selectedFilterMonth && selectedFilterHalf === '1'
-                  ? `Download 1st Half newsletter for ${selectedGroup && selectedGroup !== 'all' ? selectedGroup : 'All Departments'}`
+                  ? `Download 1st Half newsletter for ${selectedGroup && selectedGroup !== 'all' ? selectedGroup : (isAdmin && selectedCenter === 'all' ? 'All Centers' : 'All Departments')}`
                   : selectedFilterMonth && selectedFilterHalf === '2'
-                  ? `Download 2nd Half newsletter for ${selectedGroup && selectedGroup !== 'all' ? selectedGroup : 'All Departments'}`
+                  ? `Download 2nd Half newsletter for ${selectedGroup && selectedGroup !== 'all' ? selectedGroup : (isAdmin && selectedCenter === 'all' ? 'All Centers' : 'All Departments')}`
                   : selectedFilterMonth
-                  ? `Download entire month newsletter for ${selectedGroup && selectedGroup !== 'all' ? selectedGroup : 'All Departments'}`
+                  ? `Download entire month newsletter for ${selectedGroup && selectedGroup !== 'all' ? selectedGroup : (isAdmin && selectedCenter === 'all' ? 'All Centers' : 'All Departments')}`
                   : `Download newsletter based on active filters`
               }
             >
@@ -1457,6 +1220,167 @@ const Periods = () => {
                 </>
               )}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* 1.6 Interactive Breadcrumb & 1-Click Back Navigation Strip */}
+      {isAdmin && (selectedCenter !== 'all' || selectedGroup !== 'all') && (
+        <div
+          style={{
+            backgroundColor: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderRadius: '12px',
+            padding: '10px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '10px',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
+          }}
+        >
+          {/* Left: Interactive Breadcrumb Path */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', fontSize: '0.84rem' }}>
+            <button
+              type="button"
+              onClick={() => handleSelectCenter('all')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                background: 'none',
+                border: 'none',
+                color: selectedCenter === 'all' ? '#0f172a' : '#2563eb',
+                fontWeight: selectedCenter === 'all' ? '700' : '600',
+                cursor: selectedCenter === 'all' ? 'default' : 'pointer',
+                padding: '3px 6px',
+                borderRadius: '6px',
+              }}
+              title="Return to Centers Directory"
+            >
+              <IconHome size={15} />
+              <span>Centers</span>
+            </button>
+            <IconChevronRight size={14} style={{ color: '#94a3b8' }} />
+
+            {selectedCenter !== 'all' && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (selectedGroup !== 'all') {
+                      setSelectedGroup('all');
+                      fetchPeriods(filterMode, selectedFilterYear, selectedFilterMonth, 'all', selectedCenter);
+                      fetchAvailableYears('all', selectedCenter);
+                    }
+                  }}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    background: 'none',
+                    border: 'none',
+                    color: selectedGroup === 'all' ? '#0f172a' : '#2563eb',
+                    fontWeight: selectedGroup === 'all' ? '700' : '600',
+                    cursor: selectedGroup === 'all' ? 'default' : 'pointer',
+                    padding: '3px 6px',
+                    borderRadius: '6px',
+                  }}
+                  title={selectedGroup !== 'all' ? `View all ${selectedCenter} departments` : ''}
+                >
+                  <IconBuilding size={15} />
+                  <span>{selectedCenter} Center</span>
+                </button>
+                {selectedGroup !== 'all' && (
+                  <IconChevronRight size={14} style={{ color: '#94a3b8' }} />
+                )}
+              </>
+            )}
+
+            {selectedGroup !== 'all' && (
+              <span style={{ fontWeight: '700', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <IconFolder size={15} style={{ color: '#2563eb' }} />
+                <span>{selectedGroup} Department</span>
+              </span>
+            )}
+          </div>
+
+          {/* Right: Quick 1-Click Back Button */}
+          <div>
+            {selectedGroup !== 'all' ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedGroup('all');
+                  fetchPeriods(filterMode, selectedFilterYear, selectedFilterMonth, 'all', selectedCenter);
+                  fetchAvailableYears('all', selectedCenter);
+                }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 14px',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
+                  backgroundColor: '#f8fafc',
+                  color: '#334155',
+                  fontSize: '0.8rem',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#eff6ff';
+                  e.currentTarget.style.borderColor = '#93c5fd';
+                  e.currentTarget.style.color = '#1d4ed8';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#f8fafc';
+                  e.currentTarget.style.borderColor = '#cbd5e1';
+                  e.currentTarget.style.color = '#334155';
+                }}
+                title={`Back to ${selectedCenter} department list`}
+              >
+                <IconArrowLeft size={15} />
+                <span>Back to {selectedCenter !== 'all' ? `${selectedCenter} ` : ''}Departments</span>
+              </button>
+            ) : selectedCenter !== 'all' ? (
+              <button
+                type="button"
+                onClick={() => handleSelectCenter('all')}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 14px',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
+                  backgroundColor: '#f8fafc',
+                  color: '#334155',
+                  fontSize: '0.8rem',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#eff6ff';
+                  e.currentTarget.style.borderColor = '#93c5fd';
+                  e.currentTarget.style.color = '#1d4ed8';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#f8fafc';
+                  e.currentTarget.style.borderColor = '#cbd5e1';
+                  e.currentTarget.style.color = '#334155';
+                }}
+                title="Back to Centers Directory"
+              >
+                <IconArrowLeft size={15} />
+                <span>Back to Centers</span>
+              </button>
+            ) : null}
           </div>
         </div>
       )}
@@ -1506,8 +1430,8 @@ const Periods = () => {
           </button>
         </div>
 
-        {/* Specific Month/Year Filter Dropdowns (Shown only for non-CH roles, since CH has them in the top toolbar) */}
-        {!isChUser && (
+        {/* Specific Month/Year Filter Dropdowns (Shown only for Scientist & GH roles, since Admin & CH have them in the top toolbar) */}
+        {!isAdmin && !isChUser && (
           <div className="periods-custom-filters">
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <IconFilter size={15} style={{ color: '#64748b' }} />
@@ -1638,137 +1562,6 @@ const Periods = () => {
           <p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem' }}>
             There are no records matching your current filter selection.
           </p>
-        </div>
-      ) : isAdmin && selectedCenter === 'all' && selectedGroup === 'all' ? (
-        /* Executive Institutional Overview: Clean Center Summary Cards */
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
-            <h3 style={{ margin: 0, fontSize: '1.05rem', color: '#0f172a', fontWeight: '800' }}>
-              Centers
-            </h3>
-          </div>
-
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-              gap: '18px',
-            }}
-          >
-            {allCenters.map((cName) => {
-              const centerPeriods = periods.filter(
-                (p) => (p.center || '').toLowerCase() === cName.toLowerCase()
-              );
-              const chUser = chMapByCenter[cName];
-              const deptsSet = new Set(centerPeriods.map((p) => p.group_name).filter(Boolean));
-              const deptCount = deptsSet.size;
-              const finalizedCount = centerPeriods.filter((p) => p.edit === false).length;
-              const openCount = centerPeriods.length - finalizedCount;
-
-              return (
-                <div
-                  key={cName}
-                  onClick={() => handleSelectCenter(cName)}
-                  style={{
-                    backgroundColor: '#ffffff',
-                    border: '1px solid #e2e8f0',
-                    borderTop: '4px solid #2563eb',
-                    borderRadius: '14px',
-                    padding: '18px 20px',
-                    cursor: 'pointer',
-                    transition: 'all 0.18s ease',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    gap: '14px',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.borderColor = '#93c5fd';
-                    e.currentTarget.style.borderTopColor = '#1d4ed8';
-                    e.currentTarget.style.boxShadow = '0 6px 18px rgba(37,99,235,0.1)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'none';
-                    e.currentTarget.style.borderColor = '#e2e8f0';
-                    e.currentTarget.style.borderTopColor = '#2563eb';
-                    e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.03)';
-                  }}
-                  title={`Click to view ${cName} Center departments`}
-                >
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <div
-                          style={{
-                            width: '36px',
-                            height: '36px',
-                            borderRadius: '8px',
-                            backgroundColor: '#eff6ff',
-                            color: '#2563eb',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                          }}
-                        >
-                          <IconBuilding size={18} />
-                        </div>
-                        <div>
-                          <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '800', color: '#0f172a' }}>
-                            {cName} Center
-                          </h4>
-                        </div>
-                      </div>
-
-                      <span
-                        style={{
-                          fontSize: '0.74rem',
-                          fontWeight: '700',
-                          color: '#2563eb',
-                          backgroundColor: '#eff6ff',
-                          padding: '2px 8px',
-                          borderRadius: '10px',
-                          border: '1px solid #bfdbfe',
-                        }}
-                      >
-                        {deptCount} {deptCount === 1 ? 'Dept' : 'Depts'}
-                      </span>
-                    </div>
-
-                    {chUser && (
-                      <div style={{ marginTop: '10px', fontSize: '0.8rem', color: '#64748b' }}>
-                        Centre Head: <strong style={{ color: '#1e293b' }}>{chUser.name}</strong>
-                      </div>
-                    )}
-                  </div>
-
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      paddingTop: '10px',
-                      borderTop: '1px solid #f1f5f9',
-                      fontSize: '0.78rem',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ color: '#16a34a', fontWeight: '700' }}>● {openCount} Active</span>
-                      {finalizedCount > 0 && (
-                        <span style={{ color: '#64748b' }}>• {finalizedCount} Finalized</span>
-                      )}
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#2563eb', fontWeight: '700' }}>
-                      <span>View Center</span>
-                      <IconChevronRight size={15} />
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
         </div>
       ) : filterMode === 'all' && !selectedFilterYear && !selectedFilterMonth ? (
         /* All Years Grouped View */
