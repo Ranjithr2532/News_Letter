@@ -44,6 +44,20 @@ class UserUpdate(BaseModel):
     type: Optional[str] = None
 
 
+class EmailRequest(BaseModel):
+    email: EmailStr
+
+
+class OTPVerification(BaseModel):
+    email: EmailStr
+    otp: str
+
+
+class PasswordUpdateRequest(BaseModel):
+    email: EmailStr
+    new_password: str
+
+
 # ---------- Category ----------
 class CategoryCreate(BaseModel):
     name: str

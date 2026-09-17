@@ -1,8 +1,20 @@
+import smtplib
+import random
+import string
+import logging
+from datetime import datetime, timedelta
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from typing import List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import and_
 from sqlalchemy.orm import Session
+
 from app.database import get_db
 from app import models, schemas
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -151,3 +163,140 @@ def delete_user(user_id: int, db: Session = Depends(get_db)):
     db.delete(user)
     db.commit()
     return {"detail": "User deleted successfully"}
+
+
+# Helper: Send Email via Gmail SMTP
+def send_otp_email(email: str, otp: str):
+    SMTP_SERVER = "smtp.gmail.com"
+    SMTP_PORT = 587
+    SENDER_EMAIL = "ranju23052002@gmail.com"# Later replace with the what email required
+    APP_PASSWORD = "xeeg ishe zcpy unxa"# replace with actual name
+
+    try:
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.starttls()
+        server.login(SENDER_EMAIL, APP_PASSWORD)
+
+        msg = MIMEMultipart()
+        msg["From"] = SENDER_EMAIL
+        msg["To"] = email
+        msg["Subject"] = "Your OTP for Password Reset - CMTI Newsletter"
+
+        body = f"""
+Dear User,
+
+Your OTP for password reset is: {otp}
+
+This OTP will expire in 5 minutes.
+Please do not share this OTP with anyone.
+
+"""
+        msg.attach(MIMEText(body, "plain"))
+        server.send_message(msg)
+        server.quit()
+        logger.info(f"OTP sent successfully to {email}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send OTP email: {str(e)}")
+        return False
+
+
+def generate_otp():
+    return ''.join(random.choices(string.digits, k=6))
+
+
+# ============================================================================
+# 1. REQUEST OTP (Sends 6-digit OTP to Email)
+# ============================================================================
+@router.post("/request-otp")
+def request_otp(request: schemas.EmailRequest, db: Session = Depends(get_db)):
+    try:
+        user = db.query(models.User).filter(models.User.email == request.email).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="No user found with this email address")
+
+        otp = generate_otp()
+        expires_at = datetime.now() + timedelta(minutes=5)
+
+        # Save OTP to database
+        new_otp = models.OTP(
+            email=request.email,
+            otp_code=otp,
+            expires_at=expires_at,
+            is_used=False
+        )
+        db.add(new_otp)
+        db.commit()
+
+        # Send email
+        if not send_otp_email(request.email, otp):
+            raise HTTPException(status_code=500, detail="Failed to send OTP email. Please check internet or SMTP credentials.")
+
+        return {"message": "OTP sent successfully to your email"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error in request_otp: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# 2. VERIFY OTP
+# ============================================================================
+@router.post("/verify-otp")
+def verify_otp(verification: schemas.OTPVerification, db: Session = Depends(get_db)):
+    try:
+        otp_record = (
+            db.query(models.OTP)
+            .filter(
+                and_(
+                    models.OTP.email == verification.email,
+                    models.OTP.is_used == False,
+                    models.OTP.expires_at > datetime.now()
+                )
+            )
+            .order_by(models.OTP.id.desc())
+            .first()
+        )
+
+        if not otp_record:
+            raise HTTPException(status_code=400, detail="No valid OTP found or OTP has expired")
+
+        if otp_record.otp_code != verification.otp:
+            raise HTTPException(status_code=400, detail="Invalid OTP entered")
+
+        # Mark OTP as used
+        otp_record.is_used = True
+        db.commit()
+
+        return {"message": "OTP verified successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error in verify_otp: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# 3. UPDATE PASSWORD (Direct password update)
+# ============================================================================
+@router.post("/update-password")
+def update_password(request: schemas.PasswordUpdateRequest, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.email == request.email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="No user found with this email address")
+
+    if len(request.new_password.strip()) < 4:
+        raise HTTPException(status_code=400, detail="Password must be at least 4 characters long")
+
+    user.password = request.new_password.strip()
+    db.commit()
+
+    return {
+        "message": "Password updated successfully",
+        "email": user.email
+    }
