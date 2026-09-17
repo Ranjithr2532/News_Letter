@@ -126,7 +126,7 @@ const Login = () => {
     <div className="login-container">
       <div className="login-card">
         <h2>CMTI Newsletter</h2>
-        <h3>Portal Login</h3>
+        <h3>Login</h3>
         {error && <div className="error-message">{error}</div>}
         <form onSubmit={handleSubmit}>
           <div className="form-group">

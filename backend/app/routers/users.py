@@ -188,23 +188,6 @@ def delete_user(user_id: int, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-
-    # 1. Clean up associated notifications and OTPs
-    db.query(models.Notification).filter(models.Notification.user_id == user_id).delete(synchronize_session=False)
-    db.query(models.OTP).filter(models.OTP.email == user.email).delete(synchronize_session=False)
-
-    # 2. Clean up edit history & photos uploaded by this user
-    db.query(models.EntryEditHistory).filter(models.EntryEditHistory.edited_by == user_id).delete(synchronize_session=False)
-    db.query(models.EntryPhoto).filter(models.EntryPhoto.uploaded_by == user_id).delete(synchronize_session=False)
-
-    # 3. Clean up entries created by this user
-    db.query(models.NewsletterEntry).filter(
-        (models.NewsletterEntry.created_by == user_id) | (models.NewsletterEntry.updated_by == user_id)
-    ).delete(synchronize_session=False)
-
-    # 4. Clean up periods created by this user if any
-    db.query(models.NewsletterPeriod).filter(models.NewsletterPeriod.created_by == user_id).delete(synchronize_session=False)
-
     db.delete(user)
     db.commit()
     return {"detail": "User deleted successfully"}
@@ -229,7 +212,6 @@ Your OTP for password reset is: {otp}
 
 This OTP will expire in 5 minutes.
 Please do not share this OTP with anyone.
-
 
 """
         msg.attach(MIMEText(body, "plain"))

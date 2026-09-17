@@ -310,7 +310,7 @@ const Periods = () => {
             const text = await err.response.data.text();
             const json = JSON.parse(text);
             if (json.detail) errorMsg = json.detail;
-          } catch (_) {}
+          } catch (_) { }
         } else if (err.response?.data?.detail) {
           errorMsg = err.response.data.detail;
         }
@@ -381,7 +381,7 @@ const Periods = () => {
           const text = await err.response.data.text();
           const json = JSON.parse(text);
           if (json.detail) errorMsg = json.detail;
-        } catch (_) {}
+        } catch (_) { }
       } else if (err.response?.data?.detail) {
         errorMsg = err.response.data.detail;
       }
@@ -521,7 +521,7 @@ const Periods = () => {
           const text = await err.response.data.text();
           const json = JSON.parse(text);
           if (json.detail) errorMsg = json.detail;
-        } catch (_) {}
+        } catch (_) { }
       } else if (err.response?.data?.detail) {
         errorMsg = err.response.data.detail;
       }
@@ -696,8 +696,8 @@ const Periods = () => {
       const rowTooltip = isChUser
         ? `Period: ${rangeLabel}. Click to open entries from all departments.`
         : periodsInHalf.length > 1
-        ? `${periodsInHalf.length} departments (${periodsInHalf.map((p) => p.group_name).filter(Boolean).join(', ')}). Click to select department.`
-        : `Period: ${rangeLabel}${periodsInHalf[0]?.group_name ? ` (${periodsInHalf[0].group_name})` : ''}. Click to view.`;
+          ? `${periodsInHalf.length} departments (${periodsInHalf.map((p) => p.group_name).filter(Boolean).join(', ')}). Click to select department.`
+          : `Period: ${rangeLabel}${periodsInHalf[0]?.group_name ? ` (${periodsInHalf[0].group_name})` : ''}. Click to view.`;
 
       return (
         <div
@@ -1250,10 +1250,10 @@ const Periods = () => {
                 selectedFilterMonth && selectedFilterHalf === '1'
                   ? `Download 1st Half newsletter for ${selectedGroup && selectedGroup !== 'all' ? selectedGroup : (isAdmin && selectedCenter === 'all' ? 'All Centers' : 'All Departments')}`
                   : selectedFilterMonth && selectedFilterHalf === '2'
-                  ? `Download 2nd Half newsletter for ${selectedGroup && selectedGroup !== 'all' ? selectedGroup : (isAdmin && selectedCenter === 'all' ? 'All Centers' : 'All Departments')}`
-                  : selectedFilterMonth
-                  ? `Download entire month newsletter for ${selectedGroup && selectedGroup !== 'all' ? selectedGroup : (isAdmin && selectedCenter === 'all' ? 'All Centers' : 'All Departments')}`
-                  : `Download newsletter based on active filters`
+                    ? `Download 2nd Half newsletter for ${selectedGroup && selectedGroup !== 'all' ? selectedGroup : (isAdmin && selectedCenter === 'all' ? 'All Centers' : 'All Departments')}`
+                    : selectedFilterMonth
+                      ? `Download entire month newsletter for ${selectedGroup && selectedGroup !== 'all' ? selectedGroup : (isAdmin && selectedCenter === 'all' ? 'All Centers' : 'All Departments')}`
+                      : `Download newsletter based on active filters`
               }
             >
               {downloadingCombined ? (
@@ -2234,7 +2234,7 @@ const Periods = () => {
               >
                 Are you sure you want to finalize this newsletter edition?
               </p>
-              <p
+              {/* <p
                 style={{
                   margin: 0,
                   fontSize: '0.82rem',
@@ -2247,7 +2247,7 @@ const Periods = () => {
                 }}
               >
                 ⚠️ Once finalized, entries will be permanently locked in <strong>View-Only</strong> mode for all users.
-              </p>
+              </p> */}
             </div>
 
             {/* Modal Footer */}
