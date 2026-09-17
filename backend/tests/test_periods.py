@@ -113,6 +113,24 @@ def test_center_combined_docx_generation(client, test_user, db_session):
             f"/periods/ensure-current?group_name={test_user.group_name}&created_by={test_user.id}"
         )
         assert res.status_code == 200
+        period_id = res.json()["id"]
+
+        # Create category and entry
+        cat = models.CategoryStage(name="Research & Development", stage_number=1, is_active=True)
+        db_session.add(cat)
+        db_session.commit()
+
+        entry = models.NewsletterEntry(
+            period_id=period_id,
+            group_name=test_user.group_name,
+            category_id=cat.id,
+            title="Sample Project Achievement",
+            description="Testing automated docx generation",
+            created_by=test_user.id,
+            updated_by=test_user.id,
+        )
+        db_session.add(entry)
+        db_session.commit()
 
         # Request combined docx for center SMPM
         docx_res = client.get("/periods/center/generate-combined-docx?center=SMPM")
@@ -133,6 +151,76 @@ def test_center_combined_docx_generation(client, test_user, db_session):
         ym_docx_res = client.get("/periods/center/generate-combined-docx?center=SMPM&year=2026&month=9")
         assert ym_docx_res.status_code == 200
         assert ym_docx_res.headers["content-type"] == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+# ============================================================================
+# TEST 5b: Empty Department and Partial Department Download Behavior
+# ============================================================================
+def test_empty_department_and_partial_downloads(client, test_user, db_session):
+    test_user.center = "SMPM"
+    test_user.group = "Civil"
+
+    # Create a second user in another department
+    user2 = models.User(
+        name="Mechanical Head",
+        email="mech_head@test.com",
+        password="hashedpassword",
+        center="SMPM",
+        group="Mechanical",
+        role="gh",
+    )
+    db_session.add(user2)
+    db_session.commit()
+
+    with freeze_time("2026-09-10"):
+        # Auto-create periods for both departments in SMPM
+        client.post(f"/periods/ensure-current-center?center=SMPM&created_by={test_user.id}")
+
+        # 1. When NO entries exist for any dept -> downloading Civil returns 404
+        empty_dept_res = client.get("/periods/center/generate-combined-docx?center=SMPM&group_name=Civil&start_date=2026-09-01&end_date=2026-09-15")
+        assert empty_dept_res.status_code == 404
+        assert "No entries found for Civil in this period." in empty_dept_res.json()["detail"]
+
+        # When NO entries exist in entire center -> downloading center returns 404
+        empty_center_res = client.get("/periods/center/generate-combined-docx?center=SMPM&start_date=2026-09-01&end_date=2026-09-15")
+        assert empty_center_res.status_code == 404
+        assert "No entries found for SMPM in this period." in empty_center_res.json()["detail"]
+
+        # 2. Add entry ONLY for Mechanical (Civil has 0 entries)
+        mech_period = (
+            db_session.query(models.NewsletterPeriod)
+            .filter(models.NewsletterPeriod.group_name == "Mechanical")
+            .first()
+        )
+        cat = models.CategoryStage(name="Mechanical Works", stage_number=1, is_active=True)
+        db_session.add(cat)
+        db_session.commit()
+
+        entry = models.NewsletterEntry(
+            period_id=mech_period.id,
+            group_name="Mechanical",
+            category_id=cat.id,
+            title="Turbine Overhaul",
+            description="Completed maintenance",
+            created_by=user2.id,
+            updated_by=user2.id,
+        )
+        db_session.add(entry)
+        db_session.commit()
+
+        # 3. CH downloads All Departments for SMPM -> Succeeds (200), skipping empty Civil
+        combined_res = client.get("/periods/center/generate-combined-docx?center=SMPM&start_date=2026-09-01&end_date=2026-09-15")
+        assert combined_res.status_code == 200
+        assert combined_res.headers["content-type"] == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+        # 4. CH downloads specific empty department (Civil) -> 404 with indication
+        civil_res = client.get("/periods/center/generate-combined-docx?center=SMPM&group_name=Civil&start_date=2026-09-01&end_date=2026-09-15")
+        assert civil_res.status_code == 404
+        assert "No entries found for Civil in this period." in civil_res.json()["detail"]
+
+        # 5. CH downloads specific filled department (Mechanical) -> 200
+        mech_res = client.get("/periods/center/generate-combined-docx?center=SMPM&group_name=Mechanical&start_date=2026-09-01&end_date=2026-09-15")
+        assert mech_res.status_code == 200
 
 
 # ============================================================================

@@ -491,6 +491,7 @@ def generate_center_combined_docx(
         for gh in all_ghs if gh.group
     }
 
+    total_entries_count = 0
     if is_all:
         structure_data = {}
         for p in periods:
@@ -531,6 +532,7 @@ def generate_center_combined_docx(
                     .all()
                 )
                 structure_data[c_name]["depts"][dept]["entries"].extend(cat_entries)
+                total_entries_count += len(cat_entries)
     else:
         structure_data = {}
         for p in periods:
@@ -566,6 +568,24 @@ def generate_center_combined_docx(
                     .all()
                 )
                 structure_data[dept]["entries"].extend(cat_entries)
+                total_entries_count += len(cat_entries)
+
+    if total_entries_count == 0:
+        if not is_all_groups and group_name:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No entries found for {group_name} in this period.",
+            )
+        elif not is_all and center:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No entries found for {center} in this period.",
+            )
+        else:
+            raise HTTPException(
+                status_code=404,
+                detail="No entries found for this selection in the specified period.",
+            )
 
     if start_date and end_date:
         period_label = f"{start_date.strftime('%b %d')} – {end_date.strftime('%b %d, %Y')}"
@@ -627,6 +647,13 @@ def generate_docx(period_id: int, created_by: Optional[int] = None, db: Session 
             query = query.filter(models.NewsletterEntry.created_by == created_by)
         entries = query.order_by(models.NewsletterEntry.display_order.asc()).all()
         all_entries.extend(entries)
+
+    if not all_entries:
+        dept_name = period.group_name or "this department"
+        raise HTTPException(
+            status_code=404,
+            detail=f"No entries found for {dept_name} in this period.",
+        )
 
     doc = build_newsletter_docx(period.title, all_entries)
 

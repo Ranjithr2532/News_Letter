@@ -304,7 +304,17 @@ const Periods = () => {
         window.URL.revokeObjectURL(downloadUrl);
       } catch (err) {
         console.error('Failed to download period docx:', err);
-        alert('Failed to download period document.');
+        let errorMsg = 'Failed to download period document.';
+        if (err.response?.data instanceof Blob) {
+          try {
+            const text = await err.response.data.text();
+            const json = JSON.parse(text);
+            if (json.detail) errorMsg = json.detail;
+          } catch (_) {}
+        } else if (err.response?.data?.detail) {
+          errorMsg = err.response.data.detail;
+        }
+        alert(errorMsg);
       } finally {
         setDownloadingId(null);
       }
@@ -365,7 +375,17 @@ const Periods = () => {
       setDownloadModalPeriod(null);
     } catch (err) {
       console.error('Failed to download docx:', err);
-      alert('Failed to download newsletter.');
+      let errorMsg = 'Failed to download newsletter.';
+      if (err.response?.data instanceof Blob) {
+        try {
+          const text = await err.response.data.text();
+          const json = JSON.parse(text);
+          if (json.detail) errorMsg = json.detail;
+        } catch (_) {}
+      } else if (err.response?.data?.detail) {
+        errorMsg = err.response.data.detail;
+      }
+      alert(errorMsg);
     } finally {
       setDownloadingId(null);
     }
@@ -493,7 +513,17 @@ const Periods = () => {
       setDownloadModalPeriod(null);
     } catch (err) {
       console.error('Failed to download combined docx:', err);
-      alert(err.response?.data?.detail || 'Failed to download newsletter document. No entries found for this selection.');
+      let errorMsg = 'No entries found for this selection in the specified period.';
+      if (err.response?.data instanceof Blob) {
+        try {
+          const text = await err.response.data.text();
+          const json = JSON.parse(text);
+          if (json.detail) errorMsg = json.detail;
+        } catch (_) {}
+      } else if (err.response?.data?.detail) {
+        errorMsg = err.response.data.detail;
+      }
+      alert(errorMsg);
     } finally {
       setDownloadingCombined(false);
     }
@@ -599,7 +629,7 @@ const Periods = () => {
     if (e) e.stopPropagation();
     if (!periodsInHalf || periodsInHalf.length === 0) return;
 
-    if ((isChUser && selectedGroup === 'all') || (isAdmin && (selectedCenter === 'all' || selectedGroup === 'all'))) {
+    if (isChUser || isAdmin) {
       const targetCenter = isAdmin ? selectedCenter : user?.center;
       const yr = monthData.year;
       const mo = monthData.monthIndex + 1;
