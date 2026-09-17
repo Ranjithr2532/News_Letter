@@ -102,6 +102,40 @@ def test_ensure_current_period_current_year_safety_guard(client, test_user):
 
 
 # ============================================================================
+# TEST 4b: Brand New Department Login in 2nd Half Auto-Creates 1st Half
+# ============================================================================
+def test_new_department_login_in_second_half_creates_first_half(client, test_user, db_session):
+    # Brand new department never seen before in database
+    new_dept_name = "Artificial_Intelligence"
+    
+    # User logs in on Sept 22nd (2nd Half)
+    with freeze_time("2026-09-22"):
+        res = client.post(
+            f"/periods/ensure-current?group_name={new_dept_name}&created_by={test_user.id}"
+        )
+        assert res.status_code == 200
+        current_period = res.json()
+        
+        # Current active period is 2nd half
+        assert current_period["start_date"] == "2026-09-16"
+        assert current_period["end_date"] == "2026-09-30"
+
+        # Check all periods created for this brand new department in Sept 2026
+        periods = (
+            db_session.query(models.NewsletterPeriod)
+            .filter(models.NewsletterPeriod.group_name == new_dept_name)
+            .order_by(models.NewsletterPeriod.start_date.asc())
+            .all()
+        )
+        ranges = [(str(p.start_date), str(p.end_date)) for p in periods]
+
+        # Verify BOTH 1st Half (Sept 1-15) and 2nd Half (Sept 16-30) were created!
+        assert ("2026-09-01", "2026-09-15") in ranges
+        assert ("2026-09-16", "2026-09-30") in ranges
+        assert len(ranges) == 2
+
+
+# ============================================================================
 # TEST 5: Center Combined DOCX Generation
 # ============================================================================
 def test_center_combined_docx_generation(client, test_user, db_session):
@@ -221,6 +255,72 @@ def test_empty_department_and_partial_downloads(client, test_user, db_session):
         # 5. CH downloads specific filled department (Mechanical) -> 200
         mech_res = client.get("/periods/center/generate-combined-docx?center=SMPM&group_name=Mechanical&start_date=2026-09-01&end_date=2026-09-15")
         assert mech_res.status_code == 200
+
+
+# ============================================================================
+# TEST 5c: Admin All Centers & Multi-Center Download Behavior
+# ============================================================================
+def test_admin_all_centers_downloads(client, test_user, db_session):
+    test_user.center = "SMPM"
+    test_user.group = "Robotics"
+
+    # User in another center
+    cair_user = models.User(
+        name="CAIR Head",
+        email="cair_head@test.com",
+        password="hashedpassword",
+        center="CAIR",
+        group="Sensors",
+        role="gh",
+    )
+    db_session.add(cair_user)
+    db_session.commit()
+
+    with freeze_time("2026-09-10"):
+        # Auto-create periods for SMPM and CAIR
+        client.post(f"/periods/ensure-current-center?center=SMPM&created_by={test_user.id}")
+        client.post(f"/periods/ensure-current-center?center=CAIR&created_by={cair_user.id}")
+
+        # 1. When NO entries exist anywhere -> Admin All Centers download returns 404
+        all_empty_res = client.get("/periods/center/generate-combined-docx?center=all&start_date=2026-09-01&end_date=2026-09-15")
+        assert all_empty_res.status_code == 404
+        assert "No entries found for this selection in the specified period." in all_empty_res.json()["detail"]
+
+        # 2. Add entry only in SMPM Robotics
+        smpm_period = (
+            db_session.query(models.NewsletterPeriod)
+            .filter(models.NewsletterPeriod.group_name == "Robotics")
+            .first()
+        )
+        cat = models.CategoryStage(name="Robotics Lab", stage_number=1, is_active=True)
+        db_session.add(cat)
+        db_session.commit()
+
+        entry = models.NewsletterEntry(
+            period_id=smpm_period.id,
+            group_name="Robotics",
+            category_id=cat.id,
+            title="Autonomous Rover Test",
+            description="Testing autonomous vehicle rover",
+            created_by=test_user.id,
+            updated_by=test_user.id,
+        )
+        db_session.add(entry)
+        db_session.commit()
+
+        # 3. Admin downloads All Centers -> Succeeds (200), including SMPM and omitting empty CAIR
+        all_centers_res = client.get("/periods/center/generate-combined-docx?center=all&start_date=2026-09-01&end_date=2026-09-15")
+        assert all_centers_res.status_code == 200
+        assert all_centers_res.headers["content-type"] == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+        # 4. Admin downloads empty CAIR center -> 404 with indication
+        cair_empty_res = client.get("/periods/center/generate-combined-docx?center=CAIR&start_date=2026-09-01&end_date=2026-09-15")
+        assert cair_empty_res.status_code == 404
+        assert "No entries found for CAIR in this period." in cair_empty_res.json()["detail"]
+
+        # 5. Admin downloads filled SMPM center -> 200
+        smpm_res = client.get("/periods/center/generate-combined-docx?center=SMPM&start_date=2026-09-01&end_date=2026-09-15")
+        assert smpm_res.status_code == 200
 
 
 # ============================================================================

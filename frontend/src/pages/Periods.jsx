@@ -431,11 +431,13 @@ const Periods = () => {
 
   const executeDownloadCombinedDocx = async (overrideParams = null) => {
     const targetCenter =
-      overrideParams?.center ||
-      (isAdmin ? selectedCombinedCenter || selectedCenter : user?.center);
+      overrideParams?.center !== undefined
+        ? overrideParams.center
+        : (isAdmin ? (selectedCenter || 'all') : (user?.center || 'all'));
     const targetGroup =
-      overrideParams?.group_name ||
-      selectedCombinedGroup;
+      overrideParams?.group_name !== undefined
+        ? overrideParams.group_name
+        : (selectedGroup || 'all');
 
     setDownloadingCombined(true);
     try {
