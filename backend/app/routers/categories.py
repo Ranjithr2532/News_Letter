@@ -8,12 +8,16 @@ router = APIRouter()
 
 
 @router.get("/", response_model=List[schemas.CategoryRead])
-def list_categories(period_id: Optional[int] = None, db: Session = Depends(get_db)):
+def list_categories(period_id: Optional[str] = None, db: Session = Depends(get_db)):
     query = db.query(models.CategoryStage).filter(models.CategoryStage.is_active == True)
     if period_id is not None:
-        query = query.filter(
-            (models.CategoryStage.period_id == None) | (models.CategoryStage.period_id == period_id)
-        )
+        p_ids = [int(p.strip()) for p in str(period_id).split(",") if p.strip().isdigit()]
+        if p_ids:
+            query = query.filter(
+                (models.CategoryStage.period_id == None) | (models.CategoryStage.period_id.in_(p_ids))
+            )
+        else:
+            query = query.filter(models.CategoryStage.period_id == None)
     else:
         query = query.filter(models.CategoryStage.period_id == None)
 

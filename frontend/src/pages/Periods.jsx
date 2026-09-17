@@ -609,10 +609,24 @@ const Periods = () => {
     return { total, finalized, open };
   }, [periods]);
 
-  // Open Department Selection Modal to View Categories
+  // Open Department Selection Modal to View Categories (or directly open for CH)
   const handleHalfRowClick = (periodsInHalf, rangeLabel) => {
     if (isAdmin) return;
     if (!periodsInHalf || periodsInHalf.length === 0) return;
+
+    if (isChUser) {
+      const allPeriodIds = periodsInHalf.map((p) => p.id).join(',');
+      const combinedTitle = `${user?.center || 'Center'} Combined — ${rangeLabel}`;
+      navigate(`/categories/${periodsInHalf[0].id}?all_periods=${allPeriodIds}`, {
+        state: {
+          periodTitle: combinedTitle,
+          rangeLabel,
+          allPeriodIds: periodsInHalf.map((p) => p.id),
+          isCombined: periodsInHalf.length > 1,
+        },
+      });
+      return;
+    }
 
     if (periodsInHalf.length === 1) {
       navigate(`/categories/${periodsInHalf[0].id}`, {
@@ -679,7 +693,9 @@ const Periods = () => {
         ? periodsInHalf.find((p) => (p.group_name || '').trim().toUpperCase() === userGrp || !p.group_name)
         : null;
 
-      const rowTooltip = periodsInHalf.length > 1
+      const rowTooltip = isChUser
+        ? `Period: ${rangeLabel}. Click to open entries from all departments.`
+        : periodsInHalf.length > 1
         ? `${periodsInHalf.length} departments (${periodsInHalf.map((p) => p.group_name).filter(Boolean).join(', ')}). Click to select department.`
         : `Period: ${rangeLabel}${periodsInHalf[0]?.group_name ? ` (${periodsInHalf[0].group_name})` : ''}. Click to view.`;
 

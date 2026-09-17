@@ -23,9 +23,20 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
+# Allowed Origins for CORS security (Local development and CMTI intranet access)
+# Strict Allowed Origins for CORS security
+ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://172.18.100.55:5173",
+    "http://172.18.100.55:3000",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows local host and LAN IP access
+    allow_origins=ALLOWED_ORIGINS,  # 🔒 STRICT: Only these exact URLs and ports can talk to the backend
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -41,4 +52,4 @@ app.include_router(notifications.router, prefix="/notifications", tags=["Notific
 
 @app.get("/")
 def root():
-    return {"status": "Newsletter Builder API running"}
+    return {"status": "Newsletter Builder API running"}

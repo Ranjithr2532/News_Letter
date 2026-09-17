@@ -37,6 +37,11 @@ const Categories = () => {
 
   const passedPeriodTitle = location.state?.periodTitle;
 
+  const searchParams = new URLSearchParams(location.search);
+  const allPeriodsParam = searchParams.get('all_periods');
+  const queryPeriodId = allPeriodsParam || periodId;
+  const isCombinedMode = Boolean(allPeriodsParam && allPeriodsParam.includes(','));
+
   const [period, setPeriod] = useState(null);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -103,7 +108,7 @@ const Categories = () => {
     }
     fetchPeriod();
     fetchCategories();
-  }, [user, periodId, isAdmin, navigate]);
+  }, [user, periodId, allPeriodsParam, isAdmin, navigate]);
 
   const fetchPeriod = async () => {
     try {
@@ -130,7 +135,7 @@ const Categories = () => {
     setLoading(true);
     setError('');
     try {
-      const res = await api.get(`/categories/?period_id=${periodId}`);
+      const res = await api.get(`/categories/?period_id=${queryPeriodId}`);
       setCategories(res.data);
     } catch (err) {
       console.error('Failed to fetch categories:', err);
@@ -145,7 +150,7 @@ const Categories = () => {
     setLoadingEntries(true);
     setEntriesError('');
     try {
-      let url = `/entries/?period_id=${periodId}&category_id=${catId}`;
+      let url = `/entries/?period_id=${queryPeriodId}&category_id=${catId}`;
       if (!canViewAll && user?.id) {
         url += `&created_by=${user.id}`;
       }
@@ -387,9 +392,14 @@ const Categories = () => {
   const handleDownload = async () => {
     setDownloading(true);
     try {
-      let url = `/periods/${periodId}/generate-docx`;
-      if (!canViewAll && user?.id) {
-        url += `?created_by=${user.id}`;
+      let url = '';
+      if (isCombinedMode && period?.start_date && period?.end_date) {
+        url = `/periods/center/generate-combined-docx?center=${encodeURIComponent(user?.center || period?.center || 'all')}&start_date=${period.start_date}&end_date=${period.end_date}`;
+      } else {
+        url = `/periods/${periodId}/generate-docx`;
+        if (!canViewAll && user?.id) {
+          url += `?created_by=${user.id}`;
+        }
       }
       const response = await api.get(url, {
         responseType: 'blob',
@@ -400,7 +410,7 @@ const Categories = () => {
       const urlBlob = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = urlBlob;
-      const effectiveTitle = period?.title || passedPeriodTitle || `Newsletter_Period_${periodId}`;
+      const effectiveTitle = passedPeriodTitle || period?.title || `Newsletter_Period_${periodId}`;
       const filename = `${effectiveTitle.replace(/\s+/g, '_')}.docx`;
       link.setAttribute('download', filename);
       document.body.appendChild(link);
@@ -458,7 +468,7 @@ const Categories = () => {
     setLoadingPreviewData(true);
     setLoadingContributors(true);
     try {
-      let entriesUrl = `/entries/?period_id=${periodId}`;
+      let entriesUrl = `/entries/?period_id=${queryPeriodId}`;
       if (validCategory?.id) {
         entriesUrl += `&category_id=${validCategory.id}`;
       }
@@ -466,7 +476,7 @@ const Categories = () => {
         entriesUrl += `&created_by=${user.id}`;
       }
       const [contribRes, entriesRes] = await Promise.all([
-        api.get(`/periods/${periodId}/contributors`),
+        api.get(`/periods/${queryPeriodId}/contributors`),
         api.get(entriesUrl),
       ]);
       const allEntries = entriesRes.data || [];
@@ -520,12 +530,17 @@ const Categories = () => {
     const activeContribId = canViewAll ? selectedContributorId : user?.id;
     setDownloadingPreviewDocx(true);
     try {
-      let url = previewCategory?.id
-        ? `/periods/${periodId}/categories/${previewCategory.id}/generate-docx`
-        : `/periods/${periodId}/generate-docx`;
+      let url = '';
+      if (isCombinedMode && !previewCategory?.id && period?.start_date && period?.end_date) {
+        url = `/periods/center/generate-combined-docx?center=${encodeURIComponent(user?.center || period?.center || 'all')}&start_date=${period.start_date}&end_date=${period.end_date}`;
+      } else {
+        url = previewCategory?.id
+          ? `/periods/${periodId}/categories/${previewCategory.id}/generate-docx`
+          : `/periods/${periodId}/generate-docx`;
 
-      if (activeContribId && activeContribId !== 'all') {
-        url += (url.includes('?') ? '&' : '?') + `created_by=${activeContribId}`;
+        if (activeContribId && activeContribId !== 'all') {
+          url += (url.includes('?') ? '&' : '?') + `created_by=${activeContribId}`;
+        }
       }
 
       const response = await api.get(url, { responseType: 'blob' });
@@ -537,7 +552,7 @@ const Categories = () => {
       link.href = urlBlob;
       const baseTitle = previewCategory?.name
         ? `${previewCategory.name.replace(/\s+/g, '_')}_entries`
-        : (period?.title || passedPeriodTitle || `Newsletter_Period_${periodId}`).replace(/\s+/g, '_');
+        : (passedPeriodTitle || period?.title || `Newsletter_Period_${periodId}`).replace(/\s+/g, '_');
 
       let suffix = '';
       if (activeContribId && activeContribId !== 'all') {
@@ -599,7 +614,9 @@ const Categories = () => {
             <span>Department:</span>
             <span className="group-badge-hero">
               <IconUsersGroup size={13} />
-              {period?.group_name || user.group || user.group_name || 'General'}
+              {isCombinedMode
+                ? `All Departments (${user?.center || period?.center || 'Center'})`
+                : (period?.group_name || user.group || user.group_name || 'General')}
             </span>
             {(isChUser || isAdmin) && (
               <>
@@ -1162,6 +1179,26 @@ const Categories = () => {
                                 <div className="entry-card-header">
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                                     <h5 className="entry-title">{entry.title}</h5>
+                                    {entry.group_name && (
+                                      <span
+                                        className="entry-group-pill"
+                                        style={{
+                                          fontSize: '0.74rem',
+                                          fontWeight: '700',
+                                          backgroundColor: '#eff6ff',
+                                          color: '#1d4ed8',
+                                          border: '1px solid #bfdbfe',
+                                          padding: '2px 8px',
+                                          borderRadius: '6px',
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '4px',
+                                        }}
+                                        title={`Department: ${entry.group_name}`}
+                                      >
+                                        🏢 {entry.group_name}
+                                      </span>
+                                    )}
                                     {canViewAll && (
                                       <span
                                         className="entry-author-pill"
@@ -2083,6 +2120,22 @@ const Categories = () => {
                                     >
                                       {itemNumber}. {entry.title}
                                     </h4>
+                                    {entry.group_name && (
+                                      <span
+                                        style={{
+                                          fontSize: '0.74rem',
+                                          color: '#1d4ed8',
+                                          backgroundColor: '#eff6ff',
+                                          border: '1px solid #bfdbfe',
+                                          padding: '2px 8px',
+                                          borderRadius: '6px',
+                                          fontWeight: '700',
+                                        }}
+                                        title={`Department: ${entry.group_name}`}
+                                      >
+                                        🏢 {entry.group_name}
+                                      </span>
+                                    )}
                                     {selectedContributorId === 'all' && (
                                       <span
                                         style={{

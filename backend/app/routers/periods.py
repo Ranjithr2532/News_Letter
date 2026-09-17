@@ -131,10 +131,16 @@ def update_period(period_id: int, payload: schemas.PeriodUpdate, db: Session = D
 
 
 @router.post("/{period_id}/finalize", response_model=schemas.PeriodRead)
-def finalize_period(period_id: int, db: Session = Depends(get_db)):
+def finalize_period(period_id: int, user_id: Optional[int] = None, db: Session = Depends(get_db)):
     period = db.query(models.NewsletterPeriod).filter(models.NewsletterPeriod.id == period_id).first()
     if not period:
         raise HTTPException(status_code=404, detail="Period not found")
+
+    if user_id:
+        user = db.query(models.User).filter(models.User.id == user_id).first()
+        if user and user.role.lower() not in ("admin", "gh"):
+            raise HTTPException(status_code=403, detail="Only Group Heads and Admins have permission to finalize newsletter periods.")
+
     period.edit = False
     db.commit()
     db.refresh(period)
@@ -142,10 +148,16 @@ def finalize_period(period_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{period_id}/reopen", response_model=schemas.PeriodRead)
-def reopen_period(period_id: int, db: Session = Depends(get_db)):
+def reopen_period(period_id: int, user_id: Optional[int] = None, db: Session = Depends(get_db)):
     period = db.query(models.NewsletterPeriod).filter(models.NewsletterPeriod.id == period_id).first()
     if not period:
         raise HTTPException(status_code=404, detail="Period not found")
+
+    if user_id:
+        user = db.query(models.User).filter(models.User.id == user_id).first()
+        if user and user.role.lower() not in ("admin", "gh"):
+            raise HTTPException(status_code=403, detail="Only Group Heads and Admins have permission to re-open newsletter periods.")
+
     period.edit = True
     db.commit()
     db.refresh(period)
@@ -368,7 +380,6 @@ def build_combined_center_docx(
 
     if is_all_centers:
         for c_name, c_data in structure_data.items():
-            ch_name = c_data.get("ch_name", "")
             depts = c_data.get("depts", {})
             has_entries = any(len(d.get("entries", [])) > 0 for d in depts.values())
             if not has_entries:
@@ -379,14 +390,8 @@ def build_combined_center_docx(
             center_run.bold = True
             center_run.font.size = Pt(16)
             center_run.font.color.rgb = RGBColor(30, 58, 138)
-            if ch_name:
-                ch_run = center_p.add_run(f"  (Centre Head: {ch_name})")
-                ch_run.font.size = Pt(12)
-                ch_run.italic = True
-                ch_run.font.color.rgb = RGBColor(180, 83, 9)
 
             for dept_name, data in depts.items():
-                gh_name = data.get("gh_name", "")
                 entries = data.get("entries", [])
                 if not entries:
                     continue
@@ -396,11 +401,6 @@ def build_combined_center_docx(
                 dept_run.bold = True
                 dept_run.font.size = Pt(13)
                 dept_run.font.color.rgb = RGBColor(15, 23, 42)
-                if gh_name:
-                    gh_run = dept_p.add_run(f"  (Group Head: {gh_name})")
-                    gh_run.font.size = Pt(11)
-                    gh_run.italic = True
-                    gh_run.font.color.rgb = RGBColor(71, 85, 105)
 
                 for entry in entries:
                     _append_entry_to_doc(doc, entry, entry_global_counter)
@@ -410,7 +410,6 @@ def build_combined_center_docx(
             doc.add_paragraph("")
     else:
         for dept_name, data in structure_data.items():
-            gh_name = data.get("gh_name", "")
             entries = data.get("entries", [])
             if not entries:
                 continue
@@ -420,11 +419,6 @@ def build_combined_center_docx(
             dept_run.bold = True
             dept_run.font.size = Pt(14)
             dept_run.font.color.rgb = RGBColor(15, 23, 42)
-            if gh_name:
-                gh_run = dept_p.add_run(f"  (Group Head: {gh_name})")
-                gh_run.font.size = Pt(11)
-                gh_run.italic = True
-                gh_run.font.color.rgb = RGBColor(71, 85, 105)
 
             for entry in entries:
                 _append_entry_to_doc(doc, entry, entry_global_counter)
@@ -915,9 +909,12 @@ def ensure_current_periods_for_center(center: str, created_by: int, db: Session 
 
 
 @router.get("/{period_id}/contributors")
-def get_period_contributors(period_id: int, db: Session = Depends(get_db)):
+def get_period_contributors(period_id: str, db: Session = Depends(get_db)):
     """Returns the list of members who actually contributed/created entries in this period."""
-    entries = db.query(models.NewsletterEntry).filter(models.NewsletterEntry.period_id == period_id).all()
+    p_ids = [int(p.strip()) for p in str(period_id).split(",") if p.strip().isdigit()]
+    if not p_ids:
+        return []
+    entries = db.query(models.NewsletterEntry).filter(models.NewsletterEntry.period_id.in_(p_ids)).all()
     user_ids = set()
     entry_counts = {}
     for entry in entries:

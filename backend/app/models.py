@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, Text, Date, DateTime, ForeignKey, Boolean
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 from sqlalchemy.sql import func
 from app.database import Base
 
@@ -133,7 +133,7 @@ class Notification(Base):
     is_read = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    user = relationship("User", backref="notifications")
+    user = relationship("User", backref=backref("notifications", cascade="all, delete-orphan", passive_deletes=True))
     period = relationship("NewsletterPeriod")
 
 

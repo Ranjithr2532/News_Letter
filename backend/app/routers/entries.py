@@ -29,12 +29,15 @@ def create_entry(payload: schemas.EntryCreate, db: Session = Depends(get_db)):
 
 @router.get("/", response_model=List[schemas.EntryRead])
 def list_entries(
-    period_id: int,
+    period_id: str,
     category_id: Optional[int] = None,
     created_by: Optional[int] = None,
     db: Session = Depends(get_db),
 ):
-    query = db.query(models.NewsletterEntry).filter(models.NewsletterEntry.period_id == period_id)
+    p_ids = [int(p.strip()) for p in str(period_id).split(",") if p.strip().isdigit()]
+    if not p_ids:
+        return []
+    query = db.query(models.NewsletterEntry).filter(models.NewsletterEntry.period_id.in_(p_ids))
     if category_id is not None:
         query = query.filter(models.NewsletterEntry.category_id == category_id)
     if created_by is not None:
@@ -59,6 +62,15 @@ def update_entry(entry_id: int, payload: schemas.EntryUpdate, db: Session = Depe
     if entry.period and entry.period.edit is False:
         raise HTTPException(status_code=400, detail="This newsletter period has been finalized and is read-only.")
 
+    if payload.updated_by:
+        user = db.query(models.User).filter(models.User.id == payload.updated_by).first()
+        if user:
+            is_author = (entry.created_by == user.id)
+            is_admin = (user.role.lower() == "admin")
+            is_dept_gh = (user.role.lower() == "gh" and (user.group == entry.group_name or getattr(user, 'group_name', None) == entry.group_name))
+            if not (is_author or is_admin or is_dept_gh):
+                raise HTTPException(status_code=403, detail="You do not have permission to edit this entry.")
+
     # Save the OLD values into history before overwriting
     history = models.EntryEditHistory(
         entry_id=entry.id,
@@ -80,13 +92,22 @@ def update_entry(entry_id: int, payload: schemas.EntryUpdate, db: Session = Depe
 
 
 @router.delete("/{entry_id}")
-def delete_entry(entry_id: int, db: Session = Depends(get_db)):
+def delete_entry(entry_id: int, user_id: Optional[int] = None, db: Session = Depends(get_db)):
     entry = db.query(models.NewsletterEntry).filter(models.NewsletterEntry.id == entry_id).first()
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
 
     if entry.period and entry.period.edit is False:
         raise HTTPException(status_code=400, detail="This newsletter period has been finalized and is read-only.")
+
+    if user_id:
+        user = db.query(models.User).filter(models.User.id == user_id).first()
+        if user:
+            is_author = (entry.created_by == user.id)
+            is_admin = (user.role.lower() == "admin")
+            is_dept_gh = (user.role.lower() == "gh" and (user.group == entry.group_name or getattr(user, 'group_name', None) == entry.group_name))
+            if not (is_author or is_admin or is_dept_gh):
+                raise HTTPException(status_code=403, detail="You do not have permission to delete this entry.")
 
     db.delete(entry)
     db.commit()

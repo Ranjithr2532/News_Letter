@@ -18,6 +18,17 @@ else:
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
+
+
+def validate_image_file(file: UploadFile):
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported image format '{ext}'. Only JPG, PNG, and WebP are allowed."
+        )
+
 
 @router.post("/", response_model=schemas.PhotoRead)
 def upload_photo(
@@ -27,6 +38,8 @@ def upload_photo(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):
+    validate_image_file(file)
+
     entry = db.query(models.NewsletterEntry).filter(models.NewsletterEntry.id == entry_id).first()
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
@@ -66,6 +79,9 @@ def upload_photos_batch(
     files: List[UploadFile] = File(...),
     db: Session = Depends(get_db),
 ):
+    for f in files:
+        validate_image_file(f)
+
     entry = db.query(models.NewsletterEntry).filter(models.NewsletterEntry.id == entry_id).first()
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")

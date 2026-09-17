@@ -61,3 +61,104 @@ def test_request_otp_and_verify_flow(client, test_user, db_session):
             json={"email": test_user.email, "password": "newSecurePassword123"},
         )
         assert login_res.status_code == 200
+
+
+def test_rbac_permissions(client, test_user, db_session):
+    test_user.role = "member"
+    db_session.commit()
+
+    # Create a period
+    period = models.NewsletterPeriod(
+        title="Test RBAC Period",
+        start_date=datetime.now().date(),
+        end_date=datetime.now().date() + timedelta(days=14),
+        group_name=test_user.group,
+        created_by=test_user.id,
+        edit=True,
+    )
+    db_session.add(period)
+    db_session.commit()
+
+    # Member trying to finalize -> 403 Forbidden
+    fin_res = client.post(f"/periods/{period.id}/finalize?user_id={test_user.id}")
+    assert fin_res.status_code == 403
+    assert "Only Group Heads and Admins" in fin_res.json()["detail"]
+
+    # Member trying to re-open -> 403 Forbidden
+    reopen_res = client.post(f"/periods/{period.id}/reopen?user_id={test_user.id}")
+    assert reopen_res.status_code == 403
+    assert "Only Group Heads and Admins" in reopen_res.json()["detail"]
+
+    # Now create another user (GH)
+    gh_user = models.User(
+        name="GH User",
+        email="gh_user@example.com",
+        password="hashedpassword",
+        role="gh",
+        group=test_user.group,
+    )
+    db_session.add(gh_user)
+    db_session.commit()
+
+    # GH finalizing -> 200 OK
+    gh_fin_res = client.post(f"/periods/{period.id}/finalize?user_id={gh_user.id}")
+    assert gh_fin_res.status_code == 200
+    assert gh_fin_res.json()["edit"] is False
+
+
+def test_cors_origin_headers(client):
+    # Allowed origin receives CORS header
+    res = client.get("/", headers={"Origin": "http://localhost:5173"})
+    assert res.headers.get("access-control-allow-origin") == "http://localhost:5173"
+
+    # Intranet IP origin receives CORS header
+    lan_res = client.get("/", headers={"Origin": "http://172.18.100.55:5173"})
+    assert lan_res.headers.get("access-control-allow-origin") == "http://172.18.100.55:5173"
+
+    # Unlisted port (e.g. 4000) does NOT receive CORS allow header
+    port_blocked_res = client.get("/", headers={"Origin": "http://localhost:4000"})
+    assert port_blocked_res.headers.get("access-control-allow-origin") is None
+
+    # Unauthorized external origin does NOT receive CORS allow header
+    blocked_res = client.get("/", headers={"Origin": "http://unauthorized-evil-website.com"})
+    assert blocked_res.headers.get("access-control-allow-origin") is None
+
+
+def test_delete_user_with_notifications_and_otps(client, test_user, db_session):
+    # Create period and notification for this user
+    period = models.NewsletterPeriod(
+        title="Sample Period",
+        start_date=datetime.now().date(),
+        end_date=datetime.now().date() + timedelta(days=14),
+        group_name=test_user.group,
+        created_by=test_user.id,
+    )
+    db_session.add(period)
+    db_session.commit()
+
+    notification = models.Notification(
+        user_id=test_user.id,
+        period_id=period.id,
+        title="Deadline Notice",
+        message="Deadline approaching",
+        notification_type="USER_DEADLINE",
+    )
+    otp = models.OTP(
+        email=test_user.email,
+        otp_code="123456",
+        expires_at=datetime.now() + timedelta(minutes=5),
+    )
+    db_session.add_all([notification, otp])
+    db_session.commit()
+
+    # Delete the user -> should cleanly delete user and cascade clean notifications & OTPs without not-null constraint errors
+    del_res = client.delete(f"/users/{test_user.id}")
+    assert del_res.status_code == 200
+    assert del_res.json()["detail"] == "User deleted successfully"
+
+    # Verify user is deleted
+    assert db_session.query(models.User).filter(models.User.id == test_user.id).first() is None
+    # Verify notification is cleaned up
+    assert db_session.query(models.Notification).filter(models.Notification.user_id == test_user.id).first() is None
+
+

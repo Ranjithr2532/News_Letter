@@ -10,11 +10,35 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
+import bcrypt
 
 from app.database import get_db
+from app.config import SMTP_SERVER, SMTP_PORT, SENDER_EMAIL, APP_PASSWORD
 from app import models, schemas
 
 logger = logging.getLogger(__name__)
+
+
+def verify_password(plain_password: str, stored_password: str) -> bool:
+    """Verifies password supporting both bcrypt hashes and legacy plain-text passwords."""
+    if not stored_password or not plain_password:
+        return False
+    if stored_password.startswith("$2b$") or stored_password.startswith("$2a$"):
+        try:
+            return bcrypt.checkpw(
+                plain_password.encode("utf-8"),
+                stored_password.encode("utf-8")
+            )
+        except Exception:
+            return False
+    return plain_password == stored_password
+
+
+def get_password_hash(password: str) -> str:
+    """Hashes password with bcrypt."""
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
+
 
 router = APIRouter()
 
@@ -22,7 +46,7 @@ router = APIRouter()
 @router.post("/login", response_model=schemas.UserRead)
 def login(payload: schemas.UserLogin, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.email == payload.email).first()
-    if not user or user.password != payload.password:
+    if not user or not verify_password(payload.password, user.password):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     return user
 
@@ -38,6 +62,10 @@ def create_user(payload: schemas.UserCreate, db: Session = Depends(get_db)):
     data["group"] = group_val
     if "group_name" in data:
         del data["group_name"]
+
+    # Hash user password
+    if "password" in data and data["password"]:
+        data["password"] = get_password_hash(data["password"])
 
     user = models.User(**data)
     db.add(user)
@@ -160,6 +188,23 @@ def delete_user(user_id: int, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    # 1. Clean up associated notifications and OTPs
+    db.query(models.Notification).filter(models.Notification.user_id == user_id).delete(synchronize_session=False)
+    db.query(models.OTP).filter(models.OTP.email == user.email).delete(synchronize_session=False)
+
+    # 2. Clean up edit history & photos uploaded by this user
+    db.query(models.EntryEditHistory).filter(models.EntryEditHistory.edited_by == user_id).delete(synchronize_session=False)
+    db.query(models.EntryPhoto).filter(models.EntryPhoto.uploaded_by == user_id).delete(synchronize_session=False)
+
+    # 3. Clean up entries created by this user
+    db.query(models.NewsletterEntry).filter(
+        (models.NewsletterEntry.created_by == user_id) | (models.NewsletterEntry.updated_by == user_id)
+    ).delete(synchronize_session=False)
+
+    # 4. Clean up periods created by this user if any
+    db.query(models.NewsletterPeriod).filter(models.NewsletterPeriod.created_by == user_id).delete(synchronize_session=False)
+
     db.delete(user)
     db.commit()
     return {"detail": "User deleted successfully"}
@@ -167,11 +212,6 @@ def delete_user(user_id: int, db: Session = Depends(get_db)):
 
 # Helper: Send Email via Gmail SMTP
 def send_otp_email(email: str, otp: str):
-    SMTP_SERVER = "smtp.gmail.com"
-    SMTP_PORT = 587
-    SENDER_EMAIL = "ranju23052002@gmail.com"# Later replace with the what email required
-    APP_PASSWORD = "xeeg ishe zcpy unxa"# replace with actual name
-
     try:
         server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
         server.starttls()
@@ -190,6 +230,7 @@ Your OTP for password reset is: {otp}
 This OTP will expire in 5 minutes.
 Please do not share this OTP with anyone.
 
+
 """
         msg.attach(MIMEText(body, "plain"))
         server.send_message(msg)
@@ -206,7 +247,7 @@ def generate_otp():
 
 
 # ============================================================================
-# 1. REQUEST OTP (Sends 6-digit OTP to Email)
+# 1. REQUEST OTP (Sends 6-digit OTP to Email with 60s Cooldown)
 # ============================================================================
 @router.post("/request-otp")
 def request_otp(request: schemas.EmailRequest, db: Session = Depends(get_db)):
@@ -214,6 +255,23 @@ def request_otp(request: schemas.EmailRequest, db: Session = Depends(get_db)):
         user = db.query(models.User).filter(models.User.email == request.email).first()
         if not user:
             raise HTTPException(status_code=404, detail="No user found with this email address")
+
+        # 60-Second Cooldown Check (Spam protection)
+        cooldown_threshold = datetime.now() - timedelta(seconds=60)
+        recent_otp = (
+            db.query(models.OTP)
+            .filter(
+                models.OTP.email == request.email,
+                models.OTP.created_at >= cooldown_threshold
+            )
+            .order_by(models.OTP.id.desc())
+            .first()
+        )
+        if recent_otp:
+            raise HTTPException(
+                status_code=429,
+                detail="Please wait 60 seconds before requesting a new OTP."
+            )
 
         otp = generate_otp()
         expires_at = datetime.now() + timedelta(minutes=5)
@@ -282,7 +340,7 @@ def verify_otp(verification: schemas.OTPVerification, db: Session = Depends(get_
 
 
 # ============================================================================
-# 3. UPDATE PASSWORD (Direct password update)
+# 3. UPDATE PASSWORD (Bcrypt password hash update)
 # ============================================================================
 @router.post("/update-password")
 def update_password(request: schemas.PasswordUpdateRequest, db: Session = Depends(get_db)):
@@ -293,7 +351,8 @@ def update_password(request: schemas.PasswordUpdateRequest, db: Session = Depend
     if len(request.new_password.strip()) < 4:
         raise HTTPException(status_code=400, detail="Password must be at least 4 characters long")
 
-    user.password = request.new_password.strip()
+    # Hash new password with bcrypt
+    user.password = get_password_hash(request.new_password.strip())
     db.commit()
 
     return {

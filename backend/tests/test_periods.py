@@ -495,6 +495,104 @@ def test_first_login_in_second_half_creates_first_half(client, test_user, db_ses
         assert ("2026-09-16", "2026-09-30") in ranges
 
 
+# ============================================================================
+# TEST 11: Multi-period query & docx generation without personal names
+# ============================================================================
+def test_multi_period_query_and_clean_docx_headers(client, test_user, db_session):
+    test_user.center = "SMPM"
+    test_user.group = "AMC&NV"
+    db_session.commit()
+
+    with freeze_time("2026-09-10"):
+        # Period 1 for AMC&NV
+        p1_res = client.post(
+            f"/periods/ensure-current?group_name=AMC%26NV&created_by={test_user.id}"
+        )
+        p1_id = p1_res.json()["id"]
+
+        # Period 2 for SMC
+        user2 = models.User(
+            name="SMC Member",
+            email="smc_mem@test.com",
+            password="hashedpassword",
+            center="SMPM",
+            group="SMC",
+            role="member",
+        )
+        db_session.add(user2)
+        db_session.commit()
+
+        p2_res = client.post(
+            f"/periods/ensure-current?group_name=SMC&created_by={user2.id}"
+        )
+        p2_id = p2_res.json()["id"]
+
+        # Global category & custom category
+        cat1 = models.CategoryStage(name="Research & Development", stage_number=1, is_active=True)
+        cat2 = models.CategoryStage(name="Custom Period 1 Cat", stage_number=2, is_active=True, period_id=p1_id)
+        db_session.add_all([cat1, cat2])
+        db_session.commit()
+
+        # Add entries in p1 and p2
+        entry1 = models.NewsletterEntry(
+            period_id=p1_id,
+            group_name="AMC&NV",
+            category_id=cat1.id,
+            title="AMC Project Alpha",
+            description="AMC Description",
+            created_by=test_user.id,
+            updated_by=test_user.id,
+        )
+        entry2 = models.NewsletterEntry(
+            period_id=p2_id,
+            group_name="SMC",
+            category_id=cat1.id,
+            title="SMC Project Beta",
+            description="SMC Description",
+            created_by=user2.id,
+            updated_by=user2.id,
+        )
+        db_session.add_all([entry1, entry2])
+        db_session.commit()
+
+        # Test querying categories with comma-separated period IDs
+        cat_res = client.get(f"/categories/?period_id={p1_id},{p2_id}")
+        assert cat_res.status_code == 200
+        cat_names = [c["name"] for c in cat_res.json()]
+        assert "Research & Development" in cat_names
+        assert "Custom Period 1 Cat" in cat_names
+
+        # Test querying entries with comma-separated period IDs
+        entries_res = client.get(f"/entries/?period_id={p1_id},{p2_id}")
+        assert entries_res.status_code == 200
+        titles = [e["title"] for e in entries_res.json()]
+        assert "AMC Project Alpha" in titles
+        assert "SMC Project Beta" in titles
+
+        # Test contributors with comma-separated period IDs
+        contrib_res = client.get(f"/periods/{p1_id},{p2_id}/contributors")
+        assert contrib_res.status_code == 200
+        c_names = [c["name"] for c in contrib_res.json()]
+        assert test_user.name in c_names
+        assert "SMC Member" in c_names
+
+        # Test downloading combined docx for center SMPM
+        docx_res = client.get("/periods/center/generate-combined-docx?center=SMPM&start_date=2026-09-01&end_date=2026-09-15")
+        assert docx_res.status_code == 200
+        assert docx_res.headers["content-type"] == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+        # Verify Word document content has NO "(Centre Head:" or "(Group Head:" text
+        from io import BytesIO
+        from docx import Document
+        doc = Document(BytesIO(docx_res.content))
+        full_text = "\n".join([p.text for p in doc.paragraphs])
+        assert "(Centre Head:" not in full_text
+        assert "(Group Head:" not in full_text
+        assert "AMC Project Alpha" in full_text
+        assert "SMC Project Beta" in full_text
+
+
+
 
 
 
