@@ -68,7 +68,8 @@ def update_entry(entry_id: int, payload: schemas.EntryUpdate, db: Session = Depe
             is_author = (entry.created_by == user.id)
             is_admin = (user.role.lower() == "admin")
             is_dept_gh = (user.role.lower() == "gh" and (user.group == entry.group_name or getattr(user, 'group_name', None) == entry.group_name))
-            if not (is_author or is_admin or is_dept_gh):
+            is_ch = (user.role.lower() == "ch")
+            if not (is_author or is_admin or is_dept_gh or is_ch):
                 raise HTTPException(status_code=403, detail="You do not have permission to edit this entry.")
 
     # Save the OLD values into history before overwriting
@@ -106,7 +107,8 @@ def delete_entry(entry_id: int, user_id: Optional[int] = None, db: Session = Dep
             is_author = (entry.created_by == user.id)
             is_admin = (user.role.lower() == "admin")
             is_dept_gh = (user.role.lower() == "gh" and (user.group == entry.group_name or getattr(user, 'group_name', None) == entry.group_name))
-            if not (is_author or is_admin or is_dept_gh):
+            is_ch = (user.role.lower() == "ch")
+            if not (is_author or is_admin or is_dept_gh or is_ch):
                 raise HTTPException(status_code=403, detail="You do not have permission to delete this entry.")
 
     db.delete(entry)

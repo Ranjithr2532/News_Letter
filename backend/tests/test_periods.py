@@ -592,6 +592,321 @@ def test_multi_period_query_and_clean_docx_headers(client, test_user, db_session
         assert "SMC Project Beta" in full_text
 
 
+def test_category_first_combined_and_gh_downloads(client, test_user, db_session):
+    """Verify that combined CH download and single GH download group entries category-by-category."""
+    test_user.center = "SMPM"
+    test_user.group = "SMC"
+    user_amc = models.User(
+        name="AMC Head",
+        email="amc_head@test.com",
+        password="hashedpassword",
+        center="SMPM",
+        group="AMC",
+        role="gh",
+    )
+    db_session.add(user_amc)
+    db_session.commit()
+
+    with freeze_time("2026-09-10"):
+        # Create periods for SMC and AMC
+        p_smc_res = client.post(
+            "/periods/",
+            json={
+                "title": "SMC Newsletter - Sep 2026 H1",
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-15",
+                "group_name": "SMC",
+                "created_by": test_user.id,
+            },
+        )
+        p_smc_id = p_smc_res.json()["id"]
+
+        p_amc_res = client.post(
+            "/periods/",
+            json={
+                "title": "AMC Newsletter - Sep 2026 H1",
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-15",
+                "group_name": "AMC",
+                "created_by": user_amc.id,
+            },
+        )
+        p_amc_id = p_amc_res.json()["id"]
+
+        # Categories: Training (stage 1) and Events (stage 2)
+        cat_training = models.CategoryStage(name="Training Programs", stage_number=1, is_active=True)
+        cat_events = models.CategoryStage(name="Events & Workshops", stage_number=2, is_active=True)
+        db_session.add_all([cat_training, cat_events])
+        db_session.commit()
+
+        # SMC entries (1 Training, 1 Event)
+        e1 = models.NewsletterEntry(
+            period_id=p_smc_id,
+            group_name="SMC",
+            category_id=cat_training.id,
+            title="SMC AI Training",
+            description="SMC AI Workshop",
+            created_by=test_user.id,
+            updated_by=test_user.id,
+        )
+        e2 = models.NewsletterEntry(
+            period_id=p_smc_id,
+            group_name="SMC",
+            category_id=cat_events.id,
+            title="SMC Annual Summit",
+            description="SMC Summit details",
+            created_by=test_user.id,
+            updated_by=test_user.id,
+        )
+        # AMC entries (1 Training, 1 Event)
+        e3 = models.NewsletterEntry(
+            period_id=p_amc_id,
+            group_name="AMC",
+            category_id=cat_training.id,
+            title="AMC CNC Training",
+            description="AMC CNC Workshop",
+            created_by=user_amc.id,
+            updated_by=user_amc.id,
+        )
+        e4 = models.NewsletterEntry(
+            period_id=p_amc_id,
+            group_name="AMC",
+            category_id=cat_events.id,
+            title="AMC Tech Expo",
+            description="AMC Expo details",
+            created_by=user_amc.id,
+            updated_by=user_amc.id,
+        )
+        db_session.add_all([e1, e2, e3, e4])
+        db_session.commit()
+
+        # 1. Test Combined CH Download across SMPM center
+        comb_res = client.get("/periods/center/generate-combined-docx?center=SMPM&start_date=2026-09-01&end_date=2026-09-15")
+        assert comb_res.status_code == 200
+
+        from io import BytesIO
+        from docx import Document
+        doc = Document(BytesIO(comb_res.content))
+        full_text = "\n".join([p.text for p in doc.paragraphs])
+
+        # Verify Category 1 comes before Category 2
+        pos_cat1 = full_text.find("1. TRAINING PROGRAMS")
+        pos_cat2 = full_text.find("2. EVENTS & WORKSHOPS")
+        assert pos_cat1 != -1 and pos_cat2 != -1
+        assert pos_cat1 < pos_cat2
+
+        # Verify both SMC and AMC training entries are within Category 1
+        pos_smc_train = full_text.find("SMC AI Training")
+        pos_amc_train = full_text.find("AMC CNC Training")
+        assert pos_smc_train != -1 and pos_amc_train != -1
+        assert pos_cat1 < pos_smc_train < pos_cat2
+        assert pos_cat1 < pos_amc_train < pos_cat2
+
+        # Verify both SMC and AMC event entries are within Category 2
+        pos_smc_event = full_text.find("SMC Annual Summit")
+        pos_amc_event = full_text.find("AMC Tech Expo")
+        assert pos_smc_event != -1 and pos_amc_event != -1
+        assert pos_cat2 < pos_smc_event
+        assert pos_cat2 < pos_amc_event
+
+        # 2. Test GH Single Period Download for SMC
+        smc_doc_res = client.get(f"/periods/{p_smc_id}/generate-docx")
+        assert smc_doc_res.status_code == 200
+        smc_doc = Document(BytesIO(smc_doc_res.content))
+        smc_text = "\n".join([p.text for p in smc_doc.paragraphs])
+        assert "1. TRAINING PROGRAMS" in smc_text
+        assert "2. EVENTS & WORKSHOPS" in smc_text
+        assert "SMC AI Training" in smc_text
+        assert "SMC Annual Summit" in smc_text
+        assert "AMC CNC Training" not in smc_text
+
+
+def test_admin_all_centers_category_first_download(client, test_user, db_session):
+    """Verify Admin downloading All Centers combined groups entries strictly category-by-category with [Center - Dept] tags."""
+    test_user.center = "SMPM"
+    test_user.group = "SMC"
+    user_cair = models.User(
+        name="CAIR Head",
+        email="cair_head@test.com",
+        password="hashedpassword",
+        center="CAIR",
+        group="Robotics",
+        role="gh",
+    )
+    db_session.add(user_cair)
+    db_session.commit()
+
+    with freeze_time("2026-09-10"):
+        # Create periods for SMPM-SMC and CAIR-Robotics
+        p1 = client.post(
+            "/periods/",
+            json={
+                "title": "SMPM SMC Newsletter",
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-15",
+                "group_name": "SMC",
+                "created_by": test_user.id,
+            },
+        ).json()["id"]
+
+        p2 = client.post(
+            "/periods/",
+            json={
+                "title": "CAIR Robotics Newsletter",
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-15",
+                "group_name": "Robotics",
+                "created_by": user_cair.id,
+            },
+        ).json()["id"]
+
+        cat1 = models.CategoryStage(name="Technical Training", stage_number=1, is_active=True)
+        cat2 = models.CategoryStage(name="Conferences", stage_number=2, is_active=True)
+        db_session.add_all([cat1, cat2])
+        db_session.commit()
+
+        e1 = models.NewsletterEntry(
+            period_id=p1,
+            group_name="SMC",
+            category_id=cat1.id,
+            title="SMPM AI Workshop",
+            created_by=test_user.id,
+            updated_by=test_user.id,
+        )
+        e2 = models.NewsletterEntry(
+            period_id=p2,
+            group_name="Robotics",
+            category_id=cat1.id,
+            title="CAIR ROS Workshop",
+            created_by=user_cair.id,
+            updated_by=user_cair.id,
+        )
+        e3 = models.NewsletterEntry(
+            period_id=p1,
+            group_name="SMC",
+            category_id=cat2.id,
+            title="SMPM Annual Meet",
+            created_by=test_user.id,
+            updated_by=test_user.id,
+        )
+        e4 = models.NewsletterEntry(
+            period_id=p2,
+            group_name="Robotics",
+            category_id=cat2.id,
+            title="CAIR Automation Summit",
+            created_by=user_cair.id,
+            updated_by=user_cair.id,
+        )
+        db_session.add_all([e1, e2, e3, e4])
+        db_session.commit()
+
+        # Admin downloads All Centers combined (center=all)
+        all_res = client.get("/periods/center/generate-combined-docx?center=all&start_date=2026-09-01&end_date=2026-09-15")
+        assert all_res.status_code == 200
+
+        from io import BytesIO
+        from docx import Document
+        doc = Document(BytesIO(all_res.content))
+        full_text = "\n".join([p.text for p in doc.paragraphs])
+
+        # Verify Category 1 is first, Category 2 is second
+        pos_cat1 = full_text.find("1. TECHNICAL TRAINING")
+        pos_cat2 = full_text.find("2. CONFERENCES")
+        assert pos_cat1 != -1 and pos_cat2 != -1
+        assert pos_cat1 < pos_cat2
+
+        # Verify entries from different centers appear under Category 1 with clean titles (no dept tags)
+        assert "SMPM AI Workshop" in full_text
+        assert "CAIR ROS Workshop" in full_text
+        assert "[SMPM - SMC]" not in full_text
+        assert "[CAIR - Robotics]" not in full_text
+        pos_e1 = full_text.find("SMPM AI Workshop")
+        pos_e2 = full_text.find("CAIR ROS Workshop")
+        assert pos_cat1 < pos_e1 < pos_cat2
+        assert pos_cat1 < pos_e2 < pos_cat2
+
+        # Verify Category 2 entries
+        assert "SMPM Annual Meet" in full_text
+        assert "CAIR Automation Summit" in full_text
+        pos_e3 = full_text.find("SMPM Annual Meet")
+        pos_e4 = full_text.find("CAIR Automation Summit")
+        assert pos_cat2 < pos_e3
+        assert pos_cat2 < pos_e4
+
+
+def test_ch_can_edit_and_delete_entries(client, test_user, db_session):
+    """Verify that a user with role CH can edit and delete entries in their center."""
+    ch_user = models.User(
+        name="SMPM Centre Head",
+        email="smpm_ch@test.com",
+        password="hashedpassword",
+        center="SMPM",
+        role="ch",
+    )
+    author_user = models.User(
+        name="Staff Member",
+        email="staff@test.com",
+        password="hashedpassword",
+        center="SMPM",
+        group="SMC",
+        role="member",
+    )
+    db_session.add_all([ch_user, author_user])
+    db_session.commit()
+
+    with freeze_time("2026-09-10"):
+        p_res = client.post(
+            "/periods/",
+            json={
+                "title": "SMPM Period",
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-15",
+                "group_name": "SMC",
+                "created_by": author_user.id,
+            },
+        )
+        period_id = p_res.json()["id"]
+
+        cat = models.CategoryStage(name="Research", stage_number=1, is_active=True)
+        db_session.add(cat)
+        db_session.commit()
+
+        # Author creates entry
+        e_res = client.post(
+            "/entries/",
+            json={
+                "period_id": period_id,
+                "category_id": cat.id,
+                "group_name": "SMC",
+                "title": "Original Title",
+                "description": "Original Description",
+                "created_by": author_user.id,
+            },
+        )
+        assert e_res.status_code == 200
+        entry_id = e_res.json()["id"]
+
+        # CH updates entry
+        put_res = client.put(
+            f"/entries/{entry_id}",
+            json={
+                "title": "Updated by CH Title",
+                "description": "Updated by CH Description",
+                "updated_by": ch_user.id,
+            },
+        )
+        assert put_res.status_code == 200
+        assert put_res.json()["title"] == "Updated by CH Title"
+
+        # CH deletes entry
+        del_res = client.delete(f"/entries/{entry_id}?user_id={ch_user.id}")
+        assert del_res.status_code == 200
+        assert del_res.json()["detail"] == "Entry deleted"
+
+
+
+
+
 
 
 

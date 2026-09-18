@@ -52,7 +52,7 @@ const Categories = () => {
   const isAdmin = user?.role?.trim().toLowerCase() === 'admin';
   const isChUser = user?.role?.trim().toLowerCase() === 'ch';
   const isGhUser = user?.role?.trim().toLowerCase() === 'gh';
-  const isViewOnly = isAdmin || isChUser || period?.edit === false;
+  const isViewOnly = isAdmin || period?.edit === false;
   const canViewAll = isAdmin || isChUser || isGhUser || isViewOnly;
 
   // Accordion state: ID of currently expanded category (only one expanded at a time)
@@ -644,10 +644,15 @@ const Categories = () => {
                 <IconLock size={12} />
                 <span>Finalized (View-Only)</span>
               </span>
-            ) : (isChUser || isAdmin) ? (
+            ) : isAdmin ? (
               <span className="status-badge-open" style={{ backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }}>
                 <IconEye size={12} />
-                <span>{isAdmin ? 'Admin Review Mode (Open)' : 'CH Review Mode (Open)'}</span>
+                <span>Admin Review Mode (Open)</span>
+              </span>
+            ) : isChUser ? (
+              <span className="status-badge-open" style={{ backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }}>
+                <IconCheck size={12} strokeWidth={2.5} />
+                <span>Open for Editing (CH)</span>
               </span>
             ) : (
               <span className="status-badge-open">
@@ -1209,8 +1214,8 @@ const Categories = () => {
                                     )}
                                   </div>
 
-                                  {/* Action Buttons for Author or GH */}
-                                  {!isViewOnly && (isGhUser || entry.created_by === user?.id) && (
+                                  {/* Action Buttons for Author, GH, or CH */}
+                                  {!isViewOnly && (isGhUser || isChUser || entry.created_by === user?.id) && (
                                     <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
                                       <button
                                         type="button"

@@ -73,17 +73,13 @@ const Periods = () => {
   // Department Selection Modal for Download (when multiple departments exist in a half)
   const [downloadSelectModal, setDownloadSelectModal] = useState(null);
 
-  // Download options popup state
-  const [downloadModalPeriod, setDownloadModalPeriod] = useState(null);
-  const [periodContributors, setPeriodContributors] = useState([]);
-  const [selectedContributorId, setSelectedContributorId] = useState('');
-  const [loadingContributors, setLoadingContributors] = useState(false);
+  const [creatingHalfKey, setCreatingHalfKey] = useState(null);
 
   // Defaults to current year (e.g. '2026') on mount
   const [filterMode, setFilterMode] = useState(currentYearStr);
 
-  // Top Specific Filter (Year & Month & Half)
-  const [selectedFilterYear, setSelectedFilterYear] = useState('');
+  // Top Specific Filter (Year & Month & Half) - default to current year
+  const [selectedFilterYear, setSelectedFilterYear] = useState(currentYearStr);
   const [selectedFilterMonth, setSelectedFilterMonth] = useState('');
   const [selectedFilterHalf, setSelectedFilterHalf] = useState('');
 
@@ -96,50 +92,28 @@ const Periods = () => {
     const userGroup = user.group || user.group_name || '';
 
     const initPeriods = async () => {
-      // 1. Silently auto-ensure today's real half-month period exists
-      if (userGroup && !isChUser && !isAdmin) {
-        try {
-          await api.post(
-            `/periods/ensure-current?group_name=${encodeURIComponent(
-              userGroup
-            )}&created_by=${user.id}`
-          );
-        } catch (err) {
-          console.error('Failed to ensure current period:', err);
+      // 1. Fetch Centers, Centre Heads, and Group Heads for institutional hierarchy
+      try {
+        const promises = [api.get('/users/ghs/list')];
+        if (isAdmin || isChUser) {
+          promises.push(api.get('/users/chs/list'));
         }
-      } else if (isChUser && user?.center) {
-        // Auto-ensure identical current half-month period across all departments in CH center
-        try {
-          await api.post(
-            `/periods/ensure-current-center?center=${encodeURIComponent(
-              user.center
-            )}&created_by=${user.id}`
-          );
-        } catch (err) {
-          console.error('Failed to ensure center periods for CH:', err);
+        if (isAdmin) {
+          promises.push(api.get('/users/centers/list'));
         }
+        const results = await Promise.all(promises);
+        setAllGhs(results[0]?.data || []);
+        if (isAdmin || isChUser) {
+          setAllChs(results[1]?.data || []);
+        }
+        if (isAdmin) {
+          setAllCenters(results[2]?.data || []);
+        }
+      } catch (hierarchyErr) {
+        console.error('Failed to fetch centers/chs/ghs:', hierarchyErr);
       }
 
-      // 2. Fetch Centers, Centre Heads, and Group Heads for accurate institutional hierarchy
-      if (isAdmin || isChUser) {
-        try {
-          const promises = [api.get('/users/ghs/list')];
-          if (isAdmin) {
-            promises.push(api.get('/users/centers/list'));
-            promises.push(api.get('/users/chs/list'));
-          }
-          const [ghRes, cRes, chRes] = await Promise.all(promises);
-          setAllGhs(ghRes?.data || []);
-          if (isAdmin) {
-            setAllCenters(cRes?.data || []);
-            setAllChs(chRes?.data || []);
-          }
-        } catch (adminErr) {
-          console.error('Failed to fetch centers/chs/ghs:', adminErr);
-        }
-      }
-
-      // 3. If CH, fetch all active groups under this center
+      // 2. If CH, fetch all active groups under this center
       if (isChUser && user?.center) {
         setSelectedCenter(user.center);
         try {
@@ -152,12 +126,12 @@ const Periods = () => {
         }
       }
 
-      // 4. Fetch available years and load current year's periods
+      // 3. Fetch available years and load current year's periods
       const initialCenter = isAdmin ? 'all' : (isChUser ? user?.center : undefined);
       const initialGroup = 'all';
       setSelectedGroup('all');
       fetchAvailableYears(initialGroup, initialCenter);
-      fetchPeriods(currentYearStr, '', '', initialGroup, initialCenter);
+      fetchPeriods(currentYearStr, currentYearStr, '', initialGroup, initialCenter);
     };
 
     initPeriods();
@@ -206,11 +180,47 @@ const Periods = () => {
       }
       url += params.join('&');
       const res = await api.get(url);
-      setAvailableYears(res.data || []);
+      const fetchedYears = res?.data || [];
+      const curYr = new Date().getFullYear();
+      const defaultYears = [curYr, curYr - 1, curYr - 2, curYr - 3];
+      const combined = Array.from(new Set([...fetchedYears, ...defaultYears])).sort((a, b) => b - a);
+      setAvailableYears(combined);
     } catch (err) {
       console.error('Failed to fetch period years:', err);
+      const curYr = new Date().getFullYear();
+      setAvailableYears([curYr, curYr - 1, curYr - 2, curYr - 3]);
     }
   };
+
+  const curYr = new Date().getFullYear();
+
+  // 1. Top 3 quick buttons: Current Year + 2 previous years (Total 3 years: e.g. 2026, 2025, 2024)
+  const topThreeYears = useMemo(() => [curYr, curYr - 1, curYr - 2], [curYr]);
+
+  // 2. More Years List (from curYr - 3 down to 2015)
+  const moreYearsList = useMemo(() => {
+    const list = [];
+    for (let y = curYr - 3; y >= 2015; y--) {
+      list.push(y);
+    }
+    availableYears.forEach((y) => {
+      if (!topThreeYears.includes(y) && !list.includes(y)) {
+        list.push(y);
+      }
+    });
+    list.sort((a, b) => b - a);
+    return list;
+  }, [curYr, topThreeYears, availableYears]);
+
+  // 3. Selectable Years in Dropdowns: Up to Current Year, going back to 2015
+  const allSelectableYears = useMemo(() => {
+    const list = [];
+    for (let y = curYr; y >= 2015; y--) {
+      list.push(y);
+    }
+    const combined = Array.from(new Set([...list, ...availableYears])).sort((a, b) => b - a);
+    return combined;
+  }, [curYr, availableYears]);
 
   const fetchPeriods = async (
     mode = currentYearStr,
@@ -235,13 +245,17 @@ const Periods = () => {
         if (userGroup) params.push(`group_name=${encodeURIComponent(userGroup)}`);
       }
 
-      if (filterYear || filterMonth) {
-        if (filterYear) params.push(`year=${filterYear}`);
-        if (filterMonth) params.push(`month=${filterMonth}`);
-      } else if (mode === 'recent') {
-        params.push('months=2');
-      } else if (mode !== 'all' && mode) {
-        params.push(`year=${mode}`);
+      if (mode === 'all' || filterYear === 'all') {
+        params.push('all_years=true');
+        if (filterMonth) {
+          params.push(`month=${filterMonth}`);
+        }
+      } else {
+        const yrToSend = filterYear || (mode && !isNaN(parseInt(mode, 10)) ? mode : currentYearStr);
+        params.push(`year=${yrToSend}`);
+        if (filterMonth) {
+          params.push(`month=${filterMonth}`);
+        }
       }
       url += params.join('&');
       const res = await api.get(url);
@@ -264,11 +278,6 @@ const Periods = () => {
       fetchAvailableYears('all', 'all');
     } else {
       try {
-        await api.post(`/periods/ensure-current-center?center=${encodeURIComponent(centerName)}&created_by=${user.id}`);
-      } catch (e) {
-        console.error('Failed to ensure center periods on select:', e);
-      }
-      try {
         const gRes = await api.get(`/users/groups/list?center=${encodeURIComponent(centerName)}`);
         setCenterGroups(gRes.data || []);
       } catch (e) {
@@ -283,67 +292,13 @@ const Periods = () => {
     if (e) e.stopPropagation();
     if (!period) return;
 
-    // For CH & Admin: do NOT ask for individual contributors; download the complete period docx directly!
-    if (isChUser || isAdmin) {
-      setDownloadingId(period.id);
-      try {
-        const response = await api.get(`/periods/${period.id}/generate-docx`, {
-          responseType: 'blob',
-        });
-        const blob = new Blob([response.data], {
-          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        });
-        const downloadUrl = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = downloadUrl;
-        const filename = `${period.title.replace(/\s+/g, '_')}.docx`;
-        link.setAttribute('download', filename);
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        window.URL.revokeObjectURL(downloadUrl);
-      } catch (err) {
-        console.error('Failed to download period docx:', err);
-        let errorMsg = 'Failed to download period document.';
-        if (err.response?.data instanceof Blob) {
-          try {
-            const text = await err.response.data.text();
-            const json = JSON.parse(text);
-            if (json.detail) errorMsg = json.detail;
-          } catch (_) { }
-        } else if (err.response?.data?.detail) {
-          errorMsg = err.response.data.detail;
-        }
-        alert(errorMsg);
-      } finally {
-        setDownloadingId(null);
-      }
-      return;
-    }
-
-    // For GH / regular users: show the contributor download options modal
-    setDownloadModalPeriod(period);
-    setSelectedContributorId('');
-    setLoadingContributors(true);
-    try {
-      const res = await api.get(`/periods/${period.id}/contributors`);
-      setPeriodContributors(res.data || []);
-    } catch (err) {
-      console.error('Failed to fetch period contributors:', err);
-      setPeriodContributors([]);
-    } finally {
-      setLoadingContributors(false);
-    }
-  };
-
-  const executeDownloadDocx = async () => {
-    if (!downloadModalPeriod) return;
-    const period = downloadModalPeriod;
     setDownloadingId(period.id);
     try {
       let url = `/periods/${period.id}/generate-docx`;
-      if (selectedContributorId) {
-        url += `?created_by=${selectedContributorId}`;
+      // For regular members (Scientist/Engineer) when period is not finalized:
+      // download ONLY their own entries
+      if (!isAdmin && !isChUser && !isGhUser && period.edit !== false) {
+        url += `?created_by=${user.id}`;
       }
       const response = await api.get(url, {
         responseType: 'blob',
@@ -354,28 +309,18 @@ const Periods = () => {
       const downloadUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = downloadUrl;
-
-      let userSuffix = '';
-      if (selectedContributorId) {
-        const found = periodContributors.find(
-          (c) => String(c.id) === String(selectedContributorId)
-        );
-        if (found) {
-          const cName = (found.name || found.email).replace(/\s+/g, '_');
-          userSuffix = `_${cName}`;
-        }
-      }
-
+      const userSuffix = (!isAdmin && !isChUser && !isGhUser && period.edit !== false && user?.name)
+        ? `_${user.name.replace(/\s+/g, '_')}`
+        : '';
       const filename = `${period.title.replace(/\s+/g, '_')}${userSuffix}.docx`;
       link.setAttribute('download', filename);
       document.body.appendChild(link);
       link.click();
       link.remove();
       window.URL.revokeObjectURL(downloadUrl);
-      setDownloadModalPeriod(null);
     } catch (err) {
-      console.error('Failed to download docx:', err);
-      let errorMsg = 'Failed to download newsletter.';
+      console.error('Failed to download period docx:', err);
+      let errorMsg = 'Failed to download period document.';
       if (err.response?.data instanceof Blob) {
         try {
           const text = await err.response.data.text();
@@ -430,6 +375,7 @@ const Periods = () => {
   };
 
   const executeDownloadCombinedDocx = async (overrideParams = null) => {
+    const userDept = user?.group || user?.group_name || '';
     const targetCenter =
       overrideParams?.center !== undefined
         ? overrideParams.center
@@ -437,7 +383,7 @@ const Periods = () => {
     const targetGroup =
       overrideParams?.group_name !== undefined
         ? overrideParams.group_name
-        : (selectedGroup || 'all');
+        : (!isAdmin && !isChUser && userDept ? userDept : (selectedGroup || 'all'));
 
     setDownloadingCombined(true);
     try {
@@ -512,7 +458,6 @@ const Periods = () => {
       link.remove();
       window.URL.revokeObjectURL(downloadUrl);
       setShowCombinedModal(false);
-      setDownloadModalPeriod(null);
     } catch (err) {
       console.error('Failed to download combined docx:', err);
       let errorMsg = 'No entries found for this selection in the specified period.';
@@ -532,7 +477,7 @@ const Periods = () => {
   };
 
   // Helper: Group periods array into Month Cards (each card represents one month with Half 1 & Half 2)
-  const groupPeriodsIntoMonthCards = (periodsList) => {
+  const groupPeriodsIntoMonthCards = (periodsList, currentMode, currentYearFilter, currentMonthFilter) => {
     const monthMap = {};
     const monthNamesFull = [
       'January',
@@ -563,15 +508,33 @@ const Periods = () => {
       'Dec',
     ];
 
-    periodsList.forEach((period) => {
-      if (!period.start_date) return;
-      const [yStr, mStr, dStr] = period.start_date.split('-');
-      const year = parseInt(yStr, 10);
-      const monthIndex = parseInt(mStr, 10) - 1;
-      const day = parseInt(dStr, 10);
+    // Determine which years to populate
+    let targetYears = [];
+    if (currentYearFilter && currentYearFilter !== 'all') {
+      targetYears = [parseInt(currentYearFilter, 10)];
+    } else if (currentMode === 'all' || currentYearFilter === 'all') {
+      const yearsFromPeriods = periodsList
+        .map((p) => (p.start_date ? parseInt(p.start_date.split('-')[0], 10) : null))
+        .filter(Boolean);
+      const allYearsSet = new Set([...topThreeYears, ...yearsFromPeriods, parseInt(currentYearStr, 10)]);
+      targetYears = Array.from(allYearsSet).sort((a, b) => b - a);
+    } else if (currentMode && currentMode !== 'recent' && currentMode !== 'custom' && !isNaN(parseInt(currentMode, 10))) {
+      targetYears = [parseInt(currentMode, 10)];
+    } else {
+      targetYears = [parseInt(currentYearStr, 10)];
+    }
 
-      const monthKey = `${yStr}-${mStr}`;
-      if (!monthMap[monthKey]) {
+    // Determine which months to populate (0..11 or specific selectedFilterMonth - 1)
+    const targetMonths = currentMonthFilter
+      ? [parseInt(currentMonthFilter, 10) - 1]
+      : [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+
+    // Pre-populate all target months for target years
+    targetYears.forEach((year) => {
+      targetMonths.forEach((monthIndex) => {
+        if (monthIndex < 0 || monthIndex > 11) return;
+        const padMonth = String(monthIndex + 1).padStart(2, '0');
+        const monthKey = `${year}-${padMonth}`;
         const lastDay = new Date(year, monthIndex + 1, 0).getDate();
         monthMap[monthKey] = {
           yearMonthStr: monthKey,
@@ -583,12 +546,37 @@ const Periods = () => {
           half1: [],
           half2: [],
         };
-      }
+      });
+    });
 
-      if (day <= 15) {
-        monthMap[monthKey].half1.push(period);
-      } else {
-        monthMap[monthKey].half2.push(period);
+    // Merge existing DB periods into half1 and half2
+    periodsList.forEach((period) => {
+      if (!period.start_date) return;
+      const [yStr, mStr, dStr] = period.start_date.split('-');
+      const year = parseInt(yStr, 10);
+      const monthIndex = parseInt(mStr, 10) - 1;
+      const day = parseInt(dStr, 10);
+      const padMonth = String(monthIndex + 1).padStart(2, '0');
+      const monthKey = `${year}-${padMonth}`;
+
+      if (monthMap[monthKey]) {
+        if (day <= 15) {
+          monthMap[monthKey].half1.push(period);
+        } else {
+          monthMap[monthKey].half2.push(period);
+        }
+      } else if (currentMode === 'all' || currentYearFilter === 'all') {
+        const lastDay = new Date(year, monthIndex + 1, 0).getDate();
+        monthMap[monthKey] = {
+          yearMonthStr: monthKey,
+          year,
+          monthIndex,
+          monthName: `${monthNamesFull[monthIndex]} ${year}`,
+          monthAbbrev: monthNamesAbbrev[monthIndex],
+          lastDayOfMonth: lastDay,
+          half1: day <= 15 ? [period] : [],
+          half2: day > 15 ? [period] : [],
+        };
       }
     });
 
@@ -597,7 +585,14 @@ const Periods = () => {
       m.half2.sort((a, b) => (a.group_name || '').localeCompare(b.group_name || ''));
     });
 
-    const sortedKeys = Object.keys(monthMap).sort((a, b) => b.localeCompare(a));
+    // Sort years descending, then months ascending Jan to Dec (1 to 12)
+    const sortedKeys = Object.keys(monthMap).sort((a, b) => {
+      const [yA, mA] = a.split('-').map(Number);
+      const [yB, mB] = b.split('-').map(Number);
+      if (yA !== yB) return yB - yA;
+      return mA - mB;
+    });
+
     return sortedKeys.map((key) => monthMap[key]);
   };
 
@@ -628,15 +623,124 @@ const Periods = () => {
       return;
     }
 
-    if (periodsInHalf.length === 1) {
-      navigate(`/categories/${periodsInHalf[0].id}`, {
-        state: { periodTitle: periodsInHalf[0].title },
+    const userGrp = (user?.group || user?.group_name || '').trim().toUpperCase();
+    const myPeriod = periodsInHalf.find(
+      (p) => (p.group_name || '').trim().toUpperCase() === userGrp
+    );
+    if (myPeriod) {
+      navigate(`/categories/${myPeriod.id}`, {
+        state: { periodTitle: myPeriod.title },
+      });
+      return;
+    }
+
+    // Deduplicate periods by group_name
+    const distinctDeptsMap = new Map();
+    periodsInHalf.forEach((p) => {
+      const key = (p.group_name || 'General').trim().toUpperCase();
+      if (!distinctDeptsMap.has(key)) {
+        distinctDeptsMap.set(key, p);
+      }
+    });
+    const uniquePeriods = Array.from(distinctDeptsMap.values());
+
+    if (uniquePeriods.length === 1) {
+      navigate(`/categories/${uniquePeriods[0].id}`, {
+        state: { periodTitle: uniquePeriods[0].title },
       });
     } else {
       setDeptSelectModal({
         rangeLabel,
-        periods: periodsInHalf,
+        periods: uniquePeriods,
       });
+    }
+  };
+
+  // On-demand click for empty / un-instantiated half slots
+  const handleEmptyHalfClick = async (monthData, halfNum, rangeLabel) => {
+    if (isAdmin) return;
+
+    const yr = monthData.year;
+    const mo = monthData.monthIndex + 1;
+    const padMo = String(mo).padStart(2, '0');
+    const lastDay = monthData.lastDayOfMonth;
+    const sDate = halfNum === 1 ? `${yr}-${padMo}-01` : `${yr}-${padMo}-16`;
+    const eDate = halfNum === 1 ? `${yr}-${padMo}-15` : `${yr}-${padMo}-${String(lastDay).padStart(2, '0')}`;
+    const slotKey = `${yr}-${mo}-${halfNum}`;
+
+    setCreatingHalfKey(slotKey);
+
+    try {
+      if (isChUser) {
+        if (!user?.center) {
+          alert('Center information is missing for your account.');
+          setCreatingHalfKey(null);
+          return;
+        }
+
+        const res = await api.post(
+          `/periods/ensure-half-center?center=${encodeURIComponent(user.center)}&start_date=${sDate}&end_date=${eDate}&created_by=${user.id}`
+        );
+
+        const ensuredPeriods = res.data || [];
+        if (ensuredPeriods.length === 0) {
+          alert('No departments found under your center to create periods.');
+          setCreatingHalfKey(null);
+          return;
+        }
+
+        const allPeriodIds = ensuredPeriods.map((p) => p.id).join(',');
+        const combinedTitle = `${user.center} Combined — ${rangeLabel}`;
+
+        // Update local periods state so the card immediately reflects the newly created periods
+        setPeriods((prev) => {
+          const existingIds = new Set(prev.map((p) => p.id));
+          const newToAdd = ensuredPeriods.filter((p) => !existingIds.has(p.id));
+          return [...prev, ...newToAdd];
+        });
+
+        navigate(`/categories/${ensuredPeriods[0].id}?all_periods=${allPeriodIds}`, {
+          state: {
+            periodTitle: combinedTitle,
+            rangeLabel,
+            allPeriodIds: ensuredPeriods.map((p) => p.id),
+            isCombined: ensuredPeriods.length > 1,
+          },
+        });
+      } else {
+        const userGroup = user?.group || user?.group_name || '';
+        if (!userGroup) {
+          alert('Department/Group information is missing for your account.');
+          setCreatingHalfKey(null);
+          return;
+        }
+
+        const res = await api.post(
+          `/periods/ensure-half?group_name=${encodeURIComponent(userGroup)}&start_date=${sDate}&end_date=${eDate}&created_by=${user.id}`
+        );
+
+        const period = res.data;
+        if (!period || !period.id) {
+          alert('Failed to initialize period.');
+          setCreatingHalfKey(null);
+          return;
+        }
+
+        // Update local periods state
+        setPeriods((prev) => {
+          if (prev.some((p) => p.id === period.id)) return prev;
+          return [...prev, period];
+        });
+
+        navigate(`/categories/${period.id}`, {
+          state: { periodTitle: period.title },
+        });
+      }
+    } catch (err) {
+      console.error('Failed to initialize half period:', err);
+      alert(err.response?.data?.detail || 'Failed to open newsletter period.');
+    } finally {
+      setCreatingHalfKey(null);
     }
   };
 
@@ -662,15 +766,80 @@ const Periods = () => {
       return;
     }
 
-    if (periodsInHalf.length === 1) {
-      handleOpenDownloadModal(e, periodsInHalf[0]);
+    const userGrp = (user?.group || user?.group_name || '').trim().toUpperCase();
+    const myPeriod = periodsInHalf.find(
+      (p) => (p.group_name || '').trim().toUpperCase() === userGrp
+    );
+    if (myPeriod) {
+      handleOpenDownloadModal(e, myPeriod);
+      return;
+    }
+
+    // Deduplicate by group_name
+    const distinctDeptsMap = new Map();
+    periodsInHalf.forEach((p) => {
+      const key = (p.group_name || 'General').trim().toUpperCase();
+      if (!distinctDeptsMap.has(key)) {
+        distinctDeptsMap.set(key, p);
+      }
+    });
+    const uniquePeriods = Array.from(distinctDeptsMap.values());
+
+    if (uniquePeriods.length === 1) {
+      handleOpenDownloadModal(e, uniquePeriods[0]);
     } else {
       setDownloadSelectModal({
         rangeLabel,
         monthData,
         halfNum,
-        periods: periodsInHalf,
+        periods: uniquePeriods,
       });
+    }
+  };
+
+  // Download for empty / un-instantiated half slots
+  const handleEmptyHalfDownloadClick = async (e, monthData, halfNum, rangeLabel) => {
+    if (e) e.stopPropagation();
+
+    const yr = monthData.year;
+    const mo = monthData.monthIndex + 1;
+    const padMo = String(mo).padStart(2, '0');
+    const lastDay = monthData.lastDayOfMonth;
+    const sDate = halfNum === 1 ? `${yr}-${padMo}-01` : `${yr}-${padMo}-16`;
+    const eDate = halfNum === 1 ? `${yr}-${padMo}-15` : `${yr}-${padMo}-${String(lastDay).padStart(2, '0')}`;
+
+    if (isChUser || isAdmin) {
+      const targetCenter = isAdmin ? selectedCenter : user?.center;
+      executeDownloadCombinedDocx({
+        center: targetCenter,
+        group_name: selectedGroup,
+        start_date: sDate,
+        end_date: eDate,
+      });
+      return;
+    }
+
+    const userGroup = user?.group || user?.group_name || '';
+    if (!userGroup) {
+      alert('Department information missing.');
+      return;
+    }
+
+    const slotKey = `dl-${yr}-${mo}-${halfNum}`;
+    setDownloadingId(slotKey);
+    try {
+      const res = await api.post(
+        `/periods/ensure-half?group_name=${encodeURIComponent(userGroup)}&start_date=${sDate}&end_date=${eDate}&created_by=${user.id}`
+      );
+      const p = res.data;
+      if (p) {
+        handleOpenDownloadModal(e, p);
+      }
+    } catch (err) {
+      console.error('Failed to prepare period for download:', err);
+      alert(err.response?.data?.detail || 'Failed to prepare download.');
+    } finally {
+      setDownloadingId(null);
     }
   };
 
@@ -806,55 +975,90 @@ const Periods = () => {
         </div>
       );
     } else {
-      // Non-existing half: check if start date is in the future vs today
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      const halfStartDay = halfNum === 1 ? 1 : 16;
-      const halfStartDate = new Date(
-        monthData.year,
-        monthData.monthIndex,
-        halfStartDay
-      );
-      halfStartDate.setHours(0, 0, 0, 0);
-
-      const isFuture = halfStartDate > today;
+      const isCreating = creatingHalfKey === `${monthData.year}-${monthData.monthIndex + 1}-${halfNum}`;
+      const isDownloading = downloadingId === `dl-${monthData.year}-${monthData.monthIndex + 1}-${halfNum}`;
 
       return (
-        <div className="half-row disabled">
+        <div
+          className={`half-row ${isAdmin ? '' : 'clickable'}`}
+          onClick={() => !isAdmin && handleEmptyHalfClick(monthData, halfNum, rangeLabel)}
+          title={isAdmin ? `Period: ${rangeLabel}` : `Period: ${rangeLabel}. Click to open and add entries.`}
+          style={isAdmin ? { cursor: 'default' } : {}}
+        >
+          {/* Left side: Badge + Date Range */}
           <div className="half-left-meta">
-            <div className="half-pill-badge inactive">
+            <div className="half-pill-badge">
               {halfNum === 1 ? 'H1' : 'H2'}
             </div>
 
             <div className="half-details">
-              <span className="half-date-label" style={{ color: '#94a3b8' }}>
+              <span className="half-date-label" style={{ whiteSpace: 'nowrap' }}>
                 {rangeLabel}
               </span>
             </div>
           </div>
 
-          <span
-            style={{
-              fontSize: '0.74rem',
-              color: '#94a3b8',
-              fontWeight: '600',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-            }}
+          {/* Right side: Actions */}
+          <div
+            className="half-actions-group"
+            onClick={(e) => e.stopPropagation()}
           >
-            <IconClock size={13} />
-            {isFuture ? 'Upcoming' : 'Pending'}
-          </span>
+            {/* Status Badge: Open */}
+            <span className="status-badge-open" title="Open for entries">
+              <IconCircleCheck size={12} />
+              <span>Open</span>
+            </span>
+
+            {/* Download DOCX Button */}
+            <button
+              type="button"
+              className="action-icon-btn download"
+              onClick={(e) => handleEmptyHalfDownloadClick(e, monthData, halfNum, rangeLabel)}
+              title="Download newsletter (.docx)"
+              disabled={isDownloading || isCreating}
+              aria-label="Download newsletter docx"
+            >
+              {isDownloading ? (
+                <IconLoader2 size={15} className="animate-spin text-blue-600" />
+              ) : (
+                <IconDownload size={15} />
+              )}
+            </button>
+
+            {/* View Chevron Link - Only for non-admin users */}
+            {!isAdmin && (
+              <div
+                className="chevron-arrow"
+                onClick={() => handleEmptyHalfClick(monthData, halfNum, rangeLabel)}
+                title="Open period"
+                role="button"
+                tabIndex={0}
+              >
+                {isCreating ? (
+                  <IconLoader2 size={16} className="animate-spin text-blue-600" />
+                ) : (
+                  <IconChevronRight size={18} />
+                )}
+              </div>
+            )}
+          </div>
         </div>
       );
     }
   };
 
-  if (!user) return null;
+  const activeYearForGrouping =
+    selectedFilterYear ||
+    (filterMode !== 'all' && filterMode && !isNaN(parseInt(filterMode, 10))
+      ? filterMode
+      : currentYearStr);
 
-  const monthCardsList = groupPeriodsIntoMonthCards(periods);
+  const monthCardsList = groupPeriodsIntoMonthCards(
+    periods,
+    filterMode,
+    activeYearForGrouping,
+    selectedFilterMonth
+  );
 
   return (
     <div className="periods-page">
@@ -917,16 +1121,6 @@ const Periods = () => {
           )}
 
           <div className="stat-pill">
-            <div className="stat-pill-icon blue">
-              <IconFileText size={18} />
-            </div>
-            <div className="stat-pill-info">
-              <span className="stat-pill-count">{stats.total}</span>
-              <span className="stat-pill-label">Total Periods</span>
-            </div>
-          </div>
-
-          <div className="stat-pill">
             <div className="stat-pill-icon emerald">
               <IconCheck size={18} strokeWidth={2.5} />
             </div>
@@ -938,58 +1132,59 @@ const Periods = () => {
         </div>
       </div>
 
-      {/* 1.4 Unified Filter Toolbar (For Admin & CH) */}
-      {(isAdmin || isChUser) && (
-        <div
-          style={{
-            backgroundColor: '#ffffff',
-            border: '1px solid #e2e8f0',
-            borderRadius: '14px',
-            padding: '12px 20px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: '16px',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
-            {/* Center Dropdown (Admin only) */}
-            {isAdmin && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <IconBuilding size={18} style={{ color: '#2563eb' }} />
-                <span style={{ fontSize: '0.86rem', fontWeight: '700', color: '#1e293b' }}>
-                  Center:
-                </span>
-                <select
-                  value={selectedCenter}
-                  onChange={(e) => handleSelectCenter(e.target.value)}
-                  style={{
-                    padding: '7px 14px',
-                    borderRadius: '10px',
-                    border: '1.5px solid #cbd5e1',
-                    backgroundColor: '#ffffff',
-                    fontSize: '0.84rem',
-                    fontWeight: '600',
-                    color: '#1e293b',
-                    cursor: 'pointer',
-                    minWidth: '190px',
-                    outline: 'none',
-                    boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
-                  }}
-                >
-                  <option value="all">🌐 All Centers ({allCenters.length})</option>
-                  {allCenters.map((cName) => (
-                    <option key={cName} value={cName}>
-                      🏢 {cName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+      {/* 1.4 Unified Filter Toolbar (For All Roles) */}
+      <div
+        style={{
+          backgroundColor: '#ffffff',
+          border: '1px solid #e2e8f0',
+          borderRadius: '14px',
+          padding: '12px 20px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '16px',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+          marginBottom: '16px',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+          {/* Center Dropdown (Admin only) */}
+          {isAdmin && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <IconBuilding size={18} style={{ color: '#2563eb' }} />
+              <span style={{ fontSize: '0.86rem', fontWeight: '700', color: '#1e293b' }}>
+                Center:
+              </span>
+              <select
+                value={selectedCenter}
+                onChange={(e) => handleSelectCenter(e.target.value)}
+                style={{
+                  padding: '7px 14px',
+                  borderRadius: '10px',
+                  border: '1.5px solid #cbd5e1',
+                  backgroundColor: '#ffffff',
+                  fontSize: '0.84rem',
+                  fontWeight: '600',
+                  color: '#1e293b',
+                  cursor: 'pointer',
+                  minWidth: '190px',
+                  outline: 'none',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+                }}
+              >
+                <option value="all">🌐 All Centers ({allCenters.length})</option>
+                {allCenters.map((cName) => (
+                  <option key={cName} value={cName}>
+                    🏢 {cName}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
-            {/* Department Dropdown */}
+          {/* Department Filter (Admin & CH: Select dropdown) */}
+          {(isAdmin || isChUser) && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <IconUsersGroup size={18} style={{ color: '#2563eb' }} />
               <span style={{ fontSize: '0.86rem', fontWeight: '700', color: '#1e293b' }}>
@@ -997,21 +1192,10 @@ const Periods = () => {
               </span>
               <select
                 value={selectedGroup}
-                onChange={async (e) => {
+                onChange={(e) => {
                   const grp = e.target.value;
                   setSelectedGroup(grp);
                   const targetCenter = isAdmin ? selectedCenter : user?.center;
-                  if (grp && grp !== 'all' && !isAdmin) {
-                    try {
-                      await api.post(
-                        `/periods/ensure-current?group_name=${encodeURIComponent(
-                          grp
-                        )}&created_by=${user.id}`
-                      );
-                    } catch (err) {
-                      console.error('Failed to ensure period on select:', err);
-                    }
-                  }
                   fetchPeriods(filterMode, selectedFilterYear, selectedFilterMonth, grp, targetCenter);
                   fetchAvailableYears(grp, targetCenter);
                 }}
@@ -1039,238 +1223,237 @@ const Periods = () => {
                 ))}
               </select>
             </div>
+          )}
 
-            {/* Year Dropdown Filter */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '0.84rem', fontWeight: '700', color: '#475569' }}>
-                Year:
-              </span>
-              <select
-                className="custom-select-input"
-                value={selectedFilterYear}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setSelectedFilterYear(val);
-                  const targetCenter = isAdmin ? selectedCenter : user?.center;
-                  fetchPeriods('custom', val, selectedFilterMonth, selectedGroup, targetCenter);
-                }}
-                style={{
-                  padding: '7px 12px',
-                  borderRadius: '10px',
-                  border: '1.5px solid #cbd5e1',
-                  backgroundColor: '#ffffff',
-                  fontSize: '0.84rem',
-                  fontWeight: '600',
-                  color: '#1e293b',
-                  cursor: 'pointer',
-                  minWidth: '110px',
-                  outline: 'none',
-                }}
-              >
-                <option value="">All Years</option>
-                {availableYears.map((yr) => (
-                  <option key={yr} value={yr}>
-                    {yr}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Month Dropdown Filter */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '0.84rem', fontWeight: '700', color: '#475569' }}>
-                Month:
-              </span>
-              <select
-                className="custom-select-input"
-                value={selectedFilterMonth}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setSelectedFilterMonth(val);
-                  if (!val) {
-                    setSelectedFilterHalf('');
-                  }
-                  const targetCenter = isAdmin ? selectedCenter : user?.center;
-                  fetchPeriods('custom', selectedFilterYear, val, selectedGroup, targetCenter);
-                }}
-                style={{
-                  padding: '7px 12px',
-                  borderRadius: '10px',
-                  border: '1.5px solid #cbd5e1',
-                  backgroundColor: '#ffffff',
-                  fontSize: '0.84rem',
-                  fontWeight: '600',
-                  color: '#1e293b',
-                  cursor: 'pointer',
-                  minWidth: '130px',
-                  outline: 'none',
-                }}
-              >
-                <option value="">All Months</option>
-                <option value="1">January</option>
-                <option value="2">February</option>
-                <option value="3">March</option>
-                <option value="4">April</option>
-                <option value="5">May</option>
-                <option value="6">June</option>
-                <option value="7">July</option>
-                <option value="8">August</option>
-                <option value="9">September</option>
-                <option value="10">October</option>
-                <option value="11">November</option>
-                <option value="12">December</option>
-              </select>
-            </div>
-
-            {/* Half / Period Dropdown Filter */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '0.84rem', fontWeight: '700', color: selectedFilterMonth ? '#475569' : '#94a3b8' }}>
-                Half:
-              </span>
-              <select
-                className="custom-select-input"
-                value={selectedFilterHalf}
-                disabled={!selectedFilterMonth}
-                onChange={(e) => {
-                  setSelectedFilterHalf(e.target.value);
-                }}
-                style={{
-                  padding: '7px 12px',
-                  borderRadius: '10px',
-                  border: '1.5px solid #cbd5e1',
-                  backgroundColor: selectedFilterMonth ? '#ffffff' : '#f1f5f9',
-                  fontSize: '0.84rem',
-                  fontWeight: '600',
-                  color: selectedFilterMonth ? '#1e293b' : '#94a3b8',
-                  cursor: selectedFilterMonth ? 'pointer' : 'not-allowed',
-                  minWidth: '150px',
-                  outline: 'none',
-                }}
-                title={!selectedFilterMonth ? 'Select a month first to filter by half' : 'Select specific half period'}
-              >
-                <option value="">Both Halves (Entire Month)</option>
-                <option value="1">1st Half (1 – 15)</option>
-                <option value="2">2nd Half (16 – End)</option>
-              </select>
-            </div>
-
-            {/* Reset Filter Button */}
-            {(selectedFilterYear || selectedFilterMonth || selectedFilterHalf) && (
-              <button
-                type="button"
-                className="filter-reset-btn"
-                onClick={() => {
-                  setSelectedFilterYear('');
-                  setSelectedFilterMonth('');
-                  setSelectedFilterHalf('');
-                  const targetCenter = isAdmin ? selectedCenter : user?.center;
-                  fetchPeriods(currentYearStr, '', '', selectedGroup, targetCenter);
-                }}
-                title="Reset Filters"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  padding: '6px 12px',
-                  borderRadius: '8px',
-                  border: '1px solid #e2e8f0',
-                  backgroundColor: '#f8fafc',
-                  color: '#475569',
-                  fontSize: '0.8rem',
-                  fontWeight: '700',
-                  cursor: 'pointer',
-                }}
-              >
-                <IconRotateClockwise size={14} />
-                <span>Reset</span>
-              </button>
-            )}
+          {/* Year Dropdown Filter (Default shows Current Year, lists down to 2015) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontSize: '0.84rem', fontWeight: '700', color: '#475569' }}>
+              Year:
+            </span>
+            <select
+              className="custom-select-input"
+              value={selectedFilterYear || currentYearStr}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSelectedFilterYear(val);
+                setFilterMode(val);
+                const targetCenter = isAdmin ? selectedCenter : user?.center;
+                fetchPeriods(val, val, selectedFilterMonth, selectedGroup, targetCenter);
+              }}
+              style={{
+                padding: '7px 12px',
+                borderRadius: '10px',
+                border: '1.5px solid #cbd5e1',
+                backgroundColor: '#ffffff',
+                fontSize: '0.84rem',
+                fontWeight: '600',
+                color: '#1e293b',
+                cursor: 'pointer',
+                minWidth: '110px',
+                outline: 'none',
+              }}
+            >
+              {allSelectableYears.map((yr) => (
+                <option key={yr} value={yr}>
+                  {yr} {yr === parseInt(currentYearStr, 10) ? '(Current)' : ''}
+                </option>
+              ))}
+            </select>
           </div>
 
-          {/* Right: Download based on Active Filters */}
-          <div>
+          {/* Month Dropdown Filter */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontSize: '0.84rem', fontWeight: '700', color: '#475569' }}>
+              Month:
+            </span>
+            <select
+              className="custom-select-input"
+              value={selectedFilterMonth}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSelectedFilterMonth(val);
+                if (!val) {
+                  setSelectedFilterHalf('');
+                }
+                const yr = selectedFilterYear || (filterMode !== 'all' && filterMode && !isNaN(parseInt(filterMode, 10)) ? filterMode : currentYearStr);
+                const targetCenter = isAdmin ? selectedCenter : user?.center;
+                fetchPeriods(yr, yr, val, selectedGroup, targetCenter);
+              }}
+              style={{
+                padding: '7px 12px',
+                borderRadius: '10px',
+                border: '1.5px solid #cbd5e1',
+                backgroundColor: '#ffffff',
+                fontSize: '0.84rem',
+                fontWeight: '600',
+                color: '#1e293b',
+                cursor: 'pointer',
+                minWidth: '130px',
+                outline: 'none',
+              }}
+            >
+              <option value="">All Months</option>
+              <option value="1">January</option>
+              <option value="2">February</option>
+              <option value="3">March</option>
+              <option value="4">April</option>
+              <option value="5">May</option>
+              <option value="6">June</option>
+              <option value="7">July</option>
+              <option value="8">August</option>
+              <option value="9">September</option>
+              <option value="10">October</option>
+              <option value="11">November</option>
+              <option value="12">December</option>
+            </select>
+          </div>
+
+          {/* Half / Period Dropdown Filter */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontSize: '0.84rem', fontWeight: '700', color: selectedFilterMonth ? '#475569' : '#94a3b8' }}>
+              Half:
+            </span>
+            <select
+              className="custom-select-input"
+              value={selectedFilterHalf}
+              disabled={!selectedFilterMonth}
+              onChange={(e) => {
+                setSelectedFilterHalf(e.target.value);
+              }}
+              style={{
+                padding: '7px 12px',
+                borderRadius: '10px',
+                border: '1.5px solid #cbd5e1',
+                backgroundColor: selectedFilterMonth ? '#ffffff' : '#f1f5f9',
+                fontSize: '0.84rem',
+                fontWeight: '600',
+                color: selectedFilterMonth ? '#1e293b' : '#94a3b8',
+                cursor: selectedFilterMonth ? 'pointer' : 'not-allowed',
+                minWidth: '150px',
+                outline: 'none',
+              }}
+              title={!selectedFilterMonth ? 'Select a month first to filter by half' : 'Select specific half period'}
+            >
+              <option value="">Both Halves (Entire Month)</option>
+              <option value="1">1st Half (1 – 15)</option>
+              <option value="2">2nd Half (16 – End)</option>
+            </select>
+          </div>
+
+          {/* Reset Filter Button */}
+          {((selectedFilterYear && selectedFilterYear !== currentYearStr) || selectedFilterMonth || selectedFilterHalf || filterMode === 'all') && (
             <button
               type="button"
-              disabled={downloadingCombined}
+              className="filter-reset-btn"
               onClick={() => {
-                const yr = selectedFilterYear || (filterMode !== 'all' && filterMode ? filterMode : currentYearStr);
-                const mo = selectedFilterMonth ? parseInt(selectedFilterMonth, 10) : null;
-                const grp = selectedGroup || 'all';
-                const ctr = isAdmin ? selectedCenter : (user?.center || 'all');
-
-                if (mo && selectedFilterHalf) {
-                  const padMo = String(mo).padStart(2, '0');
-                  const yrNum = parseInt(yr, 10);
-                  if (selectedFilterHalf === '1') {
-                    const sDate = `${yrNum}-${padMo}-01`;
-                    const eDate = `${yrNum}-${padMo}-15`;
-                    executeDownloadCombinedDocx({
-                      center: ctr,
-                      group_name: grp,
-                      start_date: sDate,
-                      end_date: eDate,
-                    });
-                  } else if (selectedFilterHalf === '2') {
-                    const lastDay = new Date(yrNum, mo, 0).getDate();
-                    const sDate = `${yrNum}-${padMo}-16`;
-                    const eDate = `${yrNum}-${padMo}-${String(lastDay).padStart(2, '0')}`;
-                    executeDownloadCombinedDocx({
-                      center: ctr,
-                      group_name: grp,
-                      start_date: sDate,
-                      end_date: eDate,
-                    });
-                  }
-                } else {
-                  executeDownloadCombinedDocx({
-                    center: ctr,
-                    group_name: grp,
-                    year: yr ? parseInt(yr, 10) : null,
-                    month: mo,
-                  });
-                }
+                setSelectedFilterYear(currentYearStr);
+                setSelectedFilterMonth('');
+                setSelectedFilterHalf('');
+                setFilterMode(currentYearStr);
+                const targetCenter = isAdmin ? selectedCenter : user?.center;
+                fetchPeriods(currentYearStr, currentYearStr, '', selectedGroup, targetCenter);
               }}
+              title="Reset Filters"
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: '8px',
-                padding: '8px 18px',
-                borderRadius: '10px',
-                background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
-                color: '#ffffff',
-                border: 'none',
-                fontSize: '0.84rem',
+                gap: '5px',
+                padding: '6px 12px',
+                borderRadius: '8px',
+                border: '1px solid #e2e8f0',
+                backgroundColor: '#f8fafc',
+                color: '#475569',
+                fontSize: '0.8rem',
                 fontWeight: '700',
-                cursor: downloadingCombined ? 'not-allowed' : 'pointer',
-                opacity: downloadingCombined ? 0.7 : 1,
-                boxShadow: '0 2px 8px rgba(37, 99, 235, 0.28)',
-                transition: 'all 0.18s ease',
+                cursor: 'pointer',
               }}
-              title={
-                selectedFilterMonth && selectedFilterHalf === '1'
-                  ? `Download 1st Half newsletter for ${selectedGroup && selectedGroup !== 'all' ? selectedGroup : (isAdmin && selectedCenter === 'all' ? 'All Centers' : 'All Departments')}`
-                  : selectedFilterMonth && selectedFilterHalf === '2'
-                    ? `Download 2nd Half newsletter for ${selectedGroup && selectedGroup !== 'all' ? selectedGroup : (isAdmin && selectedCenter === 'all' ? 'All Centers' : 'All Departments')}`
-                    : selectedFilterMonth
-                      ? `Download entire month newsletter for ${selectedGroup && selectedGroup !== 'all' ? selectedGroup : (isAdmin && selectedCenter === 'all' ? 'All Centers' : 'All Departments')}`
-                      : `Download newsletter based on active filters`
-              }
             >
-              {downloadingCombined ? (
-                <>
-                  <IconLoader2 size={16} className="animate-spin" />
-                  <span>Downloading...</span>
-                </>
-              ) : (
-                <>
-                  <IconDownload size={16} strokeWidth={2.2} />
-                  <span>Download (.docx)</span>
-                </>
-              )}
+              <IconRotateClockwise size={14} />
+              <span>Reset</span>
             </button>
-          </div>
+          )}
         </div>
-      )}
+
+        {/* Right: Download DOCX Button (Available for ALL users) */}
+        <div>
+          <button
+            type="button"
+            disabled={downloadingCombined}
+            onClick={() => {
+              const yr = selectedFilterYear || (filterMode !== 'all' && filterMode ? filterMode : currentYearStr);
+              const mo = selectedFilterMonth ? parseInt(selectedFilterMonth, 10) : null;
+              const userDept = user?.group || user?.group_name || '';
+              const grp = (!isAdmin && !isChUser && userDept) ? userDept : (selectedGroup || 'all');
+              const ctr = isAdmin ? selectedCenter : (user?.center || 'all');
+
+              if (mo && selectedFilterHalf) {
+                const padMo = String(mo).padStart(2, '0');
+                const yrNum = parseInt(yr, 10);
+                if (selectedFilterHalf === '1') {
+                  const sDate = `${yrNum}-${padMo}-01`;
+                  const eDate = `${yrNum}-${padMo}-15`;
+                  executeDownloadCombinedDocx({
+                    center: ctr,
+                    group_name: grp,
+                    start_date: sDate,
+                    end_date: eDate,
+                  });
+                } else if (selectedFilterHalf === '2') {
+                  const lastDay = new Date(yrNum, mo, 0).getDate();
+                  const sDate = `${yrNum}-${padMo}-16`;
+                  const eDate = `${yrNum}-${padMo}-${String(lastDay).padStart(2, '0')}`;
+                  executeDownloadCombinedDocx({
+                    center: ctr,
+                    group_name: grp,
+                    start_date: sDate,
+                    end_date: eDate,
+                  });
+                }
+              } else {
+                executeDownloadCombinedDocx({
+                  center: ctr,
+                  group_name: grp,
+                  year: yr ? parseInt(yr, 10) : null,
+                  month: mo,
+                });
+              }
+            }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '8px 18px',
+              borderRadius: '10px',
+              background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+              color: '#ffffff',
+              border: 'none',
+              fontSize: '0.84rem',
+              fontWeight: '700',
+              cursor: downloadingCombined ? 'not-allowed' : 'pointer',
+              opacity: downloadingCombined ? 0.7 : 1,
+              boxShadow: '0 2px 8px rgba(37, 99, 235, 0.28)',
+              transition: 'all 0.18s ease',
+            }}
+            title={
+              (!isAdmin && !isChUser)
+                ? `Download newsletter (.docx) for ${user?.group || user?.group_name || 'Department'}`
+                : `Download newsletter (.docx) based on active filters`
+            }
+          >
+            {downloadingCombined ? (
+              <>
+                <IconLoader2 size={16} className="animate-spin" />
+                <span>Downloading...</span>
+              </>
+            ) : (
+              <>
+                <IconDownload size={16} strokeWidth={2.2} />
+                <span>Download (.docx)</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
 
       {/* 1.6 Interactive Breadcrumb & 1-Click Back Navigation Strip */}
       {isAdmin && (selectedCenter !== 'all' || selectedGroup !== 'all') && (
@@ -1433,28 +1616,27 @@ const Periods = () => {
         </div>
       )}
 
-
-
       {/* 2. Control & Filter Panel */}
       <div className="periods-control-panel">
         {/* Quick Year Pill Selectors */}
-        <div className="periods-quick-years">
+        <div className="periods-quick-years" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <span className="quick-year-label">Select Year:</span>
 
-          {availableYears.map((yr) => {
+          {topThreeYears.map((yr) => {
             const isSelected =
-              filterMode === String(yr) &&
-              !selectedFilterYear &&
-              !selectedFilterMonth;
+              (selectedFilterYear === String(yr) || (!selectedFilterYear && filterMode === String(yr))) &&
+              filterMode !== 'all';
             return (
               <button
                 key={yr}
                 type="button"
                 className={`year-tab-btn ${isSelected ? 'active' : ''}`}
                 onClick={() => {
-                  setSelectedFilterYear('');
+                  setSelectedFilterYear(String(yr));
                   setSelectedFilterMonth('');
-                  fetchPeriods(String(yr), '', '', selectedGroup, isAdmin ? selectedCenter : user?.center);
+                  setSelectedFilterHalf('');
+                  setFilterMode(String(yr));
+                  fetchPeriods(String(yr), String(yr), '', selectedGroup, isAdmin ? selectedCenter : user?.center);
                 }}
               >
                 <span>{yr}</span>
@@ -1462,109 +1644,51 @@ const Periods = () => {
             );
           })}
 
-          <button
-            type="button"
-            className={`year-tab-btn ${filterMode === 'all' && !selectedFilterYear && !selectedFilterMonth
-              ? 'active'
-              : ''
-              }`}
-            onClick={() => {
-              setSelectedFilterYear('');
-              setSelectedFilterMonth('');
-              fetchPeriods('all', '', '', selectedGroup, isAdmin ? selectedCenter : user?.center);
-            }}
-          >
-            <span>All Years</span>
-          </button>
-        </div>
-
-        {/* Specific Month/Year Filter Dropdowns (Shown only for Scientist & GH roles, since Admin & CH have them in the top toolbar) */}
-        {!isAdmin && !isChUser && (
-          <div className="periods-custom-filters">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <IconFilter size={15} style={{ color: '#64748b' }} />
-              <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: '700' }}>
-                Filter:
-              </span>
-            </div>
-
+          {/* More Years Dropdown Selector */}
+          <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
             <select
-              className="custom-select-input"
-              value={selectedFilterYear}
+              className={`year-tab-btn ${(moreYearsList.includes(parseInt(selectedFilterYear || filterMode, 10)) || filterMode === 'all') ? 'active' : ''}`}
+              value={
+                filterMode === 'all' || selectedFilterYear === 'all'
+                  ? 'all'
+                  : moreYearsList.includes(parseInt(selectedFilterYear || filterMode, 10))
+                  ? String(selectedFilterYear || filterMode)
+                  : ''
+              }
               onChange={(e) => {
                 const val = e.target.value;
+                if (!val) return;
                 setSelectedFilterYear(val);
-                fetchPeriods('custom', val, selectedFilterMonth, selectedGroup, isAdmin ? selectedCenter : user?.center);
+                setSelectedFilterMonth('');
+                setSelectedFilterHalf('');
+                setFilterMode(val);
+                fetchPeriods(val, val, '', selectedGroup, isAdmin ? selectedCenter : user?.center);
+              }}
+              style={{
+                cursor: 'pointer',
+                outline: 'none',
+                appearance: 'auto',
+                padding: '6px 12px',
+                borderRadius: '8px',
+                fontSize: '0.84rem',
+                fontWeight: '600',
               }}
             >
-              <option value="">All Years</option>
-              {availableYears.map((yr) => (
+              <option value="" disabled>
+                {moreYearsList.includes(parseInt(selectedFilterYear || filterMode, 10))
+                  ? `Year: ${selectedFilterYear || filterMode}`
+                  : 'More Years...'}
+              </option>
+              {moreYearsList.map((yr) => (
                 <option key={yr} value={yr}>
                   {yr}
                 </option>
               ))}
+              <option value="all">All Years (2015 – {curYr})</option>
             </select>
-
-            <select
-              className="custom-select-input"
-              value={selectedFilterMonth}
-              onChange={(e) => {
-                const val = e.target.value;
-                setSelectedFilterMonth(val);
-                if (!val) {
-                  setSelectedFilterHalf('');
-                }
-                fetchPeriods('custom', selectedFilterYear, val, selectedGroup, isAdmin ? selectedCenter : user?.center);
-              }}
-            >
-              <option value="">All Months</option>
-              <option value="1">January</option>
-              <option value="2">February</option>
-              <option value="3">March</option>
-              <option value="4">April</option>
-              <option value="5">May</option>
-              <option value="6">June</option>
-              <option value="7">July</option>
-              <option value="8">August</option>
-              <option value="9">September</option>
-              <option value="10">October</option>
-              <option value="11">November</option>
-              <option value="12">December</option>
-            </select>
-
-            {/* Half filter for non-CH roles */}
-            <select
-              className="custom-select-input"
-              value={selectedFilterHalf}
-              disabled={!selectedFilterMonth}
-              onChange={(e) => {
-                setSelectedFilterHalf(e.target.value);
-              }}
-              title={!selectedFilterMonth ? 'Select a month first to filter by half' : 'Select specific half period'}
-            >
-              <option value="">Both Halves (Month)</option>
-              <option value="1">1st Half (1 – 15)</option>
-              <option value="2">2nd Half (16 – End)</option>
-            </select>
-
-            {(selectedFilterYear || selectedFilterMonth || selectedFilterHalf) && (
-              <button
-                type="button"
-                className="filter-reset-btn"
-                onClick={() => {
-                  setSelectedFilterYear('');
-                  setSelectedFilterMonth('');
-                  setSelectedFilterHalf('');
-                  fetchPeriods(currentYearStr, '', '', selectedGroup, isAdmin ? selectedCenter : user?.center);
-                }}
-                title="Reset Filters"
-              >
-                <IconRotateClockwise size={14} />
-                <span>Reset</span>
-              </button>
-            )}
           </div>
-        )}
+        </div>
+
       </div>
 
       {/* 3. Main Content: Month Cards Grid */}
@@ -1589,7 +1713,7 @@ const Periods = () => {
         </div>
       ) : error ? (
         <div className="error-message">{error}</div>
-      ) : periods.length === 0 ? (
+      ) : monthCardsList.length === 0 ? (
         <div
           style={{
             background: '#ffffff',
@@ -1788,7 +1912,8 @@ const Periods = () => {
                 const ghUser = (pCenter && pCenter !== 'ALL')
                   ? (ghMapByGroup[`${pCenter}_${pDept}`] || ghMapByGroup[pDept])
                   : ghMapByGroup[pDept];
-                const ghName = ghUser?.name?.trim() || period.creator_name?.trim();
+                const userGrp = (user?.group || user?.group_name || '').trim().toUpperCase();
+                const ghName = ghUser?.name?.trim() || (isGhUser && userGrp === pDept ? user.name?.trim() : '');
 
                 return (
                   <div
@@ -1960,7 +2085,8 @@ const Periods = () => {
                 const ghUser = (pCenter && pCenter !== 'ALL')
                   ? (ghMapByGroup[`${pCenter}_${pDept}`] || ghMapByGroup[pDept])
                   : ghMapByGroup[pDept];
-                const ghName = ghUser?.name?.trim() || period.creator_name?.trim();
+                const userGrp = (user?.group || user?.group_name || '').trim().toUpperCase();
+                const ghName = ghUser?.name?.trim() || (isGhUser && userGrp === pDept ? user.name?.trim() : '');
 
                 return (
                   <div
@@ -2501,250 +2627,7 @@ const Periods = () => {
         </div>
       )}
 
-      {/* Download Selection Modal */}
-      {downloadModalPeriod && (
-        <div
-          className="modal-backdrop"
-          onClick={() => !downloadingId && setDownloadModalPeriod(null)}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(15, 23, 42, 0.65)',
-            backdropFilter: 'blur(4px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 9999,
-            padding: '20px',
-          }}
-        >
-          <div
-            className="modal-card"
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              backgroundColor: '#ffffff',
-              borderRadius: '16px',
-              maxWidth: '480px',
-              width: '100%',
-              boxShadow:
-                '0 24px 38px -6px rgba(0, 0, 0, 0.18), 0 10px 14px -6px rgba(0, 0, 0, 0.08)',
-              overflow: 'hidden',
-              border: '1px solid #e2e8f0',
-              animation: 'profilePopIn 0.18s ease-out',
-            }}
-          >
-            {/* Modal Header */}
-            <div
-              style={{
-                padding: '18px 22px',
-                borderBottom: '1px solid #f1f5f9',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
-                color: '#ffffff',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div
-                  style={{
-                    width: '34px',
-                    height: '34px',
-                    borderRadius: '10px',
-                    backgroundColor: 'rgba(56, 189, 248, 0.15)',
-                    color: '#38bdf8',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0,
-                    border: '1px solid rgba(56, 189, 248, 0.3)',
-                  }}
-                >
-                  <IconDownload size={20} />
-                </div>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '1.05rem', color: '#f8fafc', fontWeight: '700' }}>
-                    Download Word Document (.docx)
-                  </h3>
-                  <span style={{ fontSize: '0.76rem', color: '#94a3b8' }}>
-                    Export newsletter entries to Word format
-                  </span>
-                </div>
-              </div>
 
-              <button
-                type="button"
-                onClick={() => !downloadingId && setDownloadModalPeriod(null)}
-                style={{
-                  background: 'rgba(255, 255, 255, 0.08)',
-                  border: '1px solid rgba(255, 255, 255, 0.12)',
-                  cursor: 'pointer',
-                  color: '#cbd5e1',
-                  padding: '6px',
-                  borderRadius: '8px',
-                  display: 'flex',
-                }}
-              >
-                <IconX size={18} />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div style={{ padding: '22px' }}>
-              <div
-                style={{
-                  background: '#f8fafc',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '10px',
-                  padding: '12px 14px',
-                  marginBottom: '18px',
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: '0.72rem',
-                    fontWeight: '700',
-                    color: '#64748b',
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  Target Period
-                </span>
-                <h4 style={{ margin: '4px 0 0 0', color: '#0f172a', fontSize: '0.94rem' }}>
-                  {downloadModalPeriod.title}
-                </h4>
-              </div>
-
-              {/* Selection Options */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <label
-                  style={{
-                    fontSize: '0.84rem',
-                    fontWeight: '700',
-                    color: '#0f172a',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                  }}
-                >
-                  <IconFilter size={15} style={{ color: '#2563eb' }} />
-                  <span>Select Contributor Filter:</span>
-                </label>
-
-                {loadingContributors ? (
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      padding: '12px',
-                      color: '#64748b',
-                      fontSize: '0.85rem',
-                    }}
-                  >
-                    <IconLoader2 size={16} className="animate-spin text-blue-600" />
-                    <span>Loading contributors...</span>
-                  </div>
-                ) : (
-                  <select
-                    value={selectedContributorId}
-                    onChange={(e) => setSelectedContributorId(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '10px 14px',
-                      borderRadius: '8px',
-                      border: '1px solid #cbd5e1',
-                      fontSize: '0.9rem',
-                      fontWeight: '600',
-                      color: '#0f172a',
-                      backgroundColor: '#ffffff',
-                      cursor: 'pointer',
-                      outline: 'none',
-                    }}
-                  >
-                    <option value="">🌐 All Members (Full Newsletter — {periodContributors.reduce((sum, c) => sum + (c.entry_count || 0), 0)} entries)</option>
-                    {periodContributors.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        👤 {c.name || c.email} ({c.entry_count} {c.entry_count === 1 ? 'entry' : 'entries'})
-                      </option>
-                    ))}
-                  </select>
-                )}
-
-                <span style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '2px' }}>
-                  {selectedContributorId === ''
-                    ? "Exporting full combined document with all members' entries."
-                    : 'Exporting document containing only entries created by the selected contributor.'}
-                </span>
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div
-              style={{
-                padding: '14px 22px',
-                borderTop: '1px solid #f1f5f9',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'flex-end',
-                gap: '10px',
-                backgroundColor: '#f8fafc',
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => setDownloadModalPeriod(null)}
-                disabled={!!downloadingId || downloadingCombined}
-                style={{
-                  padding: '8px 18px',
-                  fontSize: '0.86rem',
-                  fontWeight: '600',
-                  borderRadius: '8px',
-                  backgroundColor: '#ffffff',
-                  border: '1px solid #cbd5e1',
-                  color: '#475569',
-                  cursor: 'pointer',
-                }}
-              >
-                Cancel
-              </button>
-
-              <button
-                type="button"
-                onClick={executeDownloadDocx}
-                disabled={!!downloadingId || loadingContributors || downloadingCombined}
-                style={{
-                  padding: '8px 20px',
-                  fontSize: '0.86rem',
-                  fontWeight: '700',
-                  borderRadius: '8px',
-                  background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
-                  border: 'none',
-                  color: '#ffffff',
-                  cursor: (downloadingId || downloadingCombined) ? 'not-allowed' : 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  boxShadow: '0 2px 8px rgba(37, 99, 235, 0.3)',
-                  opacity: (downloadingId || downloadingCombined) ? 0.75 : 1,
-                }}
-              >
-                {downloadingId ? (
-                  <>
-                    <IconLoader2 size={16} className="animate-spin" />
-                    <span>Generating Doc...</span>
-                  </>
-                ) : (
-                  <>
-                    <IconDownload size={16} />
-                    <span>Download {downloadModalPeriod.group_name ? `${downloadModalPeriod.group_name} Dept` : 'Newsletter'} (.docx)</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Download Combined Newsletter Modal (Admin & CH Role) */}
       {showCombinedModal && (
@@ -2933,7 +2816,7 @@ const Periods = () => {
                       outline: 'none',
                     }}
                   >
-                    {availableYears.map((yr) => (
+                    {allSelectableYears.map((yr) => (
                       <option key={yr} value={yr}>
                         {yr}
                       </option>

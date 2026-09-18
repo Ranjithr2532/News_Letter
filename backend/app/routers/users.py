@@ -188,6 +188,12 @@ def delete_user(user_id: int, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    # Clean up user's notifications and OTPs
+    db.query(models.Notification).filter(models.Notification.user_id == user_id).delete(synchronize_session=False)
+    if user.email:
+        db.query(models.OTP).filter(models.OTP.email == user.email).delete(synchronize_session=False)
+
     db.delete(user)
     db.commit()
     return {"detail": "User deleted successfully"}

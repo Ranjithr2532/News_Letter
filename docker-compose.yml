@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  # 1. Backend Service (FastAPI)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: newsletter_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - ./backend/.env
+    volumes:
+      - D:/Newsletter_Uploads:/app/uploads
+      - ./backend/generated_docs:/app/generated_docs
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  # 2. Frontend Service (React + Nginx)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: newsletter_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend

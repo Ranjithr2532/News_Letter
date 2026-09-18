@@ -53,6 +53,7 @@ def list_periods(
     year: Optional[int] = None,
     month: Optional[int] = None,
     months: Optional[float] = None,
+    all_years: Optional[bool] = False,
     db: Session = Depends(get_db)
 ):
     query = db.query(models.NewsletterPeriod)
@@ -78,8 +79,8 @@ def list_periods(
         cutoff = date.today() - timedelta(days=int(months * 30))
         query = query.filter(models.NewsletterPeriod.start_date >= cutoff)
 
-    # Default to current year if no year, month, or months filter was provided
-    if year is None and month is None and months is None:
+    # Default to current year ONLY if no year, month, or months filter was provided and all_years is not set
+    if year is None and month is None and months is None and not all_years:
         query = query.filter(extract('year', models.NewsletterPeriod.start_date) == date.today().year)
 
     return query.order_by(models.NewsletterPeriod.start_date.desc()).all()
@@ -138,7 +139,7 @@ def finalize_period(period_id: int, user_id: Optional[int] = None, db: Session =
 
     if user_id:
         user = db.query(models.User).filter(models.User.id == user_id).first()
-        if user and user.role.lower() not in ("admin", "gh"):
+        if user and user.role.lower() not in ("admin", "gh", "ch"):
             raise HTTPException(status_code=403, detail="Only Group Heads and Admins have permission to finalize newsletter periods.")
 
     period.edit = False
@@ -155,7 +156,7 @@ def reopen_period(period_id: int, user_id: Optional[int] = None, db: Session = D
 
     if user_id:
         user = db.query(models.User).filter(models.User.id == user_id).first()
-        if user and user.role.lower() not in ("admin", "gh"):
+        if user and user.role.lower() not in ("admin", "gh", "ch"):
             raise HTTPException(status_code=403, detail="Only Group Heads and Admins have permission to re-open newsletter periods.")
 
     period.edit = True
@@ -174,108 +175,19 @@ def delete_period(period_id: int, db: Session = Depends(get_db)):
     return {"detail": "Period deleted"}
 
 
-def build_newsletter_docx(period_title: str, entries: list) -> Document:
-    doc = Document()
-
-    # 1. Word Header for ALL pages
-    section = doc.sections[0]
-    header = section.header
-    header_p = header.paragraphs[0]
-    header_p.text = period_title
-    for r in header_p.runs:
-        r.font.name = "Calibri"
-        r.font.size = Pt(10)
-        r.font.color.rgb = RGBColor(0, 0, 0)
-
-    # 2. Add entries sequentially
-    entry_counter = 1
-    for entry in entries:
-        entry_p = doc.add_paragraph()
-        entry_run = entry_p.add_run(f"{entry_counter}. {entry.title}")
-        entry_run.bold = True
-        entry_run.font.size = Pt(13)
-        entry_run.font.color.rgb = RGBColor(0, 0, 0)
-
-        if entry.description:
-            desc_p = doc.add_paragraph(entry.description)
-            for r in desc_p.runs:
-                r.font.color.rgb = RGBColor(0, 0, 0)
-
-        for photo in entry.photos:
-            if not photo.file_path:
-                continue
-
-            photo_file = photo.file_path
-            if not os.path.exists(photo_file):
-                filename_only = os.path.basename(photo.file_path)
-                d_path = os.path.join(r"D:\Newsletter_Uploads", filename_only)
-                local_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "uploads", filename_only)
-                if os.path.exists(d_path):
-                    photo_file = d_path
-                elif os.path.exists(local_path):
-                    photo_file = local_path
-
-            if os.path.exists(photo_file):
-                try:
-                    img_p = doc.add_paragraph()
-                    img_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-                    # Uniform standardized dimensions: 4.8 inches width x 3.2 inches height
-                    target_w_in, target_h_in = 4.8, 3.2
-                    target_px_w, target_px_h = 1200, 800
-                    target_aspect = target_px_w / target_px_h
-
-                    with Image.open(photo_file) as img:
-                        if img.mode in ("RGBA", "P"):
-                            img = img.convert("RGB")
-
-                        w, h = img.size
-                        aspect = (w / h) if h > 0 else 1.0
-
-                        if aspect > target_aspect:
-                            new_w = int(h * target_aspect)
-                            left = (w - new_w) // 2
-                            img_cropped = img.crop((left, 0, left + new_w, h))
-                        else:
-                            new_h = int(w / target_aspect)
-                            top = (h - new_h) // 2
-                            img_cropped = img.crop((0, top, w, top + new_h))
-
-                        resample_filter = getattr(Image, 'Resampling', Image).LANCZOS
-                        img_resized = img_cropped.resize((target_px_w, target_px_h), resample_filter)
-
-                        img_buf = io.BytesIO()
-                        img_resized.save(img_buf, format="JPEG", quality=95)
-                        img_buf.seek(0)
-
-                    img_p.add_run().add_picture(img_buf, width=Inches(target_w_in), height=Inches(target_h_in))
-
-                except Exception as e:
-                    print(f"Error processing picture {photo_file}: {e}")
-                    try:
-                        img_p.add_run().add_picture(photo_file, width=Inches(4.8), height=Inches(3.2))
-                    except Exception as fallback_err:
-                        print(f"Fallback picture insertion failed for {photo_file}: {fallback_err}")
-
-        doc.add_paragraph("")  # spacing
-        entry_counter += 1
-
-    return doc
-
-
-def _append_entry_to_doc(doc: Document, entry, counter: int):
+def _append_entry_to_doc(doc: Document, entry, number_str: str):
     entry_p = doc.add_paragraph()
-    entry_run = entry_p.add_run(f"    {counter}. {entry.title}")
+    entry_run = entry_p.add_run(f"   {number_str} {entry.title}")
     entry_run.bold = True
     entry_run.font.size = Pt(12)
-    entry_run.font.color.rgb = RGBColor(0, 0, 0)
+    entry_run.font.color.rgb = RGBColor(15, 23, 42)
 
     if entry.description:
-        desc_p = doc.add_paragraph(f"       {entry.description}")
+        desc_p = doc.add_paragraph(f"      {entry.description}")
         for r in desc_p.runs:
             r.font.color.rgb = RGBColor(51, 65, 85)
 
-    for photo in entry.photos:
+    for photo in getattr(entry, "photos", []):
         if not photo.file_path:
             continue
 
@@ -283,7 +195,11 @@ def _append_entry_to_doc(doc: Document, entry, counter: int):
         if not os.path.exists(photo_file):
             filename_only = os.path.basename(photo.file_path)
             d_path = os.path.join(r"D:\Newsletter_Uploads", filename_only)
-            local_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "uploads", filename_only)
+            local_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                "uploads",
+                filename_only,
+            )
             if os.path.exists(d_path):
                 photo_file = d_path
             elif os.path.exists(local_path):
@@ -293,6 +209,8 @@ def _append_entry_to_doc(doc: Document, entry, counter: int):
             try:
                 img_p = doc.add_paragraph()
                 img_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+                # Standardized 4.8" x 3.2" (1200x800 px) centered photo
                 target_w_in, target_h_in = 4.8, 3.2
                 target_px_w, target_px_h = 1200, 800
                 target_aspect = target_px_w / target_px_h
@@ -311,7 +229,7 @@ def _append_entry_to_doc(doc: Document, entry, counter: int):
                         top = (h - new_h) // 2
                         img_cropped = img.crop((0, top, w, top + new_h))
 
-                    resample_filter = getattr(Image, 'Resampling', Image).LANCZOS
+                    resample_filter = getattr(Image, "Resampling", Image).LANCZOS
                     img_resized = img_cropped.resize((target_px_w, target_px_h), resample_filter)
                     img_buf = io.BytesIO()
                     img_resized.save(img_buf, format="JPEG", quality=95)
@@ -324,109 +242,142 @@ def _append_entry_to_doc(doc: Document, entry, counter: int):
     doc.add_paragraph("")  # spacing
 
 
-def build_combined_center_docx(
-    center_name: str,
-    period_label: str,
-    structure_data: dict,
-    is_all_centers: bool = False,
-    group_name: Optional[str] = None,
-) -> Document:
+def build_newsletter_docx(period_title: str, categories_data_or_entries: list) -> Document:
     doc = Document()
 
-    # Word Header
+    # 1. Word Header for ALL pages
     section = doc.sections[0]
     header = section.header
     header_p = header.paragraphs[0]
-    if is_all_centers:
-        header_p.text = f"CMTI Institutional Newsletter — All Centers Combined ({period_label})"
-    elif group_name:
-        header_p.text = f"{center_name} Center — {group_name} Department ({period_label})"
-    else:
-        header_p.text = f"{center_name} Center — Combined Newsletter ({period_label})"
+    header_p.text = period_title
     for r in header_p.runs:
         r.font.name = "Calibri"
         r.font.size = Pt(10)
         r.font.color.rgb = RGBColor(100, 116, 139)
 
-    # Document Main Title
-    title_p = doc.add_paragraph()
+    # Determine input format
+    if categories_data_or_entries and isinstance(categories_data_or_entries[0], dict):
+        cat_items = categories_data_or_entries
+    elif categories_data_or_entries and isinstance(categories_data_or_entries[0], tuple):
+        cat_items = [
+            {"category_name": t[0].name if hasattr(t[0], "name") else str(t[0]), "entries": t[1]}
+            for t in categories_data_or_entries
+        ]
+    else:
+        # Group flat entries by category
+        grouped = {}
+        for entry in categories_data_or_entries:
+            c_name = entry.category.name if (hasattr(entry, "category") and entry.category) else "General Activities"
+            if c_name not in grouped:
+                grouped[c_name] = []
+            grouped[c_name].append(entry)
+        cat_items = [{"category_name": k, "entries": v} for k, v in grouped.items()]
+
+    cat_counter = 1
+    total_entries_count = 0
+
+    for cat_item in cat_items:
+        cat_name = cat_item["category_name"]
+        entries = cat_item["entries"]
+        if not entries:
+            continue
+
+        cat_p = doc.add_paragraph()
+        cat_run = cat_p.add_run(f"{cat_counter}. {cat_name.upper()}")
+        cat_run.bold = True
+        cat_run.font.size = Pt(14)
+        cat_run.font.color.rgb = RGBColor(30, 58, 138)
+
+        entry_sub_counter = 1
+        for entry in entries:
+            _append_entry_to_doc(doc, entry, f"{cat_counter}.{entry_sub_counter}")
+            entry_sub_counter += 1
+            total_entries_count += 1
+
+        cat_counter += 1
+        doc.add_paragraph("")
+
+    if total_entries_count == 0:
+        empty_p = doc.add_paragraph()
+        empty_run = empty_p.add_run("No newsletter activity entries recorded for this period.")
+        empty_run.italic = True
+        empty_run.font.color.rgb = RGBColor(148, 163, 184)
+        empty_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    return doc
+
+
+def build_combined_center_docx(
+    center_name: str,
+    period_label: str,
+    categories_data: list,
+    is_all_centers: bool = False,
+    group_name: Optional[str] = None,
+) -> Document:
+    doc = Document()
+
+    # Determine header & main title text
     if is_all_centers:
-        title_text = "CMTI Institutional Newsletter"
+        title_text = f"CMTI Event Details from {period_label}"
     elif group_name:
-        title_text = f"{center_name} — {group_name} Newsletter"
+        title_text = f"{center_name} - {group_name} Event Details from {period_label}"
     else:
-        title_text = f"{center_name} Center Newsletter"
-    title_run = title_p.add_run(title_text)
-    title_run.bold = True
-    title_run.font.size = Pt(18)
-    title_run.font.color.rgb = RGBColor(37, 99, 235)
-    title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        title_text = f"{center_name} Event Details from {period_label}"
 
-    sub_p = doc.add_paragraph()
-    if is_all_centers:
-        sub_text = f"Consolidated All Centers & Departments — {period_label}"
-    elif group_name:
-        sub_text = f"{group_name} Department Activities — {period_label}"
-    else:
-        sub_text = f"Consolidated Department Activities — {period_label}"
-    sub_run = sub_p.add_run(sub_text)
-    sub_run.italic = True
-    sub_run.font.size = Pt(12)
-    sub_run.font.color.rgb = RGBColor(100, 116, 139)
-    sub_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    doc.add_paragraph("")
+    # 1. Word Header for ALL pages
+    section = doc.sections[0]
+    header = section.header
+    header_p = header.paragraphs[0]
+    header_p.text = title_text
+    for r in header_p.runs:
+        r.font.name = "Calibri"
+        r.font.size = Pt(10)
+        r.font.color.rgb = RGBColor(100, 116, 139)
 
-    entry_global_counter = 1
+    # 2. Document Main Title on Page 1
+    # title_p = doc.add_paragraph()
+    # title_run = title_p.add_run(title_text)
+    # title_run.bold = True
+    # title_run.font.size = Pt(18)
+    # title_run.font.color.rgb = RGBColor(37, 99, 235)
+    # title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    # doc.add_paragraph("")
 
-    if is_all_centers:
-        for c_name, c_data in structure_data.items():
-            depts = c_data.get("depts", {})
-            has_entries = any(len(d.get("entries", [])) > 0 for d in depts.values())
-            if not has_entries:
-                continue
+    # Backward compatibility if dict passed
+    if isinstance(categories_data, dict):
+        cat_items = []
+        for k, v in categories_data.items():
+            if isinstance(v, dict) and "entries" in v:
+                cat_items.append({"category_name": k, "entries": v["entries"]})
+            elif isinstance(v, list):
+                cat_items.append({"category_name": k, "entries": v})
+        categories_data = cat_items
 
-            center_p = doc.add_paragraph()
-            center_run = center_p.add_run(f"★ CENTER: {c_name}")
-            center_run.bold = True
-            center_run.font.size = Pt(16)
-            center_run.font.color.rgb = RGBColor(30, 58, 138)
+    cat_counter = 1
+    total_entries_count = 0
 
-            for dept_name, data in depts.items():
-                entries = data.get("entries", [])
-                if not entries:
-                    continue
+    for cat_item in categories_data:
+        cat_name = cat_item.get("category_name", "General Activities")
+        entries = cat_item.get("entries", [])
+        if not entries:
+            continue
 
-                dept_p = doc.add_paragraph()
-                dept_run = dept_p.add_run(f"  ■ Department: {dept_name}")
-                dept_run.bold = True
-                dept_run.font.size = Pt(13)
-                dept_run.font.color.rgb = RGBColor(15, 23, 42)
+        cat_p = doc.add_paragraph()
+        cat_run = cat_p.add_run(f"{cat_counter}. {cat_name.upper()}")
+        cat_run.bold = True
+        cat_run.font.size = Pt(15)
+        cat_run.font.color.rgb = RGBColor(30, 58, 138)
 
-                for entry in entries:
-                    _append_entry_to_doc(doc, entry, entry_global_counter)
-                    entry_global_counter += 1
+        entry_sub_counter = 1
+        for entry in entries:
+            _append_entry_to_doc(doc, entry, f"{cat_counter}.{entry_sub_counter}")
+            entry_sub_counter += 1
+            total_entries_count += 1
 
-                doc.add_paragraph("")
-            doc.add_paragraph("")
-    else:
-        for dept_name, data in structure_data.items():
-            entries = data.get("entries", [])
-            if not entries:
-                continue
+        cat_counter += 1
+        doc.add_paragraph("")
 
-            dept_p = doc.add_paragraph()
-            dept_run = dept_p.add_run(f"■ Department: {dept_name}")
-            dept_run.bold = True
-            dept_run.font.size = Pt(14)
-            dept_run.font.color.rgb = RGBColor(15, 23, 42)
-
-            for entry in entries:
-                _append_entry_to_doc(doc, entry, entry_global_counter)
-                entry_global_counter += 1
-
-            doc.add_paragraph("")
-
-    if entry_global_counter == 1:
+    if total_entries_count == 0:
         empty_p = doc.add_paragraph()
         empty_run = empty_p.add_run("No newsletter activity entries recorded for this selection.")
         empty_run.italic = True
@@ -472,97 +423,74 @@ def generate_center_combined_docx(
     if not periods:
         raise HTTPException(status_code=404, detail="No newsletter periods found for this selection.")
 
-    # Pre-fetch CHs and GHs for accurate hierarchy mapping
-    all_chs = db.query(models.User).filter(models.User.role.ilike("ch")).all()
-    ch_by_center = {ch.center.strip().upper(): ch.name.strip() for ch in all_chs if ch.center}
-    all_ghs = db.query(models.User).filter(models.User.role.ilike("gh")).all()
-    gh_by_center_group = {
-        f"{(gh.center or '').strip().upper()}_{(gh.group or '').strip().upper()}": gh.name.strip()
-        for gh in all_ghs if gh.group
-    }
-    gh_by_group = {
-        (gh.group or '').strip().upper(): gh.name.strip()
-        for gh in all_ghs if gh.group
-    }
+    period_ids = [p.id for p in periods]
 
+    categories = (
+        db.query(models.CategoryStage)
+        .filter(
+            models.CategoryStage.is_active == True,
+            (models.CategoryStage.period_id == None) | (models.CategoryStage.period_id.in_(period_ids)),
+        )
+        .order_by(models.CategoryStage.stage_number.asc(), models.CategoryStage.id.asc())
+        .all()
+    )
+
+    seen_cat_names = set()
+    categories_data = []
     total_entries_count = 0
-    if is_all:
-        structure_data = {}
-        for p in periods:
-            c_name = p.creator.center if (p.creator and p.creator.center) else "General"
-            dept = p.group_name or "General"
-            c_key = c_name.strip().upper()
-            d_key = dept.strip().upper()
-            official_gh = gh_by_center_group.get(f"{c_key}_{d_key}") or gh_by_group.get(d_key) or p.creator_name
 
-            if c_name not in structure_data:
-                structure_data[c_name] = {
-                    "ch_name": ch_by_center.get(c_key, ""),
-                    "depts": {},
-                }
-            if dept not in structure_data[c_name]["depts"]:
-                structure_data[c_name]["depts"][dept] = {
-                    "gh_name": official_gh,
-                    "entries": [],
-                }
+    for cat in categories:
+        cat_norm = cat.name.strip().upper()
+        if cat_norm in seen_cat_names:
+            continue
 
-            categories = (
-                db.query(models.CategoryStage)
-                .filter(
-                    models.CategoryStage.is_active == True,
-                    (models.CategoryStage.period_id == None) | (models.CategoryStage.period_id == p.id),
-                )
-                .order_by(models.CategoryStage.stage_number.asc(), models.CategoryStage.id.asc())
-                .all()
+        same_name_cat_ids = [c.id for c in categories if c.name.strip().upper() == cat_norm]
+
+        cat_entries = (
+            db.query(models.NewsletterEntry)
+            .filter(
+                models.NewsletterEntry.period_id.in_(period_ids),
+                models.NewsletterEntry.category_id.in_(same_name_cat_ids),
             )
-            for cat in categories:
-                cat_entries = (
-                    db.query(models.NewsletterEntry)
-                    .filter(
-                        models.NewsletterEntry.period_id == p.id,
-                        models.NewsletterEntry.category_id == cat.id,
-                    )
-                    .order_by(models.NewsletterEntry.display_order.asc(), models.NewsletterEntry.id.asc())
-                    .all()
-                )
-                structure_data[c_name]["depts"][dept]["entries"].extend(cat_entries)
-                total_entries_count += len(cat_entries)
-    else:
-        structure_data = {}
-        for p in periods:
-            c_name = p.creator.center if (p.creator and p.creator.center) else (center or "General")
-            dept = p.group_name or "General"
-            c_key = c_name.strip().upper()
-            d_key = dept.strip().upper()
-            official_gh = gh_by_center_group.get(f"{c_key}_{d_key}") or gh_by_group.get(d_key) or p.creator_name
-
-            if dept not in structure_data:
-                structure_data[dept] = {
-                    "gh_name": official_gh,
-                    "entries": [],
-                }
-
-            categories = (
-                db.query(models.CategoryStage)
-                .filter(
-                    models.CategoryStage.is_active == True,
-                    (models.CategoryStage.period_id == None) | (models.CategoryStage.period_id == p.id),
-                )
-                .order_by(models.CategoryStage.stage_number.asc(), models.CategoryStage.id.asc())
-                .all()
+            .order_by(
+                models.NewsletterEntry.group_name.asc(),
+                models.NewsletterEntry.display_order.asc(),
+                models.NewsletterEntry.id.asc(),
             )
-            for cat in categories:
-                cat_entries = (
-                    db.query(models.NewsletterEntry)
-                    .filter(
-                        models.NewsletterEntry.period_id == p.id,
-                        models.NewsletterEntry.category_id == cat.id,
-                    )
-                    .order_by(models.NewsletterEntry.display_order.asc(), models.NewsletterEntry.id.asc())
-                    .all()
-                )
-                structure_data[dept]["entries"].extend(cat_entries)
-                total_entries_count += len(cat_entries)
+            .all()
+        )
+
+        if cat_entries:
+            seen_cat_names.add(cat_norm)
+            categories_data.append({
+                "category_name": cat.name,
+                "stage_number": cat.stage_number,
+                "entries": cat_entries,
+            })
+            total_entries_count += len(cat_entries)
+
+    # Check for any unhandled entries in these periods
+    handled_entry_ids = {e.id for c in categories_data for e in c["entries"]}
+    all_period_entries = (
+        db.query(models.NewsletterEntry)
+        .filter(models.NewsletterEntry.period_id.in_(period_ids))
+        .order_by(models.NewsletterEntry.group_name.asc(), models.NewsletterEntry.display_order.asc(), models.NewsletterEntry.id.asc())
+        .all()
+    )
+    unhandled_entries = [e for e in all_period_entries if e.id not in handled_entry_ids]
+    if unhandled_entries:
+        other_cat_groups = {}
+        for e in unhandled_entries:
+            c_name = e.category.name if (e.category and e.category.name) else "Other Activities"
+            if c_name not in other_cat_groups:
+                other_cat_groups[c_name] = []
+            other_cat_groups[c_name].append(e)
+        for c_name, entries_list in other_cat_groups.items():
+            categories_data.append({
+                "category_name": c_name,
+                "entries": entries_list,
+            })
+            total_entries_count += len(entries_list)
 
     if total_entries_count == 0:
         if not is_all_groups and group_name:
@@ -582,7 +510,7 @@ def generate_center_combined_docx(
             )
 
     if start_date and end_date:
-        period_label = f"{start_date.strftime('%b %d')} – {end_date.strftime('%b %d, %Y')}"
+        period_label = f"{start_date.strftime('%b %d, %Y')} to {end_date.strftime('%b %d, %Y')}"
     elif year and month:
         period_label = f"{calendar.month_name[month]} {year}"
     elif year:
@@ -595,7 +523,7 @@ def generate_center_combined_docx(
     doc = build_combined_center_docx(
         center if not is_all else "CMTI",
         period_label,
-        structure_data,
+        categories_data,
         is_all_centers=is_all,
         group_name=group_name if not is_all_groups else None,
     )
@@ -628,28 +556,76 @@ def generate_docx(period_id: int, created_by: Optional[int] = None, db: Session 
         .all()
     )
 
-    all_entries = []
+    seen_cat_names = set()
+    categories_data = []
+    total_entries_count = 0
+
     for category in categories:
+        cat_norm = category.name.strip().upper()
+        if cat_norm in seen_cat_names:
+            continue
+
+        same_name_cat_ids = [c.id for c in categories if c.name.strip().upper() == cat_norm]
+
         query = (
             db.query(models.NewsletterEntry)
             .filter(
                 models.NewsletterEntry.period_id == period_id,
-                models.NewsletterEntry.category_id == category.id,
+                models.NewsletterEntry.category_id.in_(same_name_cat_ids),
             )
         )
         if created_by is not None:
             query = query.filter(models.NewsletterEntry.created_by == created_by)
-        entries = query.order_by(models.NewsletterEntry.display_order.asc()).all()
-        all_entries.extend(entries)
+        entries = query.order_by(models.NewsletterEntry.display_order.asc(), models.NewsletterEntry.id.asc()).all()
 
-    if not all_entries:
+        if entries:
+            seen_cat_names.add(cat_norm)
+            categories_data.append({
+                "category_name": category.name,
+                "stage_number": category.stage_number,
+                "entries": entries,
+            })
+            total_entries_count += len(entries)
+
+    # Check for any unhandled entries
+    handled_entry_ids = {e.id for c in categories_data for e in c["entries"]}
+    orphan_query = (
+        db.query(models.NewsletterEntry)
+        .filter(
+            models.NewsletterEntry.period_id == period_id,
+            ~models.NewsletterEntry.id.in_(handled_entry_ids) if handled_entry_ids else True,
+        )
+    )
+    if created_by is not None:
+        orphan_query = orphan_query.filter(models.NewsletterEntry.created_by == created_by)
+    orphan_entries = orphan_query.order_by(models.NewsletterEntry.display_order.asc(), models.NewsletterEntry.id.asc()).all()
+    if orphan_entries:
+        other_cat_groups = {}
+        for e in orphan_entries:
+            c_name = e.category.name if (e.category and e.category.name) else "Other Activities"
+            if c_name not in other_cat_groups:
+                other_cat_groups[c_name] = []
+            other_cat_groups[c_name].append(e)
+        for c_name, entries_list in other_cat_groups.items():
+            categories_data.append({
+                "category_name": c_name,
+                "entries": entries_list,
+            })
+            total_entries_count += len(entries_list)
+
+    if total_entries_count == 0:
+        if created_by is not None:
+            raise HTTPException(
+                status_code=404,
+                detail="You have not submitted any entries for this period yet.",
+            )
         dept_name = period.group_name or "this department"
         raise HTTPException(
             status_code=404,
             detail=f"No entries found for {dept_name} in this period.",
         )
 
-    doc = build_newsletter_docx(period.title, all_entries)
+    doc = build_newsletter_docx(period.title, categories_data)
 
     file_path = os.path.join(GENERATED_DIR, f"newsletter_period_{period_id}.docx")
     doc.save(file_path)
@@ -691,9 +667,17 @@ def generate_category_docx(period_id: int, category_id: int, created_by: Optiona
     )
     if created_by is not None:
         query = query.filter(models.NewsletterEntry.created_by == created_by)
-    entries = query.order_by(models.NewsletterEntry.display_order.asc()).all()
+    entries = query.order_by(models.NewsletterEntry.display_order.asc(), models.NewsletterEntry.id.asc()).all()
 
-    doc = build_newsletter_docx(period.title, entries)
+    if not entries:
+        raise HTTPException(status_code=404, detail="No entries found for this category.")
+
+    categories_data = [{
+        "category_name": category.name,
+        "stage_number": category.stage_number,
+        "entries": entries,
+    }]
+    doc = build_newsletter_docx(period.title, categories_data)
 
     file_path = os.path.join(GENERATED_DIR, f"category_{category_id}_period_{period_id}.docx")
     doc.save(file_path)
@@ -908,6 +892,85 @@ def ensure_current_periods_for_center(center: str, created_by: int, db: Session 
     return ensured_periods
 
 
+@router.post("/ensure-half", response_model=schemas.PeriodRead)
+def ensure_specific_half(
+    group_name: str,
+    start_date: date,
+    end_date: date,
+    created_by: int,
+    db: Session = Depends(get_db),
+):
+    """Auto-creates or retrieves a specific half-month period on demand."""
+    if not group_name or group_name.strip().lower() in ("", "undefined", "null", "none"):
+        raise HTTPException(status_code=400, detail="Invalid group name provided")
+
+    existing = (
+        db.query(models.NewsletterPeriod)
+        .filter(
+            models.NewsletterPeriod.group_name == group_name,
+            models.NewsletterPeriod.start_date == start_date,
+            models.NewsletterPeriod.end_date == end_date,
+        )
+        .first()
+    )
+    if existing:
+        return existing
+
+    month_name = start_date.strftime("%b")
+    title = f"{group_name} Event Details — {month_name} {start_date.day}-{end_date.day}, {start_date.year}"
+    new_period = models.NewsletterPeriod(
+        group_name=group_name,
+        title=title,
+        start_date=start_date,
+        end_date=end_date,
+        created_by=created_by,
+    )
+    db.add(new_period)
+    db.commit()
+    db.refresh(new_period)
+    return new_period
+
+
+@router.post("/ensure-half-center", response_model=List[schemas.PeriodRead])
+def ensure_specific_half_center(
+    center: str,
+    start_date: date,
+    end_date: date,
+    created_by: int,
+    db: Session = Depends(get_db),
+):
+    """Auto-creates or retrieves specific half-month periods for all departments under a center."""
+    if not center or center.strip().lower() in ("", "undefined", "null", "none"):
+        raise HTTPException(status_code=400, detail="Invalid center provided")
+
+    groups_query = (
+        db.query(models.User.group)
+        .filter(
+            models.User.center == center,
+            models.User.group.isnot(None),
+            models.User.group != ""
+        )
+        .distinct()
+        .all()
+    )
+    center_groups = sorted(list({g[0].strip() for g in groups_query if g[0] and g[0].strip()}))
+    ensured = []
+    for g_name in center_groups:
+        gh_user = (
+            db.query(models.User)
+            .filter(
+                models.User.center == center,
+                models.User.group == g_name,
+                models.User.role.ilike("gh")
+            )
+            .first()
+        )
+        creator_id = gh_user.id if gh_user else created_by
+        p = ensure_specific_half(g_name, start_date, end_date, creator_id, db)
+        ensured.append(p)
+    return ensured
+
+
 @router.get("/{period_id}/contributors")
 def get_period_contributors(period_id: str, db: Session = Depends(get_db)):
     """Returns the list of members who actually contributed/created entries in this period."""
@@ -940,4 +1003,4 @@ def get_period_contributors(period_id: str, db: Session = Depends(get_db)):
 
     # Sort descending by number of entries, then alphabetically by name
     contributors.sort(key=lambda item: (-item["entry_count"], item["name"] or ""))
-    return contributors
+    return contributors
