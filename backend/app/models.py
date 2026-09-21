@@ -136,6 +136,10 @@ class Notification(Base):
     user = relationship("User", backref=backref("notifications", cascade="all, delete-orphan", passive_deletes=True))
     period = relationship("NewsletterPeriod")
 
+    @property
+    def period_end_date(self):
+        return self.period.end_date if self.period else None
+
 
 class OTP(Base):
     __tablename__ = "otps"

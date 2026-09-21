@@ -17,11 +17,30 @@ def check_and_generate_deadline_notifications(db: Session):
     """
     today = date.today()
 
+    # 0. Clean up stale notifications from past calendar years
+    db.query(models.Notification).filter(
+        models.Notification.period_id.in_(
+            db.query(models.NewsletterPeriod.id).filter(
+                models.NewsletterPeriod.end_date < date(today.year, 1, 1)
+            )
+        )
+    ).delete(synchronize_session=False)
+
     # Process active periods (edit == True)
     active_periods = db.query(models.NewsletterPeriod).filter(models.NewsletterPeriod.edit == True).all()
 
     for period in active_periods:
         if not period.end_date:
+            continue
+
+        # 1. Historical Year Safeguard: Ignore periods from previous calendar years (e.g. 2024, 2025)
+        if period.end_date.year < today.year:
+            continue
+
+        # 2. Retroactive Creation Safeguard:
+        # If someone opened a past historical archive period retroactively (created more than 30 days after its end date),
+        # do NOT generate deadline notifications
+        if period.created_at and (period.created_at.date() - period.end_date).days > 30:
             continue
 
         group_name = period.group_name

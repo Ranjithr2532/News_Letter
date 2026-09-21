@@ -24,9 +24,23 @@ const DeadlineModal = () => {
       const res = await api.get(`/notifications/?user_id=${user.id}&unread_only=true`);
       const unreadList = res.data || [];
       if (unreadList.length > 0) {
-        // Show the highest priority unread deadline notification
-        setActiveNotif(unreadList[0]);
-        setShowModal(true);
+        // Option 3: Only pop up the full-screen modal for immediate active deadlines
+        // (within 2 days before deadline up to 3 days after deadline).
+        // Older notifications remain available quietly in the Notification Bell without interrupting the user.
+        const liveNotif = unreadList.find((n) => {
+          if (!n.period_end_date) return false;
+          const end = new Date(n.period_end_date);
+          const today = new Date();
+          const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate()).getTime();
+          const todayDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+          const diffDays = (endDay - todayDay) / (1000 * 60 * 60 * 24);
+          return diffDays >= -3 && diffDays <= 2;
+        });
+
+        if (liveNotif) {
+          setActiveNotif(liveNotif);
+          setShowModal(true);
+        }
       }
     } catch (err) {
       console.error('Failed to check unread deadline notifications:', err);

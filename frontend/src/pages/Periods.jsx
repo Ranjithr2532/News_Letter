@@ -1647,11 +1647,9 @@ const Periods = () => {
           {/* More Years Dropdown Selector */}
           <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
             <select
-              className={`year-tab-btn ${(moreYearsList.includes(parseInt(selectedFilterYear || filterMode, 10)) || filterMode === 'all') ? 'active' : ''}`}
+              className={`year-tab-btn ${moreYearsList.includes(parseInt(selectedFilterYear || filterMode, 10)) ? 'active' : ''}`}
               value={
-                filterMode === 'all' || selectedFilterYear === 'all'
-                  ? 'all'
-                  : moreYearsList.includes(parseInt(selectedFilterYear || filterMode, 10))
+                moreYearsList.includes(parseInt(selectedFilterYear || filterMode, 10))
                   ? String(selectedFilterYear || filterMode)
                   : ''
               }
@@ -1674,17 +1672,16 @@ const Periods = () => {
                 fontWeight: '600',
               }}
             >
-              <option value="" disabled>
+              <option value="" disabled style={{ backgroundColor: '#ffffff', color: '#64748b' }}>
                 {moreYearsList.includes(parseInt(selectedFilterYear || filterMode, 10))
                   ? `Year: ${selectedFilterYear || filterMode}`
                   : 'More Years...'}
               </option>
               {moreYearsList.map((yr) => (
-                <option key={yr} value={yr}>
+                <option key={yr} value={yr} style={{ backgroundColor: '#ffffff', color: '#1e293b' }}>
                   {yr}
                 </option>
               ))}
-              <option value="all">All Years (2015 – {curYr})</option>
             </select>
           </div>
         </div>
