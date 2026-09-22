@@ -137,6 +137,10 @@ class Notification(Base):
     period = relationship("NewsletterPeriod")
 
     @property
+    def period_start_date(self):
+        return self.period.start_date if self.period else None
+
+    @property
     def period_end_date(self):
         return self.period.end_date if self.period else None
 

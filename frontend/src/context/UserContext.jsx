@@ -2,12 +2,37 @@ import React, { createContext, useContext, useState } from 'react';
 
 const UserContext = createContext(null);
 
+export const isDualRoleUser = (role) => {
+  if (!role || typeof role !== 'string') return false;
+  const lower = role.toLowerCase();
+  return lower.includes('ch') && lower.includes('gh');
+};
+
+export const normalizeUser = (userData, chosenRole = null) => {
+  if (!userData) return null;
+  const isDual = isDualRoleUser(userData.role);
+  const active = chosenRole
+    ? chosenRole.toUpperCase()
+    : userData.activeRole
+    ? userData.activeRole.toUpperCase()
+    : isDual
+    ? 'CH'
+    : (userData.role || 'User');
+
+  return {
+    ...userData,
+    isDualRole: isDual,
+    activeRole: active,
+  };
+};
+
 export const UserProvider = ({ children }) => {
   const [user, setUser] = useState(() => {
     const savedUser = localStorage.getItem('newsletter_user');
     if (savedUser) {
       try {
-        return JSON.parse(savedUser);
+        const parsed = JSON.parse(savedUser);
+        return normalizeUser(parsed);
       } catch (err) {
         console.error('Failed to parse saved user:', err);
         localStorage.removeItem('newsletter_user');
@@ -16,9 +41,17 @@ export const UserProvider = ({ children }) => {
     return null;
   });
 
-  const login = (userData) => {
-    setUser(userData);
-    localStorage.setItem('newsletter_user', JSON.stringify(userData));
+  const login = (userData, chosenRole = null) => {
+    const normalized = normalizeUser(userData, chosenRole);
+    setUser(normalized);
+    localStorage.setItem('newsletter_user', JSON.stringify(normalized));
+  };
+
+  const switchActiveRole = (newRole) => {
+    if (!user || !user.isDualRole) return;
+    const updated = normalizeUser(user, newRole);
+    setUser(updated);
+    localStorage.setItem('newsletter_user', JSON.stringify(updated));
   };
 
   const logout = () => {
@@ -27,7 +60,7 @@ export const UserProvider = ({ children }) => {
   };
 
   return (
-    <UserContext.Provider value={{ user, login, logout }}>
+    <UserContext.Provider value={{ user, login, logout, switchActiveRole }}>
       {children}
     </UserContext.Provider>
   );

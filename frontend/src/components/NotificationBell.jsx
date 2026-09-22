@@ -13,8 +13,9 @@ const NotificationBell = () => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
 
-  const isAdmin = user?.role?.toLowerCase() === 'admin';
-  const isChUser = user?.role?.toLowerCase() === 'ch';
+  const currentRole = (user?.activeRole || user?.role || '').toLowerCase().trim();
+  const isAdmin = currentRole === 'admin';
+  const isChUser = currentRole === 'ch';
 
   useEffect(() => {
     if (user?.id && !isAdmin && !isChUser) {

@@ -26,8 +26,9 @@ const Customize = () => {
   const { user } = useUser();
   const navigate = useNavigate();
 
-  const isAdmin = user?.role?.toLowerCase() === 'admin';
-  const isGhUser = user?.role?.toLowerCase() === 'gh';
+  const currentRole = (user?.activeRole || user?.role || '').toLowerCase().trim();
+  const isAdmin = currentRole === 'admin';
+  const isGhUser = currentRole === 'gh';
 
   // Role Guard: Redirect non-GH and non-Admin users immediately
   useEffect(() => {

@@ -3,17 +3,54 @@ from sqlalchemy.orm import Session
 from app import models
 
 
+def calculate_period_milestones(start_date: date, end_date: date):
+    """
+    Calculates the two-stage milestones and submission deadlines for any period:
+    - Stage 1 (First Half):
+        - Only applicable if period starts at beginning of month/quarter (start_date.day <= 5) and duration >= 20 days.
+        - Activity range: start_date to 15th (or midpoint)
+        - Submission window: 16th to 20th
+        - Target deadline: 20th
+    - Stage 2 (Second Half / Final):
+        - Activity range: up to end_date
+        - Submission window: day after end_date up to end_date + 5 days (1st–5th of next month)
+        - Target deadline: final_deadline (5th of next month)
+    """
+    total_days = (end_date - start_date).days
+    if total_days <= 0:
+        total_days = 30
+
+    has_first_half = (start_date.day <= 5) and (total_days >= 20)
+
+    if has_first_half:
+        if start_date.year == end_date.year and start_date.month == end_date.month:
+            first_half_end = date(start_date.year, start_date.month, 15)
+            first_half_deadline = date(start_date.year, start_date.month, 20)
+        else:
+            mid_days = total_days // 2
+            first_half_end = start_date + timedelta(days=mid_days)
+            first_half_deadline = first_half_end + timedelta(days=5)
+    else:
+        first_half_end = None
+        first_half_deadline = None
+
+    final_deadline = end_date + timedelta(days=5)
+    return has_first_half, first_half_end, first_half_deadline, final_deadline
+
+
 def check_and_generate_deadline_notifications(db: Session):
     """
-    Checks active newsletter periods and manages deadline notifications
+    Checks active newsletter periods and manages two-checkpoint milestone notifications
     for department members and Group Heads (GH):
-    - Active periods (within 2 days before end_date up to end_date):
-      - Regular Users: "Reminder: Please review and add entries for '[Title]'. Deadline is today / tomorrow / in X days (DD-Mon-YYYY)."
-      - Group Heads: "The newsletter edition reaches its deadline on DD-Mon-YYYY. Please review entries and click 'Finalize Newsletter'."
-    - Past-deadline unfinalized periods (today > end_date):
-      - Regular Users: "The deadline for '[Title]' passed on DD-Mon-YYYY. Please review and update your entries."
-      - Group Heads: "The newsletter edition '[Title]' reached its deadline on DD-Mon-YYYY. Please review remaining entries and click 'Finalize Newsletter'."
-    - is_read is NOT automatically marked True by date crossing; notifications stay unread until the user clicks 'Got it!' or 'Mark as read'.
+
+    1. First Half Milestone (e.g., Jan 16 to Jan 20):
+       - Regular Users only: "First half (1st–15th) completed. Please add the descriptions and photos for your activities by 20-Jan (X days left)."
+       - (GH does not receive midpoint notifications).
+    2. Second Half / Final Milestone (e.g., Feb 1 to Feb 5):
+       - Regular Users: "Period completed. Please add all remaining descriptions and photos by 05-Feb (X days left)."
+       - Group Heads: "The entry deadline for '[Title]' is on 05-Feb. Please review the descriptions and photos, and finalize the newsletter edition."
+    3. Post-Deadline Finalization (from Feb 6 onwards):
+       - Group Heads: "The entry deadline for '[Title]' was on 05-Feb. Please review all descriptions and photos, and click 'Finalize Newsletter'."
     """
     today = date.today()
 
@@ -26,83 +63,137 @@ def check_and_generate_deadline_notifications(db: Session):
         )
     ).delete(synchronize_session=False)
 
+    # 1. Clean up notifications for finalized periods (edit == False)
+    db.query(models.Notification).filter(
+        models.Notification.period_id.in_(
+            db.query(models.NewsletterPeriod.id).filter(
+                models.NewsletterPeriod.edit == False
+            )
+        )
+    ).delete(synchronize_session=False)
+
+    # 2. Clean up any obsolete GH midpoint notifications
+    db.query(models.Notification).filter(
+        models.Notification.notification_type == "GH_MIDPOINT"
+    ).delete(synchronize_session=False)
+
     # Process active periods (edit == True)
     active_periods = db.query(models.NewsletterPeriod).filter(models.NewsletterPeriod.edit == True).all()
 
     for period in active_periods:
-        if not period.end_date:
+        if not period.start_date or not period.end_date:
             continue
 
-        # 1. Historical Year Safeguard: Ignore periods from previous calendar years (e.g. 2024, 2025)
+        # Ignore periods from previous calendar years
         if period.end_date.year < today.year:
             continue
 
-        # 2. Retroactive Creation Safeguard:
-        # If someone opened a past historical archive period retroactively (created more than 30 days after its end date),
-        # do NOT generate deadline notifications
-        if period.created_at and (period.created_at.date() - period.end_date).days > 30:
+        # Retroactive creation safeguard (>30 days after end_date)
+        if period.created_at and (period.created_at.date() - period.end_date).days > 30 and today >= period.created_at.date():
             continue
 
         group_name = period.group_name
         if not group_name:
             continue
 
-        # Standard reminder window: 2 days before end_date
-        reminder_date = period.end_date - timedelta(days=2)
+        has_first_half, first_half_end, first_half_deadline, final_deadline = calculate_period_milestones(
+            period.start_date, period.end_date
+        )
 
-        # Only process if within reminder window or past end_date
-        if today < reminder_date:
+        # Determine which stage is active today
+        is_stage_1 = bool(
+            has_first_half
+            and first_half_end
+            and today > first_half_end
+            and today <= period.end_date
+        )
+        is_stage_2 = today > period.end_date
+
+        if not is_stage_1 and not is_stage_2:
+            # Still in early collection phase: No notifications needed
             continue
 
-        # Fetch all users belonging to this department
         users = db.query(models.User).filter(
             models.User.group == group_name
         ).all()
 
-        is_past_deadline = today > period.end_date
-        days_left = (period.end_date - today).days
-
-        if days_left == 0:
-            time_phrase = f"is today ({period.end_date.strftime('%d-%b-%Y')})"
-        elif days_left == 1:
-            time_phrase = f"is tomorrow ({period.end_date.strftime('%d-%b-%Y')})"
-        else:
-            time_phrase = f"is in {days_left} days ({period.end_date.strftime('%d-%b-%Y')})"
-
         for user in users:
-            is_gh = user.role and user.role.strip().lower() == "gh"
-            notification_type = "GH_FINALIZE" if is_gh else "USER_DEADLINE"
+            is_gh = bool(user.role and user.role.strip().lower() == "gh")
 
-            if is_past_deadline:
-                # Deadline has passed
+            if is_stage_2:
+                # Stage 2: Second Half / Final Window (e.g., Feb 1 to Feb 5, and after)
+                days_left = (final_deadline - today).days
+
                 if is_gh:
-                    title = "Action Required: Finalize Newsletter"
-                    msg = (
-                        f"The newsletter edition '{period.title}' for department {group_name} "
-                        f"reached its deadline on {period.end_date.strftime('%d-%b-%Y')}. "
-                        f"Please review remaining entries and click 'Finalize Newsletter'."
-                    )
+                    notification_type = "GH_FINALIZE"
+                    title = "Review & Finalize Newsletter"
+                    if days_left >= 0:
+                        msg = (
+                            f"The entry deadline for '{period.title}' is on {final_deadline.strftime('%d-%b-%Y')}. "
+                            f"Please review the descriptions and photos, and finalize the newsletter edition."
+                        )
+                    else:
+                        msg = (
+                            f"The entry deadline for '{period.title}' was on {final_deadline.strftime('%d-%b-%Y')}. "
+                            f"Please review all descriptions and photos, and click 'Finalize Newsletter'."
+                        )
                 else:
-                    title = "Deadline Notice"
-                    msg = (
-                        f"The deadline for '{period.title}' "
-                        f"passed on {period.end_date.strftime('%d-%b-%Y')}. "
-                        f"Please review and update your entries."
-                    )
+                    notification_type = "USER_FINAL"
+                    title = "Final Newsletter Update"
+                    if days_left > 1:
+                        msg = (
+                            f"Period completed. Please add all remaining descriptions and photos "
+                            f"by {final_deadline.strftime('%d-%b')} ({days_left} days left)."
+                        )
+                    elif days_left == 1:
+                        msg = (
+                            f"Period completed. Please add all remaining descriptions and photos "
+                            f"by tomorrow ({final_deadline.strftime('%d-%b')})."
+                        )
+                    elif days_left == 0:
+                        msg = (
+                            f"Period completed. Today is the last day to add all remaining descriptions and photos "
+                            f"({final_deadline.strftime('%d-%b')})."
+                        )
+                    else:
+                        msg = (
+                            f"The entry deadline for '{period.title}' passed on {final_deadline.strftime('%d-%b')}. "
+                            f"Please add any remaining descriptions and photos."
+                        )
+
             else:
-                # Active reminder window
+                # Stage 1: First Half Window (16th to 20th)
+                # Group Head (GH) does NOT receive Stage 1 notifications (only regular contributors)
                 if is_gh:
-                    title = "Action Required: Finalize Newsletter"
+                    continue
+
+                notification_type = "USER_MIDPOINT"
+                title = "Newsletter Update Reminder"
+                days_left = (first_half_deadline - today).days
+
+                start_fmt = period.start_date.strftime('%d-%b')
+                end_fmt = first_half_end.strftime('%d-%b')
+                dead_fmt = first_half_deadline.strftime('%d-%b')
+
+                if days_left > 1:
                     msg = (
-                        f"The newsletter edition '{period.title}' for department {group_name} "
-                        f"reaches its deadline on {period.end_date.strftime('%d-%b-%Y')}. "
-                        f"Please review entries and click 'Finalize Newsletter'."
+                        f"First half ({start_fmt}–{end_fmt}) completed. "
+                        f"Please add the descriptions and photos for your activities by {dead_fmt} ({days_left} days left)."
+                    )
+                elif days_left == 1:
+                    msg = (
+                        f"First half ({start_fmt}–{end_fmt}) completed. "
+                        f"Please add the descriptions and photos for your activities by tomorrow ({dead_fmt})."
+                    )
+                elif days_left == 0:
+                    msg = (
+                        f"First half ({start_fmt}–{end_fmt}) completed. "
+                        f"Today is the last day to add the descriptions and photos ({dead_fmt})."
                     )
                 else:
-                    title = "Newsletter Deadline Reminder"
                     msg = (
-                        f"Reminder: Please review and add entries for '{period.title}'. "
-                        f"Deadline {time_phrase}."
+                        f"The first half deadline for '{period.title}' passed on {dead_fmt}. "
+                        f"Please add your descriptions and photos."
                     )
 
             existing = db.query(models.Notification).filter(
@@ -112,7 +203,7 @@ def check_and_generate_deadline_notifications(db: Session):
             ).first()
 
             if existing:
-                # Update text dynamically if notification is still unread by user
+                # Dynamically update existing unread notification text without creating duplicate rows
                 if not existing.is_read:
                     if existing.title != title:
                         existing.title = title

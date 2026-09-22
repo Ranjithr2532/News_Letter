@@ -1,17 +1,34 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/api';
-import { useUser } from '../context/UserContext';
-import { IconLock, IconMail, IconKey, IconCheck, IconX, IconLoader2, IconArrowLeft } from '@tabler/icons-react';
+import { useUser, isDualRoleUser } from '../context/UserContext';
+import {
+  IconLock,
+  IconMail,
+  IconKey,
+  IconCheck,
+  IconX,
+  IconLoader2,
+  IconArrowLeft,
+  IconBuilding,
+  IconUsersGroup,
+  IconArrowRight,
+  IconShieldCheck,
+} from '@tabler/icons-react';
 
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Dual Role (CH & GH) Selection State
+  const [dualRoleUser, setDualRoleUser] = useState(null);
+
   // Forgot / Reset Password Modal State
   const [showForgotModal, setShowForgotModal] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(false);
   const [forgotStep, setForgotStep] = useState(1); // 1: Email, 2: OTP, 3: New Password, 4: Success
   const [forgotEmail, setForgotEmail] = useState('');
   const [otpCode, setOtpCode] = useState('');
@@ -31,8 +48,13 @@ const Login = () => {
 
     try {
       const response = await api.post('/users/login', { email, password });
-      login(response.data);
-      navigate('/periods');
+      const userData = response.data;
+      if (isDualRoleUser(userData.role)) {
+        setDualRoleUser(userData);
+      } else {
+        login(userData);
+        navigate('/periods');
+      }
     } catch (err) {
       if (err.response && err.response.data && err.response.data.detail) {
         setError(err.response.data.detail);
@@ -42,6 +64,13 @@ const Login = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSelectDualRole = (role) => {
+    if (!dualRoleUser) return;
+    login(dualRoleUser, role);
+    setDualRoleUser(null);
+    navigate('/periods');
   };
 
   const handleOpenForgotModal = () => {
@@ -144,7 +173,7 @@ const Login = () => {
             <label htmlFor="password">Password</label>
             <input
               id="password"
-              type="password"
+              type={showPassword ? 'text' : 'password'}
               placeholder="Enter your password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -152,7 +181,17 @@ const Login = () => {
             />
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px', marginTop: '6px' }}>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.84rem', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>
+              <input
+                type="checkbox"
+                checked={showPassword}
+                onChange={(e) => setShowPassword(e.target.checked)}
+                style={{ width: '15px', height: '15px', cursor: 'pointer', accentColor: '#2563eb' }}
+              />
+              <span>Show Password</span>
+            </label>
+
             <button
               type="button"
               onClick={handleOpenForgotModal}
@@ -176,6 +215,153 @@ const Login = () => {
           </button>
         </form>
       </div>
+
+      {/* Dual Role Selection Modal (CH or GH) */}
+      {dualRoleUser && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(6px)',
+            WebkitBackdropFilter: 'blur(6px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10000,
+            padding: '20px',
+            animation: 'fadeIn 0.2s ease-out',
+          }}
+          onClick={() => setDualRoleUser(null)}
+        >
+          <div
+            style={{
+              backgroundColor: '#ffffff',
+              borderRadius: '20px',
+              maxWidth: '420px',
+              width: '100%',
+              padding: '30px 24px',
+              boxShadow: '0 25px 50px -12px rgba(15, 23, 42, 0.35)',
+              position: 'relative',
+              textAlign: 'center',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close Button */}
+            <button
+              type="button"
+              onClick={() => setDualRoleUser(null)}
+              style={{
+                position: 'absolute',
+                top: '14px',
+                right: '14px',
+                background: '#f1f5f9',
+                border: 'none',
+                borderRadius: '50%',
+                width: '30px',
+                height: '30px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                color: '#64748b',
+                transition: 'all 0.15s ease',
+              }}
+              title="Cancel"
+            >
+              <IconX size={16} />
+            </button>
+
+            {/* Simple Header */}
+            <h3
+              style={{
+                fontSize: '1.25rem',
+                fontWeight: '800',
+                color: '#0f172a',
+                margin: '0 0 22px 0',
+                paddingTop: '6px',
+              }}
+            >
+              Welcome, <span style={{ color: '#2563eb' }}>{dualRoleUser.name}</span>
+            </h3>
+
+            {/* Simple Role Buttons */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {/* Option 1: Login as CH */}
+              <button
+                type="button"
+                onClick={() => handleSelectDualRole('CH')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '16px 20px',
+                  borderRadius: '12px',
+                  border: '1.5px solid #bfdbfe',
+                  backgroundColor: '#eff6ff',
+                  color: '#1e40af',
+                  fontSize: '1rem',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  transition: 'all 0.18s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#dbeafe';
+                  e.currentTarget.style.borderColor = '#3b82f6';
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#eff6ff';
+                  e.currentTarget.style.borderColor = '#bfdbfe';
+                  e.currentTarget.style.transform = 'none';
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <IconBuilding size={22} />
+                  <span>Login as CH</span>
+                </div>
+                <IconArrowRight size={18} />
+              </button>
+
+              {/* Option 2: Login as GH */}
+              <button
+                type="button"
+                onClick={() => handleSelectDualRole('GH')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '16px 20px',
+                  borderRadius: '12px',
+                  border: '1.5px solid #a7f3d0',
+                  backgroundColor: '#f0fdf4',
+                  color: '#065f46',
+                  fontSize: '1rem',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  transition: 'all 0.18s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#d1fae5';
+                  e.currentTarget.style.borderColor = '#10b981';
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#f0fdf4';
+                  e.currentTarget.style.borderColor = '#a7f3d0';
+                  e.currentTarget.style.transform = 'none';
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <IconUsersGroup size={22} />
+                  <span>Login as GH</span>
+                </div>
+                <IconArrowRight size={18} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Forgot / Reset Password Modal */}
       {showForgotModal && (
@@ -446,7 +632,7 @@ const Login = () => {
                     New Password
                   </label>
                   <input
-                    type="password"
+                    type={showResetPassword ? 'text' : 'password'}
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     placeholder="Enter new password"
@@ -467,7 +653,7 @@ const Login = () => {
                     Confirm New Password
                   </label>
                   <input
-                    type="password"
+                    type={showResetPassword ? 'text' : 'password'}
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="Confirm new password"
@@ -481,6 +667,18 @@ const Login = () => {
                       outline: 'none',
                     }}
                   />
+                </div>
+
+                <div style={{ marginBottom: '18px' }}>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.84rem', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>
+                    <input
+                      type="checkbox"
+                      checked={showResetPassword}
+                      onChange={(e) => setShowResetPassword(e.target.checked)}
+                      style={{ width: '15px', height: '15px', cursor: 'pointer', accentColor: '#2563eb' }}
+                    />
+                    <span>Show Password</span>
+                  </label>
                 </div>
 
                 <button

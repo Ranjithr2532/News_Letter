@@ -210,32 +210,28 @@ def _append_entry_to_doc(doc: Document, entry, number_str: str):
                 img_p = doc.add_paragraph()
                 img_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-                # Standardized 4.8" x 3.2" (1200x800 px) centered photo
-                target_w_in, target_h_in = 4.8, 3.2
-                target_px_w, target_px_h = 1200, 800
-                target_aspect = target_px_w / target_px_h
+                # Preserve 100% of original image without any cropping
+                max_w_in, max_h_in = 5.2, 5.8
 
                 with Image.open(photo_file) as img:
                     if img.mode in ("RGBA", "P"):
                         img = img.convert("RGB")
                     w, h = img.size
-                    aspect = (w / h) if h > 0 else 1.0
-                    if aspect > target_aspect:
-                        new_w = int(h * target_aspect)
-                        left = (w - new_w) // 2
-                        img_cropped = img.crop((left, 0, left + new_w, h))
-                    else:
-                        new_h = int(w / target_aspect)
-                        top = (h - new_h) // 2
-                        img_cropped = img.crop((0, top, w, top + new_h))
+                    if w > 0 and h > 0:
+                        aspect = w / h
+                        if aspect >= (max_w_in / max_h_in):
+                            # Landscape or wide image: bounded by max width
+                            final_w_in = max_w_in
+                            final_h_in = round(max_w_in / aspect, 2)
+                        else:
+                            # Portrait or tall document page: bounded by max height
+                            final_h_in = max_h_in
+                            final_w_in = round(max_h_in * aspect, 2)
 
-                    resample_filter = getattr(Image, "Resampling", Image).LANCZOS
-                    img_resized = img_cropped.resize((target_px_w, target_px_h), resample_filter)
-                    img_buf = io.BytesIO()
-                    img_resized.save(img_buf, format="JPEG", quality=95)
-                    img_buf.seek(0)
-
-                img_p.add_run().add_picture(img_buf, width=Inches(target_w_in), height=Inches(target_h_in))
+                        img_buf = io.BytesIO()
+                        img.save(img_buf, format="JPEG", quality=95)
+                        img_buf.seek(0)
+                        img_p.add_run().add_picture(img_buf, width=Inches(final_w_in), height=Inches(final_h_in))
             except Exception as e:
                 print(f"Error inserting picture {photo_file}: {e}")
 

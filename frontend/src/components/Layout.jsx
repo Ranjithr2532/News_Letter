@@ -38,9 +38,10 @@ const Layout = () => {
 
   if (!user) return null;
 
-  const isAdmin = user.role?.toLowerCase() === 'admin';
-  const isChUser = user.role?.toLowerCase() === 'ch';
-  const isGhUser = user.role?.toLowerCase() === 'gh';
+  const currentRole = (user.activeRole || user.role || '').toLowerCase().trim();
+  const isAdmin = currentRole === 'admin';
+  const isChUser = currentRole === 'ch';
+  const isGhUser = currentRole === 'gh';
 
   // Compute initials (e.g., "VITHUN S N" -> "VN" or "VS")
   const getInitials = (name) => {
@@ -61,9 +62,8 @@ const Layout = () => {
     return role.charAt(0).toUpperCase() + role.slice(1);
   };
 
-  const lowerUserRole = user.role?.toLowerCase()?.trim();
-  const isUserTech = lowerUserRole === 'technical staff';
-  const isUserSci = lowerUserRole === 'scientist';
+  const isUserTech = currentRole === 'technical staff';
+  const isUserSci = currentRole === 'scientist';
 
   return (
     <div className="app-layout-topbar">
@@ -131,7 +131,7 @@ const Layout = () => {
               <div className="profile-btn-info">
                 <span className="profile-btn-name">{user.name}</span>
                 <span className="profile-btn-role">
-                  {formatRole(user.role)}
+                  {formatRole(user.activeRole || user.role)}
                 </span>
               </div>
               <IconChevronDown
@@ -159,7 +159,7 @@ const Layout = () => {
                 </div>
 
                 <div className="profile-card-body">
-                  {user.role && (
+                  {(user.activeRole || user.role) && (
                     <div className="profile-detail-row">
                       <span className="detail-label">
                         <IconShield size={14} />
@@ -180,7 +180,7 @@ const Layout = () => {
                             : ''
                         }`}
                       >
-                        {formatRole(user.role)}
+                        {formatRole(user.activeRole || user.role)}
                       </span>
                     </div>
                   )}

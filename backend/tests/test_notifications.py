@@ -1,57 +1,123 @@
 import pytest
-from datetime import date
+from datetime import date, datetime
 from freezegun import freeze_time
 from app import models
 
 
-def test_notification_generation_and_once_read_rule(client, test_user, db_session):
+def test_stage1_first_half_notifications(client, test_user, db_session):
     """
-    Tests that deadline notifications are created 2 days before the end_date,
-    and once marked as read (is_read=True), they do not appear in unread lists.
+    Tests Stage 1 (1st-15th):
+    - On Jan 10 (early collection): No notification
+    - On Jan 16 (first half concluded, 4 days left to Jan 20): Creates notification with "4 days left"
+    - On Jan 19 (tomorrow is Jan 20): Updates message to "tomorrow"
+    - Mark as read: unread count goes to 0
     """
-    # Create period with end date 2026-09-15 (1st half)
-    period = models.NewsletterPeriod(
-        group_name=test_user.group_name,
-        title="SMC Newsletter Sept 1-15",
-        start_date=date(2026, 9, 1),
-        end_date=date(2026, 9, 15),
-        created_by=test_user.id,
-        edit=True,
-    )
-    db_session.add(period)
-    db_session.commit()
-    db_session.refresh(period)
+    with freeze_time("2026-01-01"):
+        period = models.NewsletterPeriod(
+            group_name=test_user.group_name,
+            title="January 2026 Edition",
+            start_date=date(2026, 1, 1),
+            end_date=date(2026, 1, 31),
+            created_by=test_user.id,
+            created_at=datetime(2026, 1, 1, 10, 0, 0),
+            edit=True,
+        )
+        db_session.add(period)
+        db_session.commit()
 
-    # 1. On 2026-09-10 (5 days before 15th), scheduler should NOT create notification
-    with freeze_time("2026-09-10"):
+    # 1. On Jan 10 (early collection phase)
+    with freeze_time("2026-01-10"):
         res = client.get(f"/notifications/?user_id={test_user.id}&unread_only=true")
         assert res.status_code == 200
         assert len(res.json()) == 0
 
-    # 2. On 2026-09-13 (2 days before 15th), scheduler SHOULD create notification
-    with freeze_time("2026-09-13"):
+    # 2. On Jan 16 (4 days left until Jan 20)
+    with freeze_time("2026-01-16"):
         res = client.get(f"/notifications/?user_id={test_user.id}&unread_only=true")
         assert res.status_code == 200
         notifs = res.json()
         assert len(notifs) == 1
+        assert notifs[0]["title"] == "Newsletter Update Reminder"
+        assert "4 days left" in notifs[0]["message"]
+        assert "descriptions and photos" in notifs[0]["message"]
+
+    # 3. On Jan 19 (tomorrow is deadline) - should update existing row, not create duplicate
+    with freeze_time("2026-01-19"):
+        res = client.get(f"/notifications/?user_id={test_user.id}&unread_only=true")
+        assert res.status_code == 200
+        notifs = res.json()
+        assert len(notifs) == 1
+        assert "tomorrow" in notifs[0]["message"]
+
+        # Mark as read
         notif_id = notifs[0]["id"]
-        assert notifs[0]["is_read"] is False
-
-        # Unread count endpoint
-        cnt_res = client.get(f"/notifications/unread-count?user_id={test_user.id}")
-        assert cnt_res.status_code == 200
-        assert cnt_res.json()["unread_count"] == 1
-
-        # 3. Mark notification as read
         read_res = client.put(f"/notifications/{notif_id}/read")
         assert read_res.status_code == 200
-        assert read_res.json()["is_read"] is True
 
-        # 4. Now fetching unread_only should return 0 (Once Read, Don't Show Again rule)
+        # Unread count should now be 0
         unread_res = client.get(f"/notifications/?user_id={test_user.id}&unread_only=true")
-        assert unread_res.status_code == 200
         assert len(unread_res.json()) == 0
 
-        # Unread count should be 0
-        cnt_res2 = client.get(f"/notifications/unread-count?user_id={test_user.id}")
-        assert cnt_res2.json()["unread_count"] == 0
+
+def test_stage2_and_gh_finalization_notifications(client, db_session):
+    """
+    Tests Stage 2 (Feb 1 - Feb 5):
+    - Regular user receives "Final Newsletter Update" (deadline 05-Feb)
+    - Group Head receives "Review & Finalize Newsletter" (deadline is on 05-Feb)
+    - On Feb 6 (after deadline): Group Head message updates to "deadline was on 05-Feb"
+    """
+    with freeze_time("2026-01-01"):
+        user = models.User(
+            name="Reg User",
+            email="reg@example.com",
+            password="pwd",
+            role="User",
+            group="SMC",
+            type="user",
+        )
+        gh_user = models.User(
+            name="GH User",
+            email="gh@example.com",
+            password="pwd",
+            role="GH",
+            group="SMC",
+            type="user",
+        )
+        db_session.add_all([user, gh_user])
+        db_session.commit()
+
+        period = models.NewsletterPeriod(
+            group_name="SMC",
+            title="January 2026 Edition",
+            start_date=date(2026, 1, 1),
+            end_date=date(2026, 1, 31),
+            created_by=gh_user.id,
+            created_at=datetime(2026, 1, 1, 10, 0, 0),
+            edit=True,
+        )
+        db_session.add(period)
+        db_session.commit()
+
+    # On Feb 1 (4 days left until Feb 5)
+    with freeze_time("2026-02-01"):
+        # Regular user
+        res_user = client.get(f"/notifications/?user_id={user.id}&unread_only=true")
+        notifs_user = res_user.json()
+        assert len(notifs_user) == 1
+        assert notifs_user[0]["title"] == "Final Newsletter Update"
+        assert "4 days left" in notifs_user[0]["message"]
+
+        # GH user
+        res_gh = client.get(f"/notifications/?user_id={gh_user.id}&unread_only=true")
+        notifs_gh = res_gh.json()
+        assert len(notifs_gh) == 1
+        assert notifs_gh[0]["title"] == "Review & Finalize Newsletter"
+        assert "is on 05-Feb" in notifs_gh[0]["message"]
+        assert "descriptions and photos" in notifs_gh[0]["message"]
+
+    # On Feb 6 (after Feb 5 deadline)
+    with freeze_time("2026-02-06"):
+        res_gh = client.get(f"/notifications/?user_id={gh_user.id}&unread_only=true")
+        notifs_gh = res_gh.json()
+        assert len(notifs_gh) == 1
+        assert "was on 05-Feb" in notifs_gh[0]["message"]

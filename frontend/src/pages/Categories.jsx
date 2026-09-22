@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import api from '../api/api';
 import { useUser } from '../context/UserContext';
 import { formatErrorMessage } from '../utils/formatError';
+import { validateAndCompressFiles } from '../utils/imageCompressor';
 import {
   IconArrowLeft,
   IconDownload,
@@ -49,9 +50,10 @@ const Categories = () => {
   const [downloading, setDownloading] = useState(false);
   const [downloadingCategoryId, setDownloadingCategoryId] = useState(null);
 
-  const isAdmin = user?.role?.trim().toLowerCase() === 'admin';
-  const isChUser = user?.role?.trim().toLowerCase() === 'ch';
-  const isGhUser = user?.role?.trim().toLowerCase() === 'gh';
+  const currentRole = (user?.activeRole || user?.role || '').toLowerCase().trim();
+  const isAdmin = currentRole === 'admin';
+  const isChUser = currentRole === 'ch';
+  const isGhUser = currentRole === 'gh';
   const isViewOnly = isAdmin || period?.edit === false;
   const canViewAll = isAdmin || isChUser || isGhUser || isViewOnly;
 
@@ -253,10 +255,11 @@ const Categories = () => {
   const handleAddPhotoToEntry = async (entryId, catId, files) => {
     if (!files || files.length === 0) return;
     try {
+      const processedFiles = await validateAndCompressFiles(files);
       const formData = new FormData();
       formData.append('entry_id', entryId);
       formData.append('uploaded_by', user.id);
-      Array.from(files).forEach((file) => {
+      processedFiles.forEach((file) => {
         formData.append('files', file);
       });
       await api.post('/photos/batch', formData, {
@@ -264,22 +267,31 @@ const Categories = () => {
       });
       fetchCategoryEntries(catId);
     } catch (err) {
-      console.warn('Batch upload to existing entry failed, trying single upload:', err);
-      for (let i = 0; i < files.length; i++) {
-        const formData = new FormData();
-        formData.append('entry_id', entryId);
-        formData.append('uploaded_by', user.id);
-        formData.append('display_order', i);
-        formData.append('file', files[i]);
-        try {
-          await api.post('/photos/', formData, {
-            headers: { 'Content-Type': 'multipart/form-data' },
-          });
-        } catch (singleErr) {
-          console.error('Failed to upload single photo:', singleErr);
-        }
+      if (err.message && (err.message.includes('15 MB') || err.message.includes('PDF') || err.message.includes('image file') || err.message.includes('not supported'))) {
+        alert(err.message);
+        return;
       }
-      fetchCategoryEntries(catId);
+      console.warn('Batch upload to existing entry failed, trying single upload:', err);
+      try {
+        const processedFiles = await validateAndCompressFiles(files);
+        for (let i = 0; i < processedFiles.length; i++) {
+          const formData = new FormData();
+          formData.append('entry_id', entryId);
+          formData.append('uploaded_by', user.id);
+          formData.append('display_order', i);
+          formData.append('file', processedFiles[i]);
+          try {
+            await api.post('/photos/', formData, {
+              headers: { 'Content-Type': 'multipart/form-data' },
+            });
+          } catch (singleErr) {
+            console.error('Failed to upload single photo:', singleErr);
+          }
+        }
+        fetchCategoryEntries(catId);
+      } catch (innerErr) {
+        alert(innerErr.message || 'Failed to process files.');
+      }
     }
   };
 
@@ -1121,12 +1133,12 @@ const Categories = () => {
 
                                     {/* Upload Additional Photo Button */}
                                     {!isViewOnly && (
-                                      <label className="photo-upload-slot" title="Add photo to this entry">
+                                      <label className="photo-upload-slot" title="Add photo (JPG, PNG, WebP up to 15 MB)">
                                         <IconUpload size={16} />
                                         <span>+ Add Photo</span>
                                         <input
                                           type="file"
-                                          accept="image/*"
+                                          accept="image/png,image/jpeg,image/jpg,image/webp,image/bmp"
                                           multiple
                                           style={{ display: 'none' }}
                                           onChange={(e) => {
@@ -1296,12 +1308,12 @@ const Categories = () => {
 
                                   {/* Upload Additional Photo Button */}
                                   {!isViewOnly && (
-                                    <label className="photo-upload-slot" title="Add photo to this entry">
+                                    <label className="photo-upload-slot" title="Add photo (JPG, PNG, WebP up to 15 MB)">
                                       <IconUpload size={16} />
                                       <span>+ Photo</span>
                                       <input
                                         type="file"
-                                        accept="image/*"
+                                        accept="image/png,image/jpeg,image/jpg,image/webp,image/bmp"
                                         multiple
                                         style={{ display: 'none' }}
                                         onChange={(e) => {
@@ -1415,13 +1427,18 @@ const Categories = () => {
                               <input
                                 id={`file-input-new-${category.id}`}
                                 type="file"
-                                accept="image/*"
+                                accept="image/png,image/jpeg,image/jpg,image/webp,image/bmp"
                                 multiple
                                 style={{ display: 'none' }}
-                                onChange={(e) => {
+                                onChange={async (e) => {
                                   if (e.target.files && e.target.files.length > 0) {
-                                    const selectedFiles = Array.from(e.target.files);
-                                    setNewFiles((prev) => [...prev, ...selectedFiles]);
+                                    try {
+                                      const processedFiles = await validateAndCompressFiles(e.target.files);
+                                      setNewFiles((prev) => [...prev, ...processedFiles]);
+                                    } catch (err) {
+                                      alert(err.message || 'Failed to process files.');
+                                    }
+                                    e.target.value = '';
                                   }
                                 }}
                               />
@@ -2191,28 +2208,37 @@ const Categories = () => {
                                             key={photo.id}
                                             style={{
                                               width: '100%',
-                                              maxWidth: '460px',
-                                              aspectRatio: '3 / 2',
+                                              maxWidth: '540px',
                                               textAlign: 'center',
                                               cursor: 'pointer',
-                                              borderRadius: '6px',
+                                              borderRadius: '8px',
                                               overflow: 'hidden',
                                               border: '1px solid #cbd5e1',
-                                              boxShadow: '0 2px 6px rgba(0,0,0,0.06)',
+                                              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                                              backgroundColor: '#ffffff',
+                                              padding: '8px',
+                                              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
                                             }}
                                             onClick={() => setPreviewPhoto({ url: photoUrl, name: photo.original_filename })}
-                                            title="Click to zoom photo"
+                                            title="Click to view full size on big screen"
                                           >
                                             <img
                                               src={photoUrl}
                                               alt={photo.original_filename || 'Entry Photo'}
                                               style={{
-                                                width: '100%',
-                                                height: '100%',
-                                                objectFit: 'cover',
-                                                objectPosition: 'center',
+                                                maxWidth: '100%',
+                                                maxHeight: '520px',
+                                                objectFit: 'contain',
+                                                display: 'block',
+                                                margin: '0 auto',
+                                                borderRadius: '4px',
                                               }}
                                             />
+                                            {photo.original_filename && (
+                                              <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '6px', fontWeight: '500' }}>
+                                                {photo.original_filename} (Click to open big screen)
+                                              </div>
+                                            )}
                                           </div>
                                         );
                                       })}
@@ -2312,7 +2338,7 @@ const Categories = () => {
         </div>
       )}
 
-      {/* 8. Image Lightbox Preview Modal */}
+      {/* 8. Image Lightbox Big Screen Preview Modal */}
       {previewPhoto && (
         <div
           className="modal-backdrop"
@@ -2320,70 +2346,129 @@ const Categories = () => {
           style={{
             position: 'fixed',
             inset: 0,
-            backgroundColor: 'rgba(15, 23, 42, 0.85)',
-            backdropFilter: 'blur(6px)',
+            backgroundColor: 'rgba(15, 23, 42, 0.88)',
+            backdropFilter: 'blur(8px)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             zIndex: 10000,
-            padding: '24px',
+            padding: '16px',
           }}
         >
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
               position: 'relative',
-              maxWidth: '85vw',
-              maxHeight: '85vh',
+              maxWidth: '94vw',
+              maxHeight: '94vh',
               display: 'flex',
               flexDirection: 'column',
-              alignItems: 'center',
               backgroundColor: '#0f172a',
-              padding: '12px',
+              padding: '16px',
               borderRadius: '16px',
               border: '1px solid #334155',
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6)',
+              boxSizing: 'border-box',
             }}
           >
-            <button
-              type="button"
-              onClick={() => setPreviewPhoto(null)}
+            {/* Header bar */}
+            <div
               style={{
-                position: 'absolute',
-                top: '-12px',
-                right: '-12px',
-                width: '32px',
-                height: '32px',
-                borderRadius: '50%',
-                backgroundColor: '#ffffff',
-                color: '#0f172a',
-                border: 'none',
-                cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 2px 10px rgba(0,0,0,0.3)',
-                fontWeight: 'bold',
+                justifyContent: 'space-between',
+                marginBottom: '12px',
+                paddingBottom: '8px',
+                borderBottom: '1px solid #334155',
+                gap: '12px',
               }}
-              title="Close"
             >
-              <IconX size={18} />
-            </button>
-            <img
-              src={previewPhoto.url}
-              alt={previewPhoto.name || 'Photo preview'}
-              style={{
-                maxWidth: '80vw',
-                maxHeight: '75vh',
-                objectFit: 'contain',
-                borderRadius: '10px',
-              }}
-            />
-            {previewPhoto.name && (
-              <span style={{ marginTop: '8px', color: '#cbd5e1', fontSize: '0.82rem' }}>
-                {previewPhoto.name}
+              <span
+                style={{
+                  color: '#f8fafc',
+                  fontSize: '0.92rem',
+                  fontWeight: '600',
+                  maxWidth: '65vw',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {previewPhoto.name || 'Photo Preview'}
               </span>
-            )}
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <a
+                  href={previewPhoto.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    color: '#93c5fd',
+                    fontSize: '0.8rem',
+                    fontWeight: '600',
+                    textDecoration: 'none',
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                  }}
+                  title="Open original file in new tab"
+                >
+                  <span>Open Full Size ↗</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setPreviewPhoto(null)}
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '50%',
+                    backgroundColor: '#334155',
+                    color: '#ffffff',
+                    border: 'none',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 'bold',
+                    transition: 'background-color 0.15s',
+                  }}
+                  title="Close (Esc)"
+                >
+                  <IconX size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Scrollable image viewport to accommodate high-res photos */}
+            <div
+              style={{
+                maxWidth: '90vw',
+                maxHeight: 'calc(88vh - 65px)',
+                overflow: 'auto',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                borderRadius: '8px',
+                backgroundColor: '#020617',
+                padding: '8px',
+              }}
+            >
+              <img
+                src={previewPhoto.url}
+                alt={previewPhoto.name || 'Photo preview'}
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: 'calc(84vh - 75px)',
+                  objectFit: 'contain',
+                  borderRadius: '6px',
+                  display: 'block',
+                }}
+              />
+            </div>
           </div>
         </div>
       )}

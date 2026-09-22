@@ -9,8 +9,9 @@ const DeadlineModal = () => {
   const [showModal, setShowModal] = useState(false);
   const [markingRead, setMarkingRead] = useState(false);
 
-  const isAdmin = user?.role?.toLowerCase() === 'admin';
-  const isChUser = user?.role?.toLowerCase() === 'ch';
+  const currentRole = (user?.activeRole || user?.role || '').toLowerCase().trim();
+  const isAdmin = currentRole === 'admin';
+  const isChUser = currentRole === 'ch';
 
   useEffect(() => {
     if (user?.id && !isAdmin && !isChUser) {
@@ -24,21 +25,38 @@ const DeadlineModal = () => {
       const res = await api.get(`/notifications/?user_id=${user.id}&unread_only=true`);
       const unreadList = res.data || [];
       if (unreadList.length > 0) {
-        // Option 3: Only pop up the full-screen modal for immediate active deadlines
-        // (within 2 days before deadline up to 3 days after deadline).
-        // Older notifications remain available quietly in the Notification Bell without interrupting the user.
-        const liveNotif = unreadList.find((n) => {
-          if (!n.period_end_date) return false;
-          const end = new Date(n.period_end_date);
-          const today = new Date();
-          const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate()).getTime();
-          const todayDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-          const diffDays = (endDay - todayDay) / (1000 * 60 * 60 * 24);
-          return diffDays >= -3 && diffDays <= 2;
+        // Only pop up during the active 5-day submission window (16th–20th for Stage 1, 1st–5th for Stage 2).
+        // After the 20th or 5th, reminders stay silently in the Notification Bell without popping up.
+        const now = new Date();
+        const todayZero = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+
+        const activePopup = unreadList.find((notif) => {
+          if (notif.notification_type === 'GH_FINALIZE') {
+            // Group Head gets popup when finalization is needed
+            return true;
+          }
+
+          if (notif.notification_type === 'USER_MIDPOINT') {
+            // Stage 1: Only pop up during 16th–20th. After 20th, do NOT pop up (stays silent in bell)
+            if (!notif.period_start_date) return false;
+            const start = new Date(notif.period_start_date);
+            const deadline20 = new Date(start.getFullYear(), start.getMonth(), 20).getTime();
+            return todayZero <= deadline20;
+          }
+
+          if (notif.notification_type === 'USER_FINAL') {
+            // Stage 2: Only pop up during 1st–5th. After 5th, do NOT pop up (stays silent in bell)
+            if (!notif.period_end_date) return false;
+            const end = new Date(notif.period_end_date);
+            const deadline5 = new Date(end.getFullYear(), end.getMonth(), end.getDate() + 5).getTime();
+            return todayZero <= deadline5;
+          }
+
+          return false;
         });
 
-        if (liveNotif) {
-          setActiveNotif(liveNotif);
+        if (activePopup) {
+          setActiveNotif(activePopup);
           setShowModal(true);
         }
       }

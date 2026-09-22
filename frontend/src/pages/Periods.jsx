@@ -30,9 +30,10 @@ const Periods = () => {
   const { user } = useUser();
   const navigate = useNavigate();
 
-  const isAdmin = user?.role?.toLowerCase() === 'admin';
-  const isChUser = user?.role?.toLowerCase() === 'ch';
-  const isGhUser = user?.role?.toLowerCase() === 'gh';
+  const currentRole = (user?.activeRole || user?.role || '').toLowerCase().trim();
+  const isAdmin = currentRole === 'admin';
+  const isChUser = currentRole === 'ch';
+  const isGhUser = currentRole === 'gh';
   const currentYearStr = String(new Date().getFullYear());
 
   const [periods, setPeriods] = useState([]);
@@ -197,10 +198,10 @@ const Periods = () => {
   // 1. Top 3 quick buttons: Current Year + 2 previous years (Total 3 years: e.g. 2026, 2025, 2024)
   const topThreeYears = useMemo(() => [curYr, curYr - 1, curYr - 2], [curYr]);
 
-  // 2. More Years List (from curYr - 3 down to 2015)
+  // 2. More Years List (from curYr - 3 down to 2019)
   const moreYearsList = useMemo(() => {
     const list = [];
-    for (let y = curYr - 3; y >= 2015; y--) {
+    for (let y = curYr - 3; y >= 2019; y--) {
       list.push(y);
     }
     availableYears.forEach((y) => {
@@ -212,10 +213,10 @@ const Periods = () => {
     return list;
   }, [curYr, topThreeYears, availableYears]);
 
-  // 3. Selectable Years in Dropdowns: Up to Current Year, going back to 2015
+  // 3. Selectable Years in Dropdowns: Up to Current Year, going back to 2019
   const allSelectableYears = useMemo(() => {
     const list = [];
-    for (let y = curYr; y >= 2015; y--) {
+    for (let y = curYr; y >= 2019; y--) {
       list.push(y);
     }
     const combined = Array.from(new Set([...list, ...availableYears])).sort((a, b) => b - a);
@@ -1225,7 +1226,7 @@ const Periods = () => {
             </div>
           )}
 
-          {/* Year Dropdown Filter (Default shows Current Year, lists down to 2015) */}
+          {/* Year Dropdown Filter (Default shows Current Year, lists down to 2019) */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ fontSize: '0.84rem', fontWeight: '700', color: '#475569' }}>
               Year:

@@ -187,6 +187,7 @@ class NotificationRead(BaseModel):
     notification_type: str
     is_read: bool
     created_at: datetime
+    period_start_date: Optional[date] = None
     period_end_date: Optional[date] = None
 
 
