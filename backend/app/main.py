@@ -3,13 +3,16 @@ import mimetypes
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
-from app.database import engine, Base
+from app.database import engine, Base, sync_db_sequences
 from app import models
 from app.services import minio_service
 from app.routers import users, periods, categories, entries, photos, notifications
 
 # Creates all tables in Postgres if they don't already exist
 Base.metadata.create_all(bind=engine)
+
+# Auto-sync PostgreSQL ID sequences with MAX(id)
+sync_db_sequences()
 
 # Initialize MinIO client on startup
 minio_service.get_minio_client()

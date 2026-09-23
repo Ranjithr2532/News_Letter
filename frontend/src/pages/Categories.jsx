@@ -28,6 +28,7 @@ import {
   IconUser,
   IconFilter,
   IconUserCheck,
+  IconAlertTriangle,
 } from '@tabler/icons-react';
 
 const Categories = () => {
@@ -96,6 +97,31 @@ const Categories = () => {
 
   // Photo Lightbox modal
   const [previewPhoto, setPreviewPhoto] = useState(null);
+
+  // React Confirmation Modal state
+  const [confirmDialog, setConfirmDialog] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    confirmText: 'Yes, Delete',
+    cancelText: 'No, Cancel',
+    onConfirm: null,
+  });
+
+  const openConfirmDialog = ({ title, message, confirmText = 'Yes, Delete', cancelText = 'No, Cancel', onConfirm }) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: title || 'Are you sure?',
+      message: message || 'Are you sure you want to proceed?',
+      confirmText,
+      cancelText,
+      onConfirm,
+    });
+  };
+
+  const closeConfirmDialog = () => {
+    setConfirmDialog((prev) => ({ ...prev, isOpen: false, onConfirm: null }));
+  };
 
   const getPhotoUrl = (photo) => {
     if (!photo) return '';
@@ -317,15 +343,24 @@ const Categories = () => {
   };
 
   // Handle deleting a photo from an entry
-  const handleDeletePhoto = async (photoId, catId) => {
-    if (!window.confirm('Are you sure you want to delete this photo?')) return;
-    try {
-      await api.delete(`/photos/${photoId}?user_id=${user.id}`);
-      fetchCategoryEntries(catId);
-    } catch (err) {
-      console.error('Failed to delete photo:', err);
-      alert(formatErrorMessage(err, 'Failed to delete photo.'));
-    }
+  const handleDeletePhoto = (photoId, catId, photoName) => {
+    openConfirmDialog({
+      title: 'Delete Photo',
+      message: photoName
+        ? `Are you sure you want to delete the photo "${photoName}"?`
+        : 'Are you sure you want to delete this photo?',
+      confirmText: 'Yes, Delete',
+      cancelText: 'No, Cancel',
+      onConfirm: async () => {
+        try {
+          await api.delete(`/photos/${photoId}?user_id=${user.id}`);
+          fetchCategoryEntries(catId);
+        } catch (err) {
+          console.error('Failed to delete photo:', err);
+          alert(formatErrorMessage(err, 'Failed to delete photo.'));
+        }
+      },
+    });
   };
 
   // Start inline editing of an entry
@@ -359,15 +394,24 @@ const Categories = () => {
   };
 
   // Delete an entry
-  const handleDeleteEntry = async (entryId, catId) => {
-    if (!window.confirm('Are you sure you want to delete this entry?')) return;
-    try {
-      await api.delete(`/entries/${entryId}`);
-      fetchCategoryEntries(catId);
-    } catch (err) {
-      console.error('Failed to delete entry:', err);
-      alert(formatErrorMessage(err, 'Failed to delete entry.'));
-    }
+  const handleDeleteEntry = (entryId, catId, entryTitle) => {
+    openConfirmDialog({
+      title: 'Delete Newsletter Entry',
+      message: entryTitle
+        ? `Are you sure you want to delete the entry "${entryTitle}"? This action cannot be undone.`
+        : 'Are you sure you want to delete this entry? This action cannot be undone.',
+      confirmText: 'Yes, Delete',
+      cancelText: 'No, Cancel',
+      onConfirm: async () => {
+        try {
+          await api.delete(`/entries/${entryId}?user_id=${user.id}`);
+          fetchCategoryEntries(catId);
+        } catch (err) {
+          console.error('Failed to delete entry:', err);
+          alert(formatErrorMessage(err, 'Failed to delete entry.'));
+        }
+      },
+    });
   };
 
   // Handle adding custom "Other" category
@@ -403,22 +447,29 @@ const Categories = () => {
   };
 
   // Handle deleting a custom category
-  const handleDeleteCustomCategory = async (e, catId) => {
+  const handleDeleteCustomCategory = (e, catId, catName) => {
     e.stopPropagation();
-    if (!window.confirm('Are you sure you want to delete this custom category? All its entries will also be deleted.')) {
-      return;
-    }
-    try {
-      await api.delete(`/categories/${catId}`);
-      if (expandedCategoryId === catId) {
-        setExpandedCategoryId(null);
-        setCategoryEntries([]);
-      }
-      fetchCategories();
-    } catch (err) {
-      console.error('Failed to delete category:', err);
-      alert('Failed to delete category.');
-    }
+    openConfirmDialog({
+      title: 'Delete Category',
+      message: catName
+        ? `Are you sure you want to delete the custom category "${catName}"? All entries and photos inside it will also be deleted.`
+        : 'Are you sure you want to delete this custom category? All entries and photos inside it will also be deleted.',
+      confirmText: 'Yes, Delete Category',
+      cancelText: 'No, Cancel',
+      onConfirm: async () => {
+        try {
+          await api.delete(`/categories/${catId}`);
+          if (expandedCategoryId === catId) {
+            setExpandedCategoryId(null);
+            setCategoryEntries([]);
+          }
+          fetchCategories();
+        } catch (err) {
+          console.error('Failed to delete category:', err);
+          alert('Failed to delete category.');
+        }
+      },
+    });
   };
 
   // Handle downloading full newsletter docx
@@ -919,7 +970,7 @@ const Categories = () => {
                         style={{ color: '#dc2626', borderColor: '#fecaca', backgroundColor: '#fef2f2' }}
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleDeleteCustomCategory(e, category.id);
+                          handleDeleteCustomCategory(e, category.id, category.name);
                         }}
                         title="Delete custom category"
                         aria-label="Delete category"
@@ -1140,7 +1191,7 @@ const Categories = () => {
                                                 className="photo-delete-btn"
                                                 onClick={(e) => {
                                                   e.stopPropagation();
-                                                  handleDeletePhoto(photo.id, category.id);
+                                                  handleDeletePhoto(photo.id, category.id, photo.original_filename);
                                                 }}
                                                 title="Delete photo"
                                                 aria-label="Delete photo"
@@ -1315,7 +1366,7 @@ const Categories = () => {
                                               className="photo-delete-btn"
                                               onClick={(e) => {
                                                 e.stopPropagation();
-                                                handleDeletePhoto(photo.id, category.id);
+                                                handleDeletePhoto(photo.id, category.id, photo.original_filename);
                                               }}
                                               title="Delete photo"
                                               aria-label="Delete photo"
@@ -2500,6 +2551,159 @@ const Categories = () => {
                   display: 'block',
                 }}
               />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 9. React Confirmation Dialog Modal */}
+      {confirmDialog.isOpen && (
+        <div
+          className="modal-backdrop"
+          onClick={closeConfirmDialog}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(5px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10001,
+            padding: '16px',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: 'relative',
+              width: '100%',
+              maxWidth: '430px',
+              backgroundColor: '#ffffff',
+              padding: '24px',
+              borderRadius: '18px',
+              border: '1px solid #e2e8f0',
+              boxShadow: '0 20px 40px -8px rgba(0, 0, 0, 0.22), 0 0 1px 1px rgba(0,0,0,0.06)',
+              boxSizing: 'border-box',
+              animation: 'profilePopIn 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
+              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+            }}
+          >
+            {/* Warning Icon Badge */}
+            <div
+              style={{
+                width: '52px',
+                height: '52px',
+                borderRadius: '50%',
+                backgroundColor: '#fef2f2',
+                border: '1px solid #fee2e2',
+                color: '#dc2626',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: '16px',
+              }}
+            >
+              <IconAlertTriangle size={28} strokeWidth={2.2} />
+            </div>
+
+            {/* Title */}
+            <h3
+              style={{
+                margin: '0 0 8px 0',
+                color: '#0f172a',
+                fontSize: '1.2rem',
+                fontWeight: '700',
+              }}
+            >
+              {confirmDialog.title}
+            </h3>
+
+            {/* Message */}
+            <p
+              style={{
+                margin: '0 0 24px 0',
+                color: '#64748b',
+                fontSize: '0.92rem',
+                lineHeight: '1.5',
+                padding: '0 8px',
+              }}
+            >
+              {confirmDialog.message}
+            </p>
+
+            {/* Action Buttons */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '12px',
+                width: '100%',
+              }}
+            >
+              <button
+                type="button"
+                onClick={closeConfirmDialog}
+                style={{
+                  flex: '1',
+                  padding: '10px 18px',
+                  borderRadius: '10px',
+                  border: '1.5px solid #cbd5e1',
+                  backgroundColor: '#f8fafc',
+                  color: '#334155',
+                  fontSize: '0.9rem',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#f1f5f9';
+                  e.currentTarget.style.borderColor = '#94a3b8';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#f8fafc';
+                  e.currentTarget.style.borderColor = '#cbd5e1';
+                }}
+              >
+                {confirmDialog.cancelText}
+              </button>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  if (confirmDialog.onConfirm) {
+                    await confirmDialog.onConfirm();
+                  }
+                  closeConfirmDialog();
+                }}
+                style={{
+                  flex: '1',
+                  padding: '10px 18px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                  color: '#ffffff',
+                  fontSize: '0.9rem',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 10px rgba(220, 38, 38, 0.3)',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.filter = 'brightness(1.08)';
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.filter = 'none';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                }}
+              >
+                {confirmDialog.confirmText}
+              </button>
             </div>
           </div>
         </div>

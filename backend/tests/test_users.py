@@ -82,12 +82,12 @@ def test_rbac_permissions(client, test_user, db_session):
     # Member trying to finalize -> 403 Forbidden
     fin_res = client.post(f"/periods/{period.id}/finalize?user_id={test_user.id}")
     assert fin_res.status_code == 403
-    assert "Only Group Heads and Admins" in fin_res.json()["detail"]
+    assert "Only Group Heads and Editors" in fin_res.json()["detail"]
 
     # Member trying to re-open -> 403 Forbidden
     reopen_res = client.post(f"/periods/{period.id}/reopen?user_id={test_user.id}")
     assert reopen_res.status_code == 403
-    assert "Only Group Heads and Admins" in reopen_res.json()["detail"]
+    assert "Only Group Heads and Editors" in reopen_res.json()["detail"]
 
     # Now create another user (GH)
     gh_user = models.User(
