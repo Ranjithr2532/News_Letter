@@ -129,7 +129,7 @@ const Categories = () => {
     if (photoPath.startsWith('http://') || photoPath.startsWith('https://')) {
       return photoPath;
     }
-    return `http://${window.location.hostname || 'localhost'}:8000/${photoPath.replace(/^\/+/, '')}`;
+    return `http://${window.location.hostname || 'localhost'}:8005/${photoPath.replace(/^\/+/, '')}`;
   };
 
   const handleImgError = (e, photo) => {
@@ -137,7 +137,7 @@ const Categories = () => {
     const rawPath = photo.file_path || photo.url || '';
     const filename = rawPath.split('/').pop();
     if (!filename) return;
-    const fallbackUrl = `http://${window.location.hostname || 'localhost'}:8000/uploads/${filename}`;
+    const fallbackUrl = `http://${window.location.hostname || 'localhost'}:8005/uploads/${filename}`;
     if (e.target.src !== fallbackUrl) {
       e.target.src = fallbackUrl;
     }
