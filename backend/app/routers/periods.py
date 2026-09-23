@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from typing import List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from sqlalchemy import extract
 from sqlalchemy.orm import Session
 from PIL import Image
@@ -15,11 +15,9 @@ from docx.shared import Inches, Pt, RGBColor
 
 from app.database import get_db
 from app import models, schemas
+from app.services import minio_service
 
 router = APIRouter()
-
-GENERATED_DIR = "generated_docs"
-os.makedirs(GENERATED_DIR, exist_ok=True)
 
 
 @router.post("/", response_model=schemas.PeriodRead)
@@ -191,21 +189,9 @@ def _append_entry_to_doc(doc: Document, entry, number_str: str):
         if not photo.file_path:
             continue
 
-        photo_file = photo.file_path
-        if not os.path.exists(photo_file):
-            filename_only = os.path.basename(photo.file_path)
-            d_path = os.path.join(r"D:\Newsletter_Uploads", filename_only)
-            local_path = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                "uploads",
-                filename_only,
-            )
-            if os.path.exists(d_path):
-                photo_file = d_path
-            elif os.path.exists(local_path):
-                photo_file = local_path
+        img_bytes = minio_service.get_file_bytes(photo.file_path)
 
-        if os.path.exists(photo_file):
+        if img_bytes:
             try:
                 img_p = doc.add_paragraph()
                 img_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -213,7 +199,7 @@ def _append_entry_to_doc(doc: Document, entry, number_str: str):
                 # Preserve 100% of original image without any cropping
                 max_w_in, max_h_in = 5.2, 5.8
 
-                with Image.open(photo_file) as img:
+                with Image.open(io.BytesIO(img_bytes)) as img:
                     if img.mode in ("RGBA", "P"):
                         img = img.convert("RGB")
                     w, h = img.size
@@ -233,7 +219,7 @@ def _append_entry_to_doc(doc: Document, entry, number_str: str):
                         img_buf.seek(0)
                         img_p.add_run().add_picture(img_buf, width=Inches(final_w_in), height=Inches(final_h_in))
             except Exception as e:
-                print(f"Error inserting picture {photo_file}: {e}")
+                print(f"Error inserting picture {photo.file_path}: {e}")
 
     doc.add_paragraph("")  # spacing
 
@@ -526,13 +512,15 @@ def generate_center_combined_docx(
 
     clean_label = period_label.replace(' ', '_').replace('–', '-')
     filename = f"CMTI_{center_display}{group_display}_Newsletter_{clean_label}.docx"
-    file_path = os.path.join(GENERATED_DIR, filename)
-    doc.save(file_path)
 
-    return FileResponse(
-        path=file_path,
-        filename=filename,
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+
+    return Response(
+        content=buffer.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -623,9 +611,6 @@ def generate_docx(period_id: int, created_by: Optional[int] = None, db: Session 
 
     doc = build_newsletter_docx(period.title, categories_data)
 
-    file_path = os.path.join(GENERATED_DIR, f"newsletter_period_{period_id}.docx")
-    doc.save(file_path)
-
     clean_title = period.title.replace(' ', '_')
     if created_by is not None:
         user_obj = db.query(models.User).filter(models.User.id == created_by).first()
@@ -637,10 +622,14 @@ def generate_docx(period_id: int, created_by: Optional[int] = None, db: Session 
     else:
         clean_filename = f"{clean_title}.docx"
 
-    return FileResponse(
-        path=file_path,
-        filename=clean_filename,
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+
+    return Response(
+        content=buffer.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{clean_filename}"'},
     )
 
 
@@ -675,15 +664,17 @@ def generate_category_docx(period_id: int, category_id: int, created_by: Optiona
     }]
     doc = build_newsletter_docx(period.title, categories_data)
 
-    file_path = os.path.join(GENERATED_DIR, f"category_{category_id}_period_{period_id}.docx")
-    doc.save(file_path)
-
     clean_category_name = category.name.replace(' ', '_')
     clean_filename = f"{clean_category_name}_event.docx"
-    return FileResponse(
-        path=file_path,
-        filename=clean_filename,
+
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+
+    return Response(
+        content=buffer.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{clean_filename}"'},
     )
 
 def get_current_period_bounds() -> Tuple[date, date]:

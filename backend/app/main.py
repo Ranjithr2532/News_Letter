@@ -1,27 +1,35 @@
 import os
-from fastapi import FastAPI
+import mimetypes
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, Response
 from app.database import engine, Base
 from app import models
+from app.services import minio_service
 from app.routers import users, periods, categories, entries, photos, notifications
 
 # Creates all tables in Postgres if they don't already exist
 Base.metadata.create_all(bind=engine)
 
+# Initialize MinIO client on startup
+minio_service.get_minio_client()
+
 app = FastAPI(title="Newsletter Builder API")
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# Primary shared folder on D: drive for cross-system photo access, fallback to local uploads directory
-D_DRIVE_DIR = r"D:\Newsletter_Uploads"
-if os.path.exists(D_DRIVE_DIR):
-    UPLOAD_DIR = D_DRIVE_DIR
-else:
-    UPLOAD_DIR = os.path.join(os.path.dirname(BASE_DIR), "uploads")
+@app.get("/uploads/{file_path:path}")
+def serve_upload(file_path: str):
+    # Fetch directly from MinIO object storage
+    file_bytes = minio_service.get_file_bytes(file_path)
+    if file_bytes is not None:
+        content_type, _ = mimetypes.guess_type(file_path)
+        content_type = content_type or "image/jpeg"
+        return Response(
+            content=file_bytes,
+            media_type=content_type,
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
 
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+    raise HTTPException(status_code=404, detail="File not found")
 
 # Allowed Origins for CORS security (Local development and CMTI intranet access)
 # Strict Allowed Origins for CORS security

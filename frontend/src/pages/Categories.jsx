@@ -96,6 +96,26 @@ const Categories = () => {
   // Photo Lightbox modal
   const [previewPhoto, setPreviewPhoto] = useState(null);
 
+  const getPhotoUrl = (photo) => {
+    if (!photo) return '';
+    const photoPath = (photo.file_path || photo.url || '').replace(/\\/g, '/');
+    if (photoPath.startsWith('http://') || photoPath.startsWith('https://')) {
+      return photoPath;
+    }
+    return `http://${window.location.hostname || 'localhost'}:8000/${photoPath.replace(/^\/+/, '')}`;
+  };
+
+  const handleImgError = (e, photo) => {
+    if (!photo) return;
+    const rawPath = photo.file_path || photo.url || '';
+    const filename = rawPath.split('/').pop();
+    if (!filename) return;
+    const fallbackUrl = `http://${window.location.hostname || 'localhost'}:8000/uploads/${filename}`;
+    if (e.target.src !== fallbackUrl) {
+      e.target.src = fallbackUrl;
+    }
+  };
+
   // Deadline Warning Banner state
   const [deadlineWarning, setDeadlineWarning] = useState(false);
 
@@ -1099,19 +1119,19 @@ const Categories = () => {
                                   <div className="entry-photos-gallery">
                                     {entry.photos &&
                                       entry.photos.map((photo) => {
-                                        const photoPath = photo.file_path ? photo.file_path.replace(/\\/g, '/') : '';
-                                        const photoUrl = `http://${window.location.hostname || 'localhost'}:8000/${photoPath}`;
+                                        const photoUrl = getPhotoUrl(photo);
                                         return (
                                           <div
                                             key={photo.id}
                                             className="entry-photo-card"
-                                            onClick={() => setPreviewPhoto({ url: photoUrl, name: photo.original_filename })}
+                                            onClick={() => setPreviewPhoto({ url: photoUrl, name: photo.original_filename, raw: photo })}
                                             style={{ cursor: 'pointer' }}
                                             title="Click to preview image"
                                           >
                                             <img
                                               src={photoUrl}
                                               alt={photo.original_filename || 'Entry photo'}
+                                              onError={(e) => handleImgError(e, photo)}
                                             />
                                             {!isViewOnly && (
                                               <button
@@ -1274,19 +1294,19 @@ const Categories = () => {
                                 <div className="entry-photos-gallery">
                                   {entry.photos &&
                                     entry.photos.map((photo) => {
-                                      const photoPath = photo.file_path ? photo.file_path.replace(/\\/g, '/') : '';
-                                      const photoUrl = `http://${window.location.hostname || 'localhost'}:8000/${photoPath}`;
+                                      const photoUrl = getPhotoUrl(photo);
                                       return (
                                         <div
                                           key={photo.id}
                                           className="entry-photo-card"
-                                          onClick={() => setPreviewPhoto({ url: photoUrl, name: photo.original_filename })}
+                                          onClick={() => setPreviewPhoto({ url: photoUrl, name: photo.original_filename, raw: photo })}
                                           style={{ cursor: 'pointer' }}
                                           title="Click to preview image"
                                         >
                                           <img
                                             src={photoUrl}
                                             alt={photo.original_filename || 'Entry photo'}
+                                            onError={(e) => handleImgError(e, photo)}
                                           />
                                           {!isViewOnly && (
                                             <button
@@ -2201,8 +2221,7 @@ const Categories = () => {
                                       }}
                                     >
                                       {entry.photos.map((photo) => {
-                                        const photoPath = photo.file_path ? photo.file_path.replace(/\\/g, '/') : '';
-                                        const photoUrl = `http://${window.location.hostname || 'localhost'}:8000/${photoPath}`;
+                                        const photoUrl = getPhotoUrl(photo);
                                         return (
                                           <div
                                             key={photo.id}
@@ -2219,25 +2238,36 @@ const Categories = () => {
                                               padding: '8px',
                                               transition: 'transform 0.15s ease, box-shadow 0.15s ease',
                                             }}
-                                            onClick={() => setPreviewPhoto({ url: photoUrl, name: photo.original_filename })}
+                                            onClick={() => setPreviewPhoto({ url: photoUrl, name: photo.original_filename, raw: photo })}
                                             title="Click to view full size on big screen"
                                           >
                                             <img
                                               src={photoUrl}
                                               alt={photo.original_filename || 'Entry Photo'}
+                                              onError={(e) => handleImgError(e, photo)}
                                               style={{
                                                 maxWidth: '100%',
-                                                maxHeight: '520px',
+                                                maxHeight: '380px',
                                                 objectFit: 'contain',
+                                                borderRadius: '4px',
                                                 display: 'block',
                                                 margin: '0 auto',
-                                                borderRadius: '4px',
                                               }}
                                             />
                                             {photo.original_filename && (
-                                              <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '6px', fontWeight: '500' }}>
-                                                {photo.original_filename} (Click to open big screen)
-                                              </div>
+                                              <p
+                                                style={{
+                                                  marginTop: '6px',
+                                                  fontSize: '0.8rem',
+                                                  color: '#64748b',
+                                                  whiteSpace: 'nowrap',
+                                                  overflow: 'hidden',
+                                                  textOverflow: 'ellipsis',
+                                                  padding: '0 4px',
+                                                }}
+                                              >
+                                                {photo.original_filename}
+                                              </p>
                                             )}
                                           </div>
                                         );
@@ -2460,6 +2490,7 @@ const Categories = () => {
               <img
                 src={previewPhoto.url}
                 alt={previewPhoto.name || 'Photo preview'}
+                onError={(e) => handleImgError(e, previewPhoto.raw || { file_path: previewPhoto.url })}
                 style={{
                   maxWidth: '100%',
                   maxHeight: 'calc(84vh - 75px)',

@@ -6,17 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app import models, schemas
+from app.services import minio_service
 
 router = APIRouter()
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-D_DRIVE_DIR = r"D:\Newsletter_Uploads"
-if os.path.exists(D_DRIVE_DIR):
-    UPLOAD_DIR = D_DRIVE_DIR
-else:
-    UPLOAD_DIR = os.path.join(os.path.dirname(BASE_DIR), "uploads")
-
-os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 MAX_FILE_SIZE = 15 * 1024 * 1024  # 15 MB
@@ -34,12 +26,6 @@ def validate_image_file(file: UploadFile):
             status_code=400,
             detail=f"Unsupported file format '{ext}'. Allowed formats are JPG, PNG, and WebP."
         )
-    if hasattr(file, "size") and file.size and file.size > MAX_FILE_SIZE:
-        size_mb = round(file.size / (1024 * 1024), 1)
-        raise HTTPException(
-            status_code=400,
-            detail=f"File '{file.filename}' is {size_mb} MB. Maximum allowed image size is 15 MB."
-        )
 
 
 def process_and_create_photos(
@@ -51,30 +37,29 @@ def process_and_create_photos(
     current_display_order: int = 0,
 ) -> List[models.EntryPhoto]:
     """
-    Saves uploaded image file and returns a list containing the EntryPhoto instance.
+    Uploads image directly to MinIO object storage in-memory without saving to local disk.
     """
-    filename_clean = (file.filename or "photo.png").replace(" ", "_")
-    idx_str = f"_{file_idx}"
-    unique_filename = f"{entry_id}_{timestamp_prefix}{idx_str}_{filename_clean}"
-    disk_path = os.path.join(UPLOAD_DIR, unique_filename)
+    file_bytes = file.file.read()
+    file_size = len(file_bytes)
 
-    with open(disk_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
-    # Check written file size against 15 MB limit
-    written_size = os.path.getsize(disk_path)
-    if written_size > MAX_FILE_SIZE:
-        try:
-            os.remove(disk_path)
-        except Exception:
-            pass
-        size_mb = round(written_size / (1024 * 1024), 1)
+    if file_size > MAX_FILE_SIZE:
+        size_mb = round(file_size / (1024 * 1024), 1)
         raise HTTPException(
             status_code=400,
             detail=f"File '{file.filename}' is {size_mb} MB. Maximum allowed image size is 15 MB."
         )
 
-    web_file_path = f"uploads/{unique_filename}"
+    filename_clean = (file.filename or "photo.png").replace(" ", "_")
+    idx_str = f"_{file_idx}"
+    unique_filename = f"{entry_id}_{timestamp_prefix}{idx_str}_{filename_clean}"
+
+    # Upload directly to MinIO object storage
+    uploaded = minio_service.upload_file_bytes(f"photos/{unique_filename}", file_bytes, file.content_type)
+    if not uploaded:
+        raise HTTPException(status_code=500, detail="Failed to upload photo to MinIO storage.")
+
+    # Generate full MinIO URL for database record (Option 3)
+    web_file_path = minio_service.get_minio_url(f"photos/{unique_filename}")
     photo = models.EntryPhoto(
         entry_id=entry_id,
         file_path=web_file_path,
@@ -175,12 +160,11 @@ def delete_photo(photo_id: int, user_id: Optional[int] = None, db: Session = Dep
         entry.updated_at = datetime.now(timezone.utc)
 
     if photo.file_path:
-        norm_path = photo.file_path.replace("/", os.sep).replace("\\", os.sep)
-        if os.path.exists(norm_path):
-            try:
-                os.remove(norm_path)
-            except Exception as e:
-                print(f"Failed to delete file {norm_path}: {e}")
+        # Delete from MinIO
+        try:
+            minio_service.delete_file(photo.file_path)
+        except Exception as e:
+            print(f"[MinIO] Failed to delete photo {photo.file_path}: {e}")
 
     db.delete(photo)
     db.commit()
