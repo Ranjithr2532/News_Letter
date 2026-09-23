@@ -137,8 +137,8 @@ def finalize_period(period_id: int, user_id: Optional[int] = None, db: Session =
 
     if user_id:
         user = db.query(models.User).filter(models.User.id == user_id).first()
-        if user and user.role.lower() not in ("admin", "gh", "ch"):
-            raise HTTPException(status_code=403, detail="Only Group Heads and Admins have permission to finalize newsletter periods.")
+        if user and user.role.lower() not in ("admin", "edit", "editor", "gh", "ch"):
+            raise HTTPException(status_code=403, detail="Only Group Heads and Editors have permission to finalize newsletter periods.")
 
     period.edit = False
     db.commit()
@@ -154,8 +154,8 @@ def reopen_period(period_id: int, user_id: Optional[int] = None, db: Session = D
 
     if user_id:
         user = db.query(models.User).filter(models.User.id == user_id).first()
-        if user and user.role.lower() not in ("admin", "gh", "ch"):
-            raise HTTPException(status_code=403, detail="Only Group Heads and Admins have permission to re-open newsletter periods.")
+        if user and user.role.lower() not in ("admin", "edit", "editor", "gh", "ch"):
+            raise HTTPException(status_code=403, detail="Only Group Heads and Editors have permission to re-open newsletter periods.")
 
     period.edit = True
     db.commit()

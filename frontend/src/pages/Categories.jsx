@@ -51,11 +51,12 @@ const Categories = () => {
   const [downloadingCategoryId, setDownloadingCategoryId] = useState(null);
 
   const currentRole = (user?.activeRole || user?.role || '').toLowerCase().trim();
+  const isEditor = currentRole === 'edit' || currentRole === 'editor';
   const isAdmin = currentRole === 'admin';
   const isChUser = currentRole === 'ch';
   const isGhUser = currentRole === 'gh';
-  const isViewOnly = isAdmin || period?.edit === false;
-  const canViewAll = isAdmin || isChUser || isGhUser || isViewOnly;
+  const isViewOnly = isEditor || period?.edit === false;
+  const canViewAll = isEditor || isChUser || isGhUser || isViewOnly;
 
   // Accordion state: ID of currently expanded category (only one expanded at a time)
   const [expandedCategoryId, setExpandedCategoryId] = useState(null);
@@ -124,13 +125,13 @@ const Categories = () => {
       navigate('/');
       return;
     }
-    if (isAdmin) {
+    if (isEditor) {
       navigate('/periods', { replace: true });
       return;
     }
     fetchPeriod();
     fetchCategories();
-  }, [user, periodId, allPeriodsParam, isAdmin, navigate]);
+  }, [user, periodId, allPeriodsParam, isEditor, navigate]);
 
   const fetchPeriod = async () => {
     try {
@@ -650,7 +651,7 @@ const Categories = () => {
                 ? `All Departments (${user?.center || period?.center || 'Center'})`
                 : (period?.group_name || user.group || user.group_name || 'General')}
             </span>
-            {(isChUser || isAdmin) && (
+            {(isChUser || isEditor) && (
               <>
                 <span>•</span>
                 <span>Center:</span>
@@ -665,7 +666,7 @@ const Categories = () => {
                     fontWeight: '700',
                   }}
                 >
-                  {period?.center || user.center || 'Center'} ({isAdmin ? 'Admin Oversight' : 'CH Oversight'})
+                  {period?.center || user.center || 'Center'} ({isEditor ? 'Editor Oversight' : 'CH Oversight'})
                 </span>
               </>
             )}
@@ -676,10 +677,10 @@ const Categories = () => {
                 <IconLock size={12} />
                 <span>Finalized (View-Only)</span>
               </span>
-            ) : isAdmin ? (
-              <span className="status-badge-open" style={{ backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }}>
+            ) : isEditor ? (
+              <span className="status-badge-open" style={{ backgroundColor: '#faf5ff', color: '#7e22ce', border: '1px solid #e9d5ff' }}>
                 <IconEye size={12} />
-                <span>Admin Review Mode (Open)</span>
+                <span>Editor Review Mode (Open)</span>
               </span>
             ) : isChUser ? (
               <span className="status-badge-open" style={{ backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }}>
@@ -795,7 +796,7 @@ const Categories = () => {
       )} */}
 
       {/* 4. Finalized Notice Banner (if applicable for GH/Contributors) */}
-      {period?.edit === false && !isChUser && !isAdmin && (
+      {period?.edit === false && !isChUser && !isEditor && (
         <div
           style={{
             backgroundColor: '#f0fdf4',

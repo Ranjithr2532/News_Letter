@@ -31,6 +31,7 @@ const Periods = () => {
   const navigate = useNavigate();
 
   const currentRole = (user?.activeRole || user?.role || '').toLowerCase().trim();
+  const isEditor = currentRole === 'edit' || currentRole === 'editor';
   const isAdmin = currentRole === 'admin';
   const isChUser = currentRole === 'ch';
   const isGhUser = currentRole === 'gh';
@@ -96,18 +97,18 @@ const Periods = () => {
       // 1. Fetch Centers, Centre Heads, and Group Heads for institutional hierarchy
       try {
         const promises = [api.get('/users/ghs/list')];
-        if (isAdmin || isChUser) {
+        if (isEditor || isChUser) {
           promises.push(api.get('/users/chs/list'));
         }
-        if (isAdmin) {
+        if (isEditor) {
           promises.push(api.get('/users/centers/list'));
         }
         const results = await Promise.all(promises);
         setAllGhs(results[0]?.data || []);
-        if (isAdmin || isChUser) {
+        if (isEditor || isChUser) {
           setAllChs(results[1]?.data || []);
         }
-        if (isAdmin) {
+        if (isEditor) {
           setAllCenters(results[2]?.data || []);
         }
       } catch (hierarchyErr) {
@@ -128,7 +129,7 @@ const Periods = () => {
       }
 
       // 3. Fetch available years and load current year's periods
-      const initialCenter = isAdmin ? 'all' : (isChUser ? user?.center : undefined);
+      const initialCenter = isEditor ? 'all' : (isChUser ? user?.center : undefined);
       const initialGroup = 'all';
       setSelectedGroup('all');
       fetchAvailableYears(initialGroup, initialCenter);
@@ -165,7 +166,7 @@ const Periods = () => {
 
   const fetchAvailableYears = async (
     grp = selectedGroup,
-    targetCenter = (isAdmin ? selectedCenter : isChUser ? user?.center : undefined)
+    targetCenter = (isEditor ? selectedCenter : isChUser ? user?.center : undefined)
   ) => {
     try {
       let url = '/periods/years/?';
@@ -175,7 +176,7 @@ const Periods = () => {
       }
       if (grp && grp !== 'all') {
         params.push(`group_name=${encodeURIComponent(grp)}`);
-      } else if (!isAdmin && !isChUser) {
+      } else if (!isEditor && !isChUser) {
         const userGroup = user?.group || user?.group_name || '';
         if (userGroup) params.push(`group_name=${encodeURIComponent(userGroup)}`);
       }
@@ -228,7 +229,7 @@ const Periods = () => {
     filterYear = selectedFilterYear,
     filterMonth = selectedFilterMonth,
     grp = selectedGroup,
-    targetCenter = (isAdmin ? selectedCenter : isChUser ? user?.center : undefined)
+    targetCenter = (isEditor ? selectedCenter : isChUser ? user?.center : undefined)
   ) => {
     setLoading(true);
     setError('');
@@ -241,7 +242,7 @@ const Periods = () => {
       }
       if (grp && grp !== 'all') {
         params.push(`group_name=${encodeURIComponent(grp)}`);
-      } else if (!isAdmin && !isChUser) {
+      } else if (!isEditor && !isChUser) {
         const userGroup = user?.group || user?.group_name || '';
         if (userGroup) params.push(`group_name=${encodeURIComponent(userGroup)}`);
       }
@@ -298,7 +299,7 @@ const Periods = () => {
       let url = `/periods/${period.id}/generate-docx`;
       // For regular members (Scientist/Engineer) when period is not finalized:
       // download ONLY their own entries
-      if (!isAdmin && !isChUser && !isGhUser && period.edit !== false) {
+      if (!isEditor && !isChUser && !isGhUser && period.edit !== false) {
         url += `?created_by=${user.id}`;
       }
       const response = await api.get(url, {
@@ -310,7 +311,7 @@ const Periods = () => {
       const downloadUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = downloadUrl;
-      const userSuffix = (!isAdmin && !isChUser && !isGhUser && period.edit !== false && user?.name)
+      const userSuffix = (!isEditor && !isChUser && !isGhUser && period.edit !== false && user?.name)
         ? `_${user.name.replace(/\s+/g, '_')}`
         : '';
       const filename = `${period.title.replace(/\s+/g, '_')}${userSuffix}.docx`;
@@ -380,11 +381,11 @@ const Periods = () => {
     const targetCenter =
       overrideParams?.center !== undefined
         ? overrideParams.center
-        : (isAdmin ? (selectedCenter || 'all') : (user?.center || 'all'));
+        : (isEditor ? (selectedCenter || 'all') : (user?.center || 'all'));
     const targetGroup =
       overrideParams?.group_name !== undefined
         ? overrideParams.group_name
-        : (!isAdmin && !isChUser && userDept ? userDept : (selectedGroup || 'all'));
+        : (!isEditor && !isChUser && userDept ? userDept : (selectedGroup || 'all'));
 
     setDownloadingCombined(true);
     try {
@@ -607,7 +608,7 @@ const Periods = () => {
 
   // Open Department Selection Modal to View Categories (or directly open for CH)
   const handleHalfRowClick = (periodsInHalf, rangeLabel) => {
-    if (isAdmin) return;
+    if (isEditor) return;
     if (!periodsInHalf || periodsInHalf.length === 0) return;
 
     if (isChUser) {
@@ -659,7 +660,7 @@ const Periods = () => {
 
   // On-demand click for empty / un-instantiated half slots
   const handleEmptyHalfClick = async (monthData, halfNum, rangeLabel) => {
-    if (isAdmin) return;
+    if (isEditor) return;
 
     const yr = monthData.year;
     const mo = monthData.monthIndex + 1;
@@ -750,8 +751,8 @@ const Periods = () => {
     if (e) e.stopPropagation();
     if (!periodsInHalf || periodsInHalf.length === 0) return;
 
-    if (isChUser || isAdmin) {
-      const targetCenter = isAdmin ? selectedCenter : user?.center;
+    if (isChUser || isEditor) {
+      const targetCenter = isEditor ? selectedCenter : user?.center;
       const yr = monthData.year;
       const mo = monthData.monthIndex + 1;
       const padMo = String(mo).padStart(2, '0');
@@ -809,8 +810,8 @@ const Periods = () => {
     const sDate = halfNum === 1 ? `${yr}-${padMo}-01` : `${yr}-${padMo}-16`;
     const eDate = halfNum === 1 ? `${yr}-${padMo}-15` : `${yr}-${padMo}-${String(lastDay).padStart(2, '0')}`;
 
-    if (isChUser || isAdmin) {
-      const targetCenter = isAdmin ? selectedCenter : user?.center;
+    if (isChUser || isEditor) {
+      const targetCenter = isEditor ? selectedCenter : user?.center;
       executeDownloadCombinedDocx({
         center: targetCenter,
         group_name: selectedGroup,
@@ -871,10 +872,10 @@ const Periods = () => {
 
       return (
         <div
-          className={`half-row ${isAdmin ? '' : 'clickable'}`}
+          className={`half-row ${isEditor ? '' : 'clickable'}`}
           onClick={() => handleHalfRowClick(periodsInHalf, rangeLabel)}
-          title={isAdmin ? `Period: ${rangeLabel}` : rowTooltip}
-          style={isAdmin ? { cursor: 'default' } : {}}
+          title={isEditor ? `Period: ${rangeLabel}` : rowTooltip}
+          style={isEditor ? { cursor: 'default' } : {}}
         >
           {/* Left side: Badge + Clean Date Range */}
           <div className="half-left-meta">
@@ -961,7 +962,7 @@ const Periods = () => {
             </button>
 
             {/* View Chevron Link - Only for non-admin users */}
-            {!isAdmin && (
+            {!isEditor && (
               <div
                 className="chevron-arrow"
                 onClick={() => handleHalfRowClick(periodsInHalf, rangeLabel)}
@@ -981,10 +982,10 @@ const Periods = () => {
 
       return (
         <div
-          className={`half-row ${isAdmin ? '' : 'clickable'}`}
-          onClick={() => !isAdmin && handleEmptyHalfClick(monthData, halfNum, rangeLabel)}
-          title={isAdmin ? `Period: ${rangeLabel}` : `Period: ${rangeLabel}. Click to open and add entries.`}
-          style={isAdmin ? { cursor: 'default' } : {}}
+          className={`half-row ${isEditor ? '' : 'clickable'}`}
+          onClick={() => !isEditor && handleEmptyHalfClick(monthData, halfNum, rangeLabel)}
+          title={isEditor ? `Period: ${rangeLabel}` : `Period: ${rangeLabel}. Click to open and add entries.`}
+          style={isEditor ? { cursor: 'default' } : {}}
         >
           {/* Left side: Badge + Date Range */}
           <div className="half-left-meta">
@@ -1027,7 +1028,7 @@ const Periods = () => {
             </button>
 
             {/* View Chevron Link - Only for non-admin users */}
-            {!isAdmin && (
+            {!isEditor && (
               <div
                 className="chevron-arrow"
                 onClick={() => handleEmptyHalfClick(monthData, halfNum, rangeLabel)}
@@ -1071,7 +1072,7 @@ const Periods = () => {
             <span>Newsletter</span>
           </h2>
           <p>
-            {isAdmin ? (
+            {isEditor ? (
               <span className="role-badge role-admin" style={{ padding: '3px 10px', fontSize: '0.78rem' }}>
                 <IconShield size={14} />
                 System Administrator
@@ -1097,7 +1098,7 @@ const Periods = () => {
         {/* Live Overview Stats */}
         <div className="periods-stats-strip">
 
-          {isAdmin && (
+          {isEditor && (
             <div className="stat-pill">
               <div className="stat-pill-icon blue" style={{ backgroundColor: '#eff6ff', color: '#2563eb' }}>
                 <IconBuilding size={18} />
@@ -1139,37 +1140,37 @@ const Periods = () => {
           backgroundColor: '#ffffff',
           border: '1px solid #e2e8f0',
           borderRadius: '14px',
-          padding: '12px 20px',
+          padding: '10px 16px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           flexWrap: 'wrap',
-          gap: '16px',
+          gap: '10px',
           boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
           marginBottom: '16px',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
-          {/* Center Dropdown (Admin only) */}
-          {isAdmin && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <IconBuilding size={18} style={{ color: '#2563eb' }} />
-              <span style={{ fontSize: '0.86rem', fontWeight: '700', color: '#1e293b' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', flex: '1 1 auto' }}>
+          {/* Center Dropdown (Admin/Editor only) */}
+          {isEditor && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <IconBuilding size={16} style={{ color: '#2563eb' }} />
+              <span style={{ fontSize: '0.82rem', fontWeight: '700', color: '#1e293b' }}>
                 Center:
               </span>
               <select
                 value={selectedCenter}
                 onChange={(e) => handleSelectCenter(e.target.value)}
                 style={{
-                  padding: '7px 14px',
-                  borderRadius: '10px',
+                  padding: '6px 10px',
+                  borderRadius: '8px',
                   border: '1.5px solid #cbd5e1',
                   backgroundColor: '#ffffff',
-                  fontSize: '0.84rem',
+                  fontSize: '0.82rem',
                   fontWeight: '600',
                   color: '#1e293b',
                   cursor: 'pointer',
-                  minWidth: '190px',
+                  minWidth: '140px',
                   outline: 'none',
                   boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
                 }}
@@ -1185,37 +1186,37 @@ const Periods = () => {
           )}
 
           {/* Department Filter (Admin & CH: Select dropdown) */}
-          {(isAdmin || isChUser) && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <IconUsersGroup size={18} style={{ color: '#2563eb' }} />
-              <span style={{ fontSize: '0.86rem', fontWeight: '700', color: '#1e293b' }}>
-                Department{isChUser ? ` (${user?.center || 'Center'})` : ''}:
+          {(isEditor || isChUser) && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <IconUsersGroup size={16} style={{ color: '#2563eb' }} />
+              <span style={{ fontSize: '0.82rem', fontWeight: '700', color: '#1e293b' }}>
+                Dept{isChUser ? ` (${user?.center || 'Center'})` : ''}:
               </span>
               <select
                 value={selectedGroup}
                 onChange={(e) => {
                   const grp = e.target.value;
                   setSelectedGroup(grp);
-                  const targetCenter = isAdmin ? selectedCenter : user?.center;
+                  const targetCenter = isEditor ? selectedCenter : user?.center;
                   fetchPeriods(filterMode, selectedFilterYear, selectedFilterMonth, grp, targetCenter);
                   fetchAvailableYears(grp, targetCenter);
                 }}
                 style={{
-                  padding: '7px 14px',
-                  borderRadius: '10px',
+                  padding: '6px 10px',
+                  borderRadius: '8px',
                   border: '1.5px solid #cbd5e1',
                   backgroundColor: '#ffffff',
-                  fontSize: '0.84rem',
+                  fontSize: '0.82rem',
                   fontWeight: '600',
                   color: '#1e293b',
                   cursor: 'pointer',
-                  minWidth: '180px',
+                  minWidth: '145px',
                   outline: 'none',
                   boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
                 }}
               >
                 <option value="all">
-                  All Departments {centerGroups.length > 0 ? `(${centerGroups.length})` : ''}
+                  All Depts {centerGroups.length > 0 ? `(${centerGroups.length})` : ''}
                 </option>
                 {centerGroups.map((grp) => (
                   <option key={grp} value={grp}>
@@ -1227,8 +1228,8 @@ const Periods = () => {
           )}
 
           {/* Year Dropdown Filter (Default shows Current Year, lists down to 2019) */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '0.84rem', fontWeight: '700', color: '#475569' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <span style={{ fontSize: '0.82rem', fontWeight: '700', color: '#475569' }}>
               Year:
             </span>
             <select
@@ -1238,19 +1239,19 @@ const Periods = () => {
                 const val = e.target.value;
                 setSelectedFilterYear(val);
                 setFilterMode(val);
-                const targetCenter = isAdmin ? selectedCenter : user?.center;
+                const targetCenter = isEditor ? selectedCenter : user?.center;
                 fetchPeriods(val, val, selectedFilterMonth, selectedGroup, targetCenter);
               }}
               style={{
-                padding: '7px 12px',
-                borderRadius: '10px',
+                padding: '6px 10px',
+                borderRadius: '8px',
                 border: '1.5px solid #cbd5e1',
                 backgroundColor: '#ffffff',
-                fontSize: '0.84rem',
+                fontSize: '0.82rem',
                 fontWeight: '600',
                 color: '#1e293b',
                 cursor: 'pointer',
-                minWidth: '110px',
+                minWidth: '95px',
                 outline: 'none',
               }}
             >
@@ -1263,8 +1264,8 @@ const Periods = () => {
           </div>
 
           {/* Month Dropdown Filter */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '0.84rem', fontWeight: '700', color: '#475569' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <span style={{ fontSize: '0.82rem', fontWeight: '700', color: '#475569' }}>
               Month:
             </span>
             <select
@@ -1277,19 +1278,19 @@ const Periods = () => {
                   setSelectedFilterHalf('');
                 }
                 const yr = selectedFilterYear || (filterMode !== 'all' && filterMode && !isNaN(parseInt(filterMode, 10)) ? filterMode : currentYearStr);
-                const targetCenter = isAdmin ? selectedCenter : user?.center;
+                const targetCenter = isEditor ? selectedCenter : user?.center;
                 fetchPeriods(yr, yr, val, selectedGroup, targetCenter);
               }}
               style={{
-                padding: '7px 12px',
-                borderRadius: '10px',
+                padding: '6px 10px',
+                borderRadius: '8px',
                 border: '1.5px solid #cbd5e1',
                 backgroundColor: '#ffffff',
-                fontSize: '0.84rem',
+                fontSize: '0.82rem',
                 fontWeight: '600',
                 color: '#1e293b',
                 cursor: 'pointer',
-                minWidth: '130px',
+                minWidth: '115px',
                 outline: 'none',
               }}
             >
@@ -1310,8 +1311,8 @@ const Periods = () => {
           </div>
 
           {/* Half / Period Dropdown Filter */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '0.84rem', fontWeight: '700', color: selectedFilterMonth ? '#475569' : '#94a3b8' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <span style={{ fontSize: '0.82rem', fontWeight: '700', color: selectedFilterMonth ? '#475569' : '#94a3b8' }}>
               Half:
             </span>
             <select
@@ -1322,22 +1323,22 @@ const Periods = () => {
                 setSelectedFilterHalf(e.target.value);
               }}
               style={{
-                padding: '7px 12px',
-                borderRadius: '10px',
+                padding: '6px 10px',
+                borderRadius: '8px',
                 border: '1.5px solid #cbd5e1',
                 backgroundColor: selectedFilterMonth ? '#ffffff' : '#f1f5f9',
-                fontSize: '0.84rem',
+                fontSize: '0.82rem',
                 fontWeight: '600',
                 color: selectedFilterMonth ? '#1e293b' : '#94a3b8',
                 cursor: selectedFilterMonth ? 'pointer' : 'not-allowed',
-                minWidth: '150px',
+                minWidth: '125px',
                 outline: 'none',
               }}
               title={!selectedFilterMonth ? 'Select a month first to filter by half' : 'Select specific half period'}
             >
-              <option value="">Both Halves (Entire Month)</option>
-              <option value="1">1st Half (1 – 15)</option>
-              <option value="2">2nd Half (16 – End)</option>
+              <option value="">Both Halves</option>
+              <option value="1">1st Half (1–15)</option>
+              <option value="2">2nd Half (16–End)</option>
             </select>
           </div>
 
@@ -1351,32 +1352,32 @@ const Periods = () => {
                 setSelectedFilterMonth('');
                 setSelectedFilterHalf('');
                 setFilterMode(currentYearStr);
-                const targetCenter = isAdmin ? selectedCenter : user?.center;
+                const targetCenter = isEditor ? selectedCenter : user?.center;
                 fetchPeriods(currentYearStr, currentYearStr, '', selectedGroup, targetCenter);
               }}
               title="Reset Filters"
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: '5px',
-                padding: '6px 12px',
-                borderRadius: '8px',
+                gap: '4px',
+                padding: '5px 10px',
+                borderRadius: '7px',
                 border: '1px solid #e2e8f0',
                 backgroundColor: '#f8fafc',
                 color: '#475569',
-                fontSize: '0.8rem',
+                fontSize: '0.78rem',
                 fontWeight: '700',
                 cursor: 'pointer',
               }}
             >
-              <IconRotateClockwise size={14} />
+              <IconRotateClockwise size={13} />
               <span>Reset</span>
             </button>
           )}
         </div>
 
         {/* Right: Download DOCX Button (Available for ALL users) */}
-        <div>
+        <div style={{ flexShrink: 0, marginLeft: 'auto' }}>
           <button
             type="button"
             disabled={downloadingCombined}
@@ -1384,8 +1385,8 @@ const Periods = () => {
               const yr = selectedFilterYear || (filterMode !== 'all' && filterMode ? filterMode : currentYearStr);
               const mo = selectedFilterMonth ? parseInt(selectedFilterMonth, 10) : null;
               const userDept = user?.group || user?.group_name || '';
-              const grp = (!isAdmin && !isChUser && userDept) ? userDept : (selectedGroup || 'all');
-              const ctr = isAdmin ? selectedCenter : (user?.center || 'all');
+              const grp = (!isEditor && !isChUser && userDept) ? userDept : (selectedGroup || 'all');
+              const ctr = isEditor ? selectedCenter : (user?.center || 'all');
 
               if (mo && selectedFilterHalf) {
                 const padMo = String(mo).padStart(2, '0');
@@ -1423,32 +1424,33 @@ const Periods = () => {
               display: 'inline-flex',
               alignItems: 'center',
               gap: '8px',
-              padding: '8px 18px',
-              borderRadius: '10px',
+              padding: '7px 16px',
+              borderRadius: '9px',
               background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
               color: '#ffffff',
               border: 'none',
-              fontSize: '0.84rem',
+              fontSize: '0.82rem',
               fontWeight: '700',
               cursor: downloadingCombined ? 'not-allowed' : 'pointer',
               opacity: downloadingCombined ? 0.7 : 1,
               boxShadow: '0 2px 8px rgba(37, 99, 235, 0.28)',
               transition: 'all 0.18s ease',
+              whiteSpace: 'nowrap',
             }}
             title={
-              (!isAdmin && !isChUser)
+              (!isEditor && !isChUser)
                 ? `Download newsletter (.docx) for ${user?.group || user?.group_name || 'Department'}`
                 : `Download newsletter (.docx) based on active filters`
             }
           >
             {downloadingCombined ? (
               <>
-                <IconLoader2 size={16} className="animate-spin" />
+                <IconLoader2 size={15} className="animate-spin" />
                 <span>Downloading...</span>
               </>
             ) : (
               <>
-                <IconDownload size={16} strokeWidth={2.2} />
+                <IconDownload size={15} strokeWidth={2.2} />
                 <span>Download (.docx)</span>
               </>
             )}
@@ -1457,7 +1459,7 @@ const Periods = () => {
       </div>
 
       {/* 1.6 Interactive Breadcrumb & 1-Click Back Navigation Strip */}
-      {isAdmin && (selectedCenter !== 'all' || selectedGroup !== 'all') && (
+      {isEditor && (selectedCenter !== 'all' || selectedGroup !== 'all') && (
         <div
           style={{
             backgroundColor: '#ffffff',
@@ -1637,7 +1639,7 @@ const Periods = () => {
                   setSelectedFilterMonth('');
                   setSelectedFilterHalf('');
                   setFilterMode(String(yr));
-                  fetchPeriods(String(yr), String(yr), '', selectedGroup, isAdmin ? selectedCenter : user?.center);
+                  fetchPeriods(String(yr), String(yr), '', selectedGroup, isEditor ? selectedCenter : user?.center);
                 }}
               >
                 <span>{yr}</span>
@@ -1661,7 +1663,7 @@ const Periods = () => {
                 setSelectedFilterMonth('');
                 setSelectedFilterHalf('');
                 setFilterMode(val);
-                fetchPeriods(val, val, '', selectedGroup, isAdmin ? selectedCenter : user?.center);
+                fetchPeriods(val, val, '', selectedGroup, isEditor ? selectedCenter : user?.center);
               }}
               style={{
                 cursor: 'pointer',
@@ -1905,7 +1907,7 @@ const Periods = () => {
             <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '380px', overflowY: 'auto' }}>
               {deptSelectModal.periods.map((period) => {
                 const isFinalized = period.edit === false;
-                const pCenter = (period.center || (isAdmin ? selectedCenter : user?.center) || '').trim().toUpperCase();
+                const pCenter = (period.center || (isEditor ? selectedCenter : user?.center) || '').trim().toUpperCase();
                 const pDept = (period.group_name || '').trim().toUpperCase();
                 const ghUser = (pCenter && pCenter !== 'ALL')
                   ? (ghMapByGroup[`${pCenter}_${pDept}`] || ghMapByGroup[pDept])
@@ -2078,7 +2080,7 @@ const Periods = () => {
             {/* Modal Body: List of Department Download Options */}
             <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '380px', overflowY: 'auto' }}>
               {downloadSelectModal.periods.map((period) => {
-                const pCenter = (period.center || (isAdmin ? selectedCenter : user?.center) || '').trim().toUpperCase();
+                const pCenter = (period.center || (isEditor ? selectedCenter : user?.center) || '').trim().toUpperCase();
                 const pDept = (period.group_name || '').trim().toUpperCase();
                 const ghUser = (pCenter && pCenter !== 'ALL')
                   ? (ghMapByGroup[`${pCenter}_${pDept}`] || ghMapByGroup[pDept])
@@ -2166,7 +2168,7 @@ const Periods = () => {
               })}
 
               {/* Combined Center Download Option */}
-              {(isAdmin || isChUser) && downloadSelectModal.periods.length > 1 && (
+              {(isEditor || isChUser) && downloadSelectModal.periods.length > 1 && (
                 <div
                   style={{
                     marginTop: '6px',
@@ -2189,7 +2191,7 @@ const Periods = () => {
                   <button
                     type="button"
                     onClick={() => {
-                      const targetCenter = isAdmin ? selectedCenter : user?.center;
+                      const targetCenter = isEditor ? selectedCenter : user?.center;
                       const yr = downloadSelectModal.monthData.year;
                       const mo = downloadSelectModal.monthData.monthIndex + 1;
                       const padMo = String(mo).padStart(2, '0');
@@ -2718,7 +2720,7 @@ const Periods = () => {
             {/* Modal Body */}
             <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
               {/* Center Selector (if Admin) */}
-              {isAdmin && (
+              {isEditor && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                   <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#334155' }}>
                     Center:
@@ -2762,7 +2764,7 @@ const Periods = () => {
               )}
 
               {/* Department Selector (if single center is selected or CH) */}
-              {(!isAdmin || selectedCombinedCenter !== 'all') && (
+              {(!isEditor || selectedCombinedCenter !== 'all') && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                   <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#334155' }}>
                     Department:

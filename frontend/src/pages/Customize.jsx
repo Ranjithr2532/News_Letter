@@ -27,17 +27,19 @@ const Customize = () => {
   const navigate = useNavigate();
 
   const currentRole = (user?.activeRole || user?.role || '').toLowerCase().trim();
+  const isEditor = currentRole === 'edit' || currentRole === 'editor';
   const isAdmin = currentRole === 'admin';
   const isGhUser = currentRole === 'gh';
+  const hasAdminAccess = isAdmin || isEditor;
 
-  // Role Guard: Redirect non-GH and non-Admin users immediately
+  // Role Guard: Redirect non-GH and non-Admin/Editor users immediately
   useEffect(() => {
     if (!user) {
       navigate('/');
-    } else if (!isAdmin && !isGhUser) {
+    } else if (!hasAdminAccess && !isGhUser) {
       navigate('/periods');
     }
-  }, [user, isAdmin, isGhUser, navigate]);
+  }, [user, hasAdminAccess, isGhUser, navigate]);
 
   // Active Tab: 'users' | 'categories' | 'directory'
   const [activeTab, setActiveTab] = useState('users');
@@ -560,8 +562,9 @@ const Customize = () => {
                   <option value="scientist">Scientist</option>
                   <option value="technical staff">Technical Staff</option>
                   <option value="gh">Group Head (GH)</option>
-                  {isAdmin && <option value="ch">Centre Head (CH)</option>}
-                  {isAdmin && <option value="admin">System Administrator</option>}
+                  {(isAdmin || isEditor) && <option value="ch">Centre Head (CH)</option>}
+                  {(isAdmin || isEditor) && <option value="edit">Editor / Compilation Lead</option>}
+                  {(isAdmin || isEditor) && <option value="admin">Administration Staff</option>}
                   <option value="other">Other / Custom Role (Type below)...</option>
                 </select>
               </div>

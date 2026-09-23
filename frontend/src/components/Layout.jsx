@@ -39,6 +39,7 @@ const Layout = () => {
   if (!user) return null;
 
   const currentRole = (user.activeRole || user.role || '').toLowerCase().trim();
+  const isEditor = currentRole === 'edit' || currentRole === 'editor';
   const isAdmin = currentRole === 'admin';
   const isChUser = currentRole === 'ch';
   const isGhUser = currentRole === 'gh';
@@ -54,7 +55,8 @@ const Layout = () => {
   const formatRole = (role) => {
     if (!role) return 'Scientist';
     const lower = role.toLowerCase().trim();
-    if (lower === 'admin') return 'System Administrator';
+    if (lower === 'edit' || lower === 'editor') return 'Editor / Compilation Lead';
+    if (lower === 'admin') return 'Administration Staff';
     if (lower === 'ch') return 'Centre Head (CH)';
     if (lower === 'gh') return 'Group Head (GH)';
     if (lower === 'scientist') return 'Scientist';
@@ -167,7 +169,9 @@ const Layout = () => {
                       </span>
                       <span
                         className={`detail-value role-badge ${
-                          isAdmin
+                          isEditor
+                            ? 'role-editor'
+                            : isAdmin
                             ? 'role-admin'
                             : isChUser
                             ? 'role-ch'

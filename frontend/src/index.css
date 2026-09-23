@@ -2140,6 +2140,13 @@ body {
   border: 1px solid #e2e8f0;
 }
 
+.role-badge.role-editor {
+  background-color: #faf5ff;
+  color: #7e22ce;
+  border-color: #e9d5ff;
+  font-weight: 700;
+}
+
 .role-badge.role-admin {
   background-color: #eff6ff;
   color: #1d4ed8;

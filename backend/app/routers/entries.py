@@ -66,10 +66,10 @@ def update_entry(entry_id: int, payload: schemas.EntryUpdate, db: Session = Depe
         user = db.query(models.User).filter(models.User.id == payload.updated_by).first()
         if user:
             is_author = (entry.created_by == user.id)
-            is_admin = (user.role.lower() == "admin")
+            is_admin_or_editor = (user.role.lower() in ("admin", "edit", "editor"))
             is_dept_gh = (user.role.lower() == "gh" and (user.group == entry.group_name or getattr(user, 'group_name', None) == entry.group_name))
             is_ch = (user.role.lower() == "ch")
-            if not (is_author or is_admin or is_dept_gh or is_ch):
+            if not (is_author or is_admin_or_editor or is_dept_gh or is_ch):
                 raise HTTPException(status_code=403, detail="You do not have permission to edit this entry.")
 
     # Save the OLD values into history before overwriting
@@ -105,10 +105,10 @@ def delete_entry(entry_id: int, user_id: Optional[int] = None, db: Session = Dep
         user = db.query(models.User).filter(models.User.id == user_id).first()
         if user:
             is_author = (entry.created_by == user.id)
-            is_admin = (user.role.lower() == "admin")
+            is_admin_or_editor = (user.role.lower() in ("admin", "edit", "editor"))
             is_dept_gh = (user.role.lower() == "gh" and (user.group == entry.group_name or getattr(user, 'group_name', None) == entry.group_name))
             is_ch = (user.role.lower() == "ch")
-            if not (is_author or is_admin or is_dept_gh or is_ch):
+            if not (is_author or is_admin_or_editor or is_dept_gh or is_ch):
                 raise HTTPException(status_code=403, detail="You do not have permission to delete this entry.")
 
     db.delete(entry)
