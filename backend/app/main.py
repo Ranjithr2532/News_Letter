@@ -32,7 +32,7 @@ def serve_upload(file_path: str):
             headers={"Cache-Control": "public, max-age=86400"},
         )
 
-    raise HTTPException(status_code=404, detail="File not found")
+    raise HTTPException(status_code=404, detail="File not found in MinIO storage")
 
 # Allowed Origins for CORS security (Local development and CMTI intranet access)
 # Strict Allowed Origins for CORS security

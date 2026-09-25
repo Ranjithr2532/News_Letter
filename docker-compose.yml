@@ -15,7 +15,6 @@ services:
     env_file:
       - ./backend/.env
     volumes:
-      - D:/Newsletter_Uploads:/app/uploads
       - ./backend/generated_docs:/app/generated_docs
     environment:
       - PYTHONUNBUFFERED=1
@@ -31,3 +30,10 @@ services:
       - "3000:80"
     depends_on:
       - backend
+
+networks:
+  default:
+    ipam:
+      driver: default
+      config:
+        - subnet: 10.10.0.0/16

@@ -3,6 +3,7 @@ import os
 import io
 import mimetypes
 from typing import Optional, BinaryIO
+import urllib3
 from minio import Minio
 from minio.error import S3Error
 
@@ -54,12 +55,17 @@ def get_minio_client() -> Optional[Minio]:
         return _client
 
     try:
+        http_client = urllib3.PoolManager(
+            timeout=urllib3.Timeout(connect=2.5, read=5.0),
+            retries=urllib3.Retry(total=1, connect=1, read=1),
+        )
         client = Minio(
             endpoint=MINIO_ENDPOINT,
             access_key=MINIO_ACCESS_KEY,
             secret_key=MINIO_SECRET_KEY,
             secure=MINIO_SECURE,
             region=MINIO_REGION,
+            http_client=http_client,
         )
         # Ensure bucket exists
         if not client.bucket_exists(MINIO_BUCKET):

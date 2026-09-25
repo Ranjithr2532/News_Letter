@@ -56,10 +56,11 @@ def process_and_create_photos(
     # Upload directly to MinIO object storage
     uploaded = minio_service.upload_file_bytes(f"photos/{unique_filename}", file_bytes, file.content_type)
     if not uploaded:
-        raise HTTPException(status_code=500, detail="Failed to upload photo to MinIO storage.")
+        raise HTTPException(status_code=500, detail="Failed to upload photo to MinIO storage. Please verify MinIO connection.")
 
-    # Generate full MinIO URL for database record (Option 3)
+    # Generate full MinIO URL for database record
     web_file_path = minio_service.get_minio_url(f"photos/{unique_filename}")
+
     photo = models.EntryPhoto(
         entry_id=entry_id,
         file_path=web_file_path,
