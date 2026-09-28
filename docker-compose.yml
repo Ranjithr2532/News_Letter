@@ -1,39 +1,40 @@
 version: '3.8'
 
 services:
-  # 1. Backend Service (FastAPI)
+  # ==========================================
+  # FastAPI Backend Service
+  # ==========================================
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: newsletter_backend
+    container_name: newsletter-backend
     restart: unless-stopped
     ports:
-      - "8005:8000"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "8005:8005"
     env_file:
       - ./backend/.env
-    volumes:
-      - ./backend/generated_docs:/app/generated_docs
     environment:
       - PYTHONUNBUFFERED=1
+    networks:
+      - newsletter-network
 
-  # 2. Frontend Service (React + Nginx)
+  # ==========================================
+  # React + Vite Frontend (Served via Nginx)
+  # ==========================================
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: newsletter_frontend
+    container_name: newsletter-frontend
     restart: unless-stopped
     ports:
       - "3000:80"
     depends_on:
       - backend
+    networks:
+      - newsletter-network
 
 networks:
-  default:
-    ipam:
-      driver: default
-      config:
-        - subnet: 10.10.0.0/16
+  newsletter-network:
+    driver: bridge

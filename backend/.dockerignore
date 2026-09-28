@@ -1,7 +1,49 @@
-__pycache__
+# Git
+.git
+.gitignore
+
+# Python Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+
+# Python Cache & Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
 *.pyc
 *.pyo
 *.pyd
-.pytest_cache
-venv
-.git
+
+# Tests & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+tests/
+pytest.ini
+requirements-dev.txt
+
+# Local Data, SQLite & Temporary Files
+newsletter.db/
+*.sqlite3
+*.db
+uploads/
+generated_docs/
+
+# Environment Files (Passed via docker run / docker-compose)
+.env
+.env.*
+!.env.example
+
+# IDE & OS Files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Docker files
+Dockerfile
+.dockerignore
