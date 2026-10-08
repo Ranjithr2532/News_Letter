@@ -749,6 +749,7 @@ const Categories = () => {
 
         {/* Top Actions: Preview & Download */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+
           {/* Preview Newsletter Button */}
           <button
             onClick={() => handleOpenPreview(null)}

@@ -31,6 +31,7 @@ def sync_db_sequences():
         "entry_edit_history",
         "notifications",
         "otps",
+        "newsletter_upload",
     ]
 
     try:

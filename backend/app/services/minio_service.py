@@ -157,7 +157,7 @@ def get_minio_url(object_name: str) -> str:
         base = f"{proto}://{base}"
 
     clean_obj = object_name.lstrip("/").replace("\\", "/")
-    if not clean_obj.startswith("photos/"):
+    if not clean_obj.startswith("photos/") and not clean_obj.startswith("published_pdfs/") and "/" not in clean_obj:
         clean_obj = f"photos/{clean_obj}"
 
     return f"{base.rstrip('/')}/{MINIO_BUCKET}/{clean_obj}"

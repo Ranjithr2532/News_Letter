@@ -62,6 +62,26 @@ class NewsletterPeriod(Base):
     def center(self) -> str:
         return self.creator.center if self.creator else ""
 
+    @property
+    def newsletter_upload(self):
+        from sqlalchemy.orm import object_session
+        sess = object_session(self)
+        if not sess:
+            from app.database import SessionLocal
+            sess = SessionLocal()
+            try:
+                return sess.query(NewsletterUpload).filter(
+                    NewsletterUpload.start_date == self.start_date,
+                    NewsletterUpload.end_date == self.end_date,
+                ).first()
+            finally:
+                sess.close()
+        return sess.query(NewsletterUpload).filter(
+            NewsletterUpload.start_date == self.start_date,
+            NewsletterUpload.end_date == self.end_date,
+        ).first()
+
+
 
 class NewsletterEntry(Base):
     __tablename__ = "newsletter_entries"
@@ -154,4 +174,25 @@ class OTP(Base):
     expires_at = Column(DateTime, nullable=False)
     is_used = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class NewsletterUpload(Base):
+    __tablename__ = "newsletter_upload"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    title = Column(String(255), nullable=True)
+    start_date = Column(Date, nullable=False, index=True)
+    end_date = Column(Date, nullable=False, index=True)
+    file_url = Column(String(500), nullable=False)
+    file_name = Column(String(255), nullable=False)
+    uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    uploaded_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    uploader = relationship("User", foreign_keys=[uploaded_by])
+
+    @property
+    def uploader_name(self) -> str:
+        return self.uploader.name if self.uploader else f"User #{self.uploaded_by}"
+
+
 

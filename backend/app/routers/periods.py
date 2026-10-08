@@ -1,12 +1,15 @@
 import os
 import io
+import re
+import unicodedata
 import calendar
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional, Tuple
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import Response
-from sqlalchemy import extract
+
+from sqlalchemy import extract, func
 from sqlalchemy.orm import Session
 from PIL import Image
 from docx import Document
@@ -18,6 +21,26 @@ from app import models, schemas
 from app.services import minio_service
 
 router = APIRouter()
+
+
+def sanitize_header_filename(name: str) -> str:
+    """Sanitizes text so it is safe to use in HTTP Content-Disposition headers (Latin-1 / ASCII safe)."""
+    if not name:
+        return "newsletter"
+    name = (
+        str(name)
+        .replace('\u2014', '-')
+        .replace('\u2013', '-')
+        .replace('\u2015', '-')
+        .replace('\u2018', "'")
+        .replace('\u2019', "'")
+        .replace('\u201c', '"')
+        .replace('\u201d', '"')
+        .replace(' ', '_')
+    )
+    name = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode('ascii')
+    name = re.sub(r'[^\w\-.]', '_', name)
+    return re.sub(r'_+', '_', name).strip('_') or "newsletter"
 
 
 @router.post("/", response_model=schemas.PeriodRead)
@@ -51,6 +74,8 @@ def list_periods(
     year: Optional[int] = None,
     month: Optional[int] = None,
     months: Optional[float] = None,
+    from_year: Optional[int] = None,
+    to_year: Optional[int] = None,
     all_years: Optional[bool] = False,
     db: Session = Depends(get_db)
 ):
@@ -67,18 +92,34 @@ def list_periods(
     elif group_name and group_name.strip().lower() not in ("all", "all groups", "", "undefined", "null"):
         query = query.filter(models.NewsletterPeriod.group_name == group_name)
 
-    if year is not None:
-        query = query.filter(extract('year', models.NewsletterPeriod.start_date) == year)
+    if from_year is not None or to_year is not None:
+        if from_year is not None and to_year is not None:
+            min_y = min(from_year, to_year)
+            max_y = max(from_year, to_year)
+            query = query.filter(
+                extract('year', models.NewsletterPeriod.start_date) >= min_y,
+                extract('year', models.NewsletterPeriod.start_date) <= max_y,
+            )
+        elif from_year is not None:
+            query = query.filter(extract('year', models.NewsletterPeriod.start_date) >= from_year)
+        elif to_year is not None:
+            query = query.filter(extract('year', models.NewsletterPeriod.start_date) <= to_year)
 
-    if month is not None:
+        if month is not None:
+            query = query.filter(extract('month', models.NewsletterPeriod.start_date) == month)
+    elif year is not None:
+        query = query.filter(extract('year', models.NewsletterPeriod.start_date) == year)
+        if month is not None:
+            query = query.filter(extract('month', models.NewsletterPeriod.start_date) == month)
+    elif month is not None:
         query = query.filter(extract('month', models.NewsletterPeriod.start_date) == month)
 
     if months is not None and months > 0:
         cutoff = date.today() - timedelta(days=int(months * 30))
         query = query.filter(models.NewsletterPeriod.start_date >= cutoff)
 
-    # Default to current year ONLY if no year, month, or months filter was provided and all_years is not set
-    if year is None and month is None and months is None and not all_years:
+    # Default to current year ONLY if no year, month, months, from_year, to_year filter was provided and all_years is not set
+    if year is None and month is None and months is None and from_year is None and to_year is None and not all_years:
         query = query.filter(extract('year', models.NewsletterPeriod.start_date) == date.today().year)
 
     return query.order_by(models.NewsletterPeriod.start_date.desc()).all()
@@ -295,16 +336,18 @@ def build_combined_center_docx(
     categories_data: list,
     is_all_centers: bool = False,
     group_name: Optional[str] = None,
+    category_name: Optional[str] = None,
 ) -> Document:
     doc = Document()
 
     # Determine header & main title text
+    cat_suffix = f" - {category_name.upper()}" if category_name and category_name.strip().lower() not in ("all", "all categories", "undefined", "null", "") else ""
     if is_all_centers:
-        title_text = f"CMTI Event Details from {period_label}"
+        title_text = f"CMTI{cat_suffix} Event Details from {period_label}"
     elif group_name:
-        title_text = f"{center_name} - {group_name} Event Details from {period_label}"
+        title_text = f"{center_name} - {group_name}{cat_suffix} Event Details from {period_label}"
     else:
-        title_text = f"{center_name} Event Details from {period_label}"
+        title_text = f"{center_name}{cat_suffix} Event Details from {period_label}"
 
     # 1. Word Header for ALL pages
     section = doc.sections[0]
@@ -315,15 +358,6 @@ def build_combined_center_docx(
         r.font.name = "Calibri"
         r.font.size = Pt(10)
         r.font.color.rgb = RGBColor(100, 116, 139)
-
-    # 2. Document Main Title on Page 1
-    # title_p = doc.add_paragraph()
-    # title_run = title_p.add_run(title_text)
-    # title_run.bold = True
-    # title_run.font.size = Pt(18)
-    # title_run.font.color.rgb = RGBColor(37, 99, 235)
-    # title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    # doc.add_paragraph("")
 
     # Backward compatibility if dict passed
     if isinstance(categories_data, dict):
@@ -377,6 +411,11 @@ def generate_center_combined_docx(
     end_date: Optional[date] = None,
     year: Optional[int] = None,
     month: Optional[int] = None,
+    from_year: Optional[int] = None,
+    to_year: Optional[int] = None,
+    all_years: Optional[bool] = False,
+    category: Optional[str] = None,
+    category_id: Optional[int] = None,
     db: Session = Depends(get_db),
 ):
     is_all = center is None or center.strip().lower() in ("all", "all centers", "", "undefined", "null")
@@ -396,8 +435,26 @@ def generate_center_combined_docx(
             models.NewsletterPeriod.start_date == start_date,
             models.NewsletterPeriod.end_date == end_date,
         )
+    elif from_year is not None or to_year is not None:
+        if from_year is not None and to_year is not None:
+            min_y = min(from_year, to_year)
+            max_y = max(from_year, to_year)
+            query = query.filter(
+                extract('year', models.NewsletterPeriod.start_date) >= min_y,
+                extract('year', models.NewsletterPeriod.start_date) <= max_y,
+            )
+        elif from_year is not None:
+            query = query.filter(extract('year', models.NewsletterPeriod.start_date) >= from_year)
+        elif to_year is not None:
+            query = query.filter(extract('year', models.NewsletterPeriod.start_date) <= to_year)
+
+        if month:
+            query = query.filter(extract('month', models.NewsletterPeriod.start_date) == month)
     elif year:
         query = query.filter(extract('year', models.NewsletterPeriod.start_date) == year)
+        if month:
+            query = query.filter(extract('month', models.NewsletterPeriod.start_date) == month)
+    elif all_years:
         if month:
             query = query.filter(extract('month', models.NewsletterPeriod.start_date) == month)
 
@@ -407,12 +464,25 @@ def generate_center_combined_docx(
 
     period_ids = [p.id for p in periods]
 
-    categories = (
-        db.query(models.CategoryStage)
-        .filter(
-            models.CategoryStage.is_active == True,
-            (models.CategoryStage.period_id == None) | (models.CategoryStage.period_id.in_(period_ids)),
+    req_cat = category.strip() if category else None
+    if req_cat and req_cat.lower() in ("all", "all categories", "undefined", "null", ""):
+        req_cat = None
+
+    cat_query = db.query(models.CategoryStage).filter(
+        models.CategoryStage.is_active == True,
+        (models.CategoryStage.period_id == None) | (models.CategoryStage.period_id.in_(period_ids)),
+    )
+    if category_id:
+        cat_query = cat_query.filter(models.CategoryStage.id == category_id)
+    elif req_cat:
+        cat_query = cat_query.filter(
+            (func.lower(models.CategoryStage.name) == req_cat.lower()) |
+            (func.lower(models.CategoryStage.name) == req_cat.lower().replace('&', 'and')) |
+            (func.lower(models.CategoryStage.name) == req_cat.lower().replace('and', '&'))
         )
+
+    categories = (
+        cat_query
         .order_by(models.CategoryStage.stage_number.asc(), models.CategoryStage.id.asc())
         .all()
     )
@@ -451,54 +521,73 @@ def generate_center_combined_docx(
             })
             total_entries_count += len(cat_entries)
 
-    # Check for any unhandled entries in these periods
-    handled_entry_ids = {e.id for c in categories_data for e in c["entries"]}
-    all_period_entries = (
-        db.query(models.NewsletterEntry)
-        .filter(models.NewsletterEntry.period_id.in_(period_ids))
-        .order_by(models.NewsletterEntry.group_name.asc(), models.NewsletterEntry.display_order.asc(), models.NewsletterEntry.id.asc())
-        .all()
-    )
-    unhandled_entries = [e for e in all_period_entries if e.id not in handled_entry_ids]
-    if unhandled_entries:
-        other_cat_groups = {}
-        for e in unhandled_entries:
-            c_name = e.category.name if (e.category and e.category.name) else "Other Activities"
-            if c_name not in other_cat_groups:
-                other_cat_groups[c_name] = []
-            other_cat_groups[c_name].append(e)
-        for c_name, entries_list in other_cat_groups.items():
-            categories_data.append({
-                "category_name": c_name,
-                "entries": entries_list,
-            })
-            total_entries_count += len(entries_list)
+    # Check for any unhandled entries in these periods (only if no specific category was requested)
+    if not req_cat and not category_id:
+        handled_entry_ids = {e.id for c in categories_data for e in c["entries"]}
+        all_period_entries = (
+            db.query(models.NewsletterEntry)
+            .filter(models.NewsletterEntry.period_id.in_(period_ids))
+            .order_by(models.NewsletterEntry.group_name.asc(), models.NewsletterEntry.display_order.asc(), models.NewsletterEntry.id.asc())
+            .all()
+        )
+        unhandled_entries = [e for e in all_period_entries if e.id not in handled_entry_ids]
+        if unhandled_entries:
+            other_cat_groups = {}
+            for e in unhandled_entries:
+                c_name = e.category.name if (e.category and e.category.name) else "Other Activities"
+                if c_name not in other_cat_groups:
+                    other_cat_groups[c_name] = []
+                other_cat_groups[c_name].append(e)
+            for c_name, entries_list in other_cat_groups.items():
+                categories_data.append({
+                    "category_name": c_name,
+                    "entries": entries_list,
+                })
+                total_entries_count += len(entries_list)
 
     if total_entries_count == 0:
+        cat_suffix = f" for category '{req_cat}'" if req_cat else ""
         if not is_all_groups and group_name:
             raise HTTPException(
                 status_code=404,
-                detail=f"No entries found for {group_name} in this period.",
+                detail=f"No entries found for {group_name}{cat_suffix} in the selected period.",
             )
         elif not is_all and center:
             raise HTTPException(
                 status_code=404,
-                detail=f"No entries found for {center} in this period.",
+                detail=f"No entries found for {center}{cat_suffix} in the selected period.",
             )
         else:
             raise HTTPException(
                 status_code=404,
-                detail="No entries found for this selection in the specified period.",
+                detail=f"No entries found{cat_suffix} in the specified period.",
             )
 
     if start_date and end_date:
         period_label = f"{start_date.strftime('%b %d, %Y')} to {end_date.strftime('%b %d, %Y')}"
+    elif from_year is not None and to_year is not None:
+        min_y = min(from_year, to_year)
+        max_y = max(from_year, to_year)
+        if min_y == max_y:
+            if month:
+                period_label = f"{calendar.month_name[month]} {min_y}"
+            else:
+                period_label = f"Full Year {min_y}"
+        else:
+            if month:
+                period_label = f"{calendar.month_name[month]} ({min_y} to {max_y})"
+            else:
+                period_label = f"{min_y} to {max_y}"
+    elif from_year is not None:
+        period_label = f"From {from_year} Onwards" if not month else f"{calendar.month_name[month]} (From {from_year})"
+    elif to_year is not None:
+        period_label = f"Up to {to_year}" if not month else f"{calendar.month_name[month]} (Up to {to_year})"
     elif year and month:
         period_label = f"{calendar.month_name[month]} {year}"
     elif year:
         period_label = f"Full Year {year}"
     else:
-        period_label = "Consolidated Edition"
+        period_label = "All Years Consolidated" if not month else f"{calendar.month_name[month]} (All Years)"
 
     center_display = "All_Centers" if is_all else center.replace(' ', '_')
     group_display = f"_{group_name.replace(' ', '_')}" if not is_all_groups else ""
@@ -508,10 +597,15 @@ def generate_center_combined_docx(
         categories_data,
         is_all_centers=is_all,
         group_name=group_name if not is_all_groups else None,
+        category_name=req_cat,
     )
 
-    clean_label = period_label.replace(' ', '_').replace('–', '-')
-    filename = f"CMTI_{center_display}{group_display}_Newsletter_{clean_label}.docx"
+    clean_label = sanitize_header_filename(period_label)
+    clean_center = sanitize_header_filename(center_display)
+    clean_group = sanitize_header_filename(group_display)
+    clean_cat = f"_{sanitize_header_filename(req_cat)}" if req_cat else ""
+    filename = f"CMTI_{clean_center}_{clean_group}{clean_cat}_Newsletter_{clean_label}.docx"
+    filename = re.sub(r'_+', '_', filename)
 
     buffer = io.BytesIO()
     doc.save(buffer)
@@ -525,17 +619,36 @@ def generate_center_combined_docx(
 
 
 @router.get("/{period_id}/generate-docx")
-def generate_docx(period_id: int, created_by: Optional[int] = None, db: Session = Depends(get_db)):
+def generate_docx(
+    period_id: int,
+    created_by: Optional[int] = None,
+    category: Optional[str] = None,
+    category_id: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
     period = db.query(models.NewsletterPeriod).filter(models.NewsletterPeriod.id == period_id).first()
     if not period:
         raise HTTPException(status_code=404, detail="Period not found")
 
-    categories = (
-        db.query(models.CategoryStage)
-        .filter(
-            models.CategoryStage.is_active == True,
-            (models.CategoryStage.period_id == None) | (models.CategoryStage.period_id == period_id),
+    req_cat = category.strip() if category else None
+    if req_cat and req_cat.lower() in ("all", "all categories", "undefined", "null", ""):
+        req_cat = None
+
+    cat_query = db.query(models.CategoryStage).filter(
+        models.CategoryStage.is_active == True,
+        (models.CategoryStage.period_id == None) | (models.CategoryStage.period_id == period_id),
+    )
+    if category_id:
+        cat_query = cat_query.filter(models.CategoryStage.id == category_id)
+    elif req_cat:
+        cat_query = cat_query.filter(
+            (func.lower(models.CategoryStage.name) == req_cat.lower()) |
+            (func.lower(models.CategoryStage.name) == req_cat.lower().replace('&', 'and')) |
+            (func.lower(models.CategoryStage.name) == req_cat.lower().replace('and', '&'))
         )
+
+    categories = (
+        cat_query
         .order_by(models.CategoryStage.stage_number.asc(), models.CategoryStage.id.asc())
         .all()
     )
@@ -571,56 +684,61 @@ def generate_docx(period_id: int, created_by: Optional[int] = None, db: Session 
             })
             total_entries_count += len(entries)
 
-    # Check for any unhandled entries
-    handled_entry_ids = {e.id for c in categories_data for e in c["entries"]}
-    orphan_query = (
-        db.query(models.NewsletterEntry)
-        .filter(
-            models.NewsletterEntry.period_id == period_id,
-            ~models.NewsletterEntry.id.in_(handled_entry_ids) if handled_entry_ids else True,
+    # Check for any unhandled entries (only if no specific category was requested)
+    if not req_cat and not category_id:
+        handled_entry_ids = {e.id for c in categories_data for e in c["entries"]}
+        orphan_query = (
+            db.query(models.NewsletterEntry)
+            .filter(
+                models.NewsletterEntry.period_id == period_id,
+                ~models.NewsletterEntry.id.in_(handled_entry_ids) if handled_entry_ids else True,
+            )
         )
-    )
-    if created_by is not None:
-        orphan_query = orphan_query.filter(models.NewsletterEntry.created_by == created_by)
-    orphan_entries = orphan_query.order_by(models.NewsletterEntry.display_order.asc(), models.NewsletterEntry.id.asc()).all()
-    if orphan_entries:
-        other_cat_groups = {}
-        for e in orphan_entries:
-            c_name = e.category.name if (e.category and e.category.name) else "Other Activities"
-            if c_name not in other_cat_groups:
-                other_cat_groups[c_name] = []
-            other_cat_groups[c_name].append(e)
-        for c_name, entries_list in other_cat_groups.items():
-            categories_data.append({
-                "category_name": c_name,
-                "entries": entries_list,
-            })
-            total_entries_count += len(entries_list)
+        if created_by is not None:
+            orphan_query = orphan_query.filter(models.NewsletterEntry.created_by == created_by)
+        orphan_entries = orphan_query.order_by(models.NewsletterEntry.display_order.asc(), models.NewsletterEntry.id.asc()).all()
+        if orphan_entries:
+            other_cat_groups = {}
+            for e in orphan_entries:
+                c_name = e.category.name if (e.category and e.category.name) else "Other Activities"
+                if c_name not in other_cat_groups:
+                    other_cat_groups[c_name] = []
+                other_cat_groups[c_name].append(e)
+            for c_name, entries_list in other_cat_groups.items():
+                categories_data.append({
+                    "category_name": c_name,
+                    "entries": entries_list,
+                })
+                total_entries_count += len(entries_list)
 
     if total_entries_count == 0:
+        cat_suffix = f" for category '{req_cat}'" if req_cat else ""
         if created_by is not None:
             raise HTTPException(
                 status_code=404,
-                detail="You have not submitted any entries for this period yet.",
+                detail=f"You have not submitted any entries{cat_suffix} for this period yet.",
             )
         dept_name = period.group_name or "this department"
         raise HTTPException(
             status_code=404,
-            detail=f"No entries found for {dept_name} in this period.",
+            detail=f"No entries found for {dept_name}{cat_suffix} in this period.",
         )
 
-    doc = build_newsletter_docx(period.title, categories_data)
+    doc_title = f"{period.title} - {req_cat.upper()}" if req_cat else period.title
+    doc = build_newsletter_docx(doc_title, categories_data)
 
-    clean_title = period.title.replace(' ', '_')
+    clean_title = sanitize_header_filename(period.title)
+    clean_cat = f"_{sanitize_header_filename(req_cat)}" if req_cat else ""
     if created_by is not None:
         user_obj = db.query(models.User).filter(models.User.id == created_by).first()
         if user_obj and (user_obj.name or user_obj.email):
-            user_name_clean = (user_obj.name or user_obj.email).replace(' ', '_')
-            clean_filename = f"{clean_title}_{user_name_clean}.docx"
+            user_name_clean = sanitize_header_filename(user_obj.name or user_obj.email)
+            clean_filename = f"{clean_title}{clean_cat}_{user_name_clean}.docx"
         else:
-            clean_filename = f"{clean_title}_user_{created_by}.docx"
+            clean_filename = f"{clean_title}{clean_cat}_user_{created_by}.docx"
     else:
-        clean_filename = f"{clean_title}.docx"
+        clean_filename = f"{clean_title}{clean_cat}.docx"
+    clean_filename = re.sub(r'_+', '_', clean_filename)
 
     buffer = io.BytesIO()
     doc.save(buffer)
@@ -664,7 +782,7 @@ def generate_category_docx(period_id: int, category_id: int, created_by: Optiona
     }]
     doc = build_newsletter_docx(period.title, categories_data)
 
-    clean_category_name = category.name.replace(' ', '_')
+    clean_category_name = sanitize_header_filename(category.name)
     clean_filename = f"{clean_category_name}_event.docx"
 
     buffer = io.BytesIO()
@@ -991,3 +1109,5 @@ def get_period_contributors(period_id: str, db: Session = Depends(get_db)):
     # Sort descending by number of entries, then alphabetically by name
     contributors.sort(key=lambda item: (-item["entry_count"], item["name"] or ""))
     return contributors
+
+

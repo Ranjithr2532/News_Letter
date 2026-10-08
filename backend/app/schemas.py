@@ -98,6 +98,22 @@ class PeriodUpdate(BaseModel):
     edit: Optional[bool] = None
 
 
+# ---------- Newsletter Upload (Published PDF) ----------
+class NewsletterUploadRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    title: Optional[str] = None
+    start_date: date
+    end_date: date
+    file_url: str
+    file_name: str
+    uploaded_by: int
+    uploader_name: Optional[str] = None
+    uploaded_at: datetime
+
+
+
 class PeriodRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -111,6 +127,8 @@ class PeriodRead(BaseModel):
     edit: Optional[bool] = True
     creator_name: Optional[str] = None
     center: Optional[str] = None
+    newsletter_upload: Optional[NewsletterUploadRead] = None
+
 
 
 # ---------- Entry Photo ----------

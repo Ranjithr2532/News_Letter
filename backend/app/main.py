@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse, Response
 from app.database import engine, Base, sync_db_sequences
 from app import models
 from app.services import minio_service
-from app.routers import users, periods, categories, entries, photos, notifications
+from app.routers import users, periods, categories, entries, photos, notifications, newsletter_upload
 
 # Creates all tables in Postgres if they don't already exist
 Base.metadata.create_all(bind=engine)
@@ -38,12 +38,12 @@ def serve_upload(file_path: str):
 # Strict Allowed Origins for CORS security
 ALLOWED_ORIGINS = [
     "http://localhost:5173",
-    "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
     "http://localhost:3000",
-    "http://172.18.7.91:3000",
     "http://172.18.7.91:8005",
     "http://127.0.0.1:3000",
-    "http://172.18.100.55:5173",
+    "http://172.18.100.55:5174",
     "http://172.18.100.55:3000",
     "http://172.18.7.91:3055"
 ]
@@ -62,6 +62,8 @@ app.include_router(categories.router, prefix="/categories", tags=["Categories"])
 app.include_router(entries.router, prefix="/entries", tags=["Entries"])
 app.include_router(photos.router, prefix="/photos", tags=["Photos"])
 app.include_router(notifications.router, prefix="/notifications", tags=["Notifications"])
+app.include_router(newsletter_upload.router, prefix="/newsletter-upload", tags=["Newsletter Upload"])
+
 
 
 @app.get("/")

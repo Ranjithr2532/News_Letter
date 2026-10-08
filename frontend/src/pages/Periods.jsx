@@ -24,6 +24,11 @@ import {
   IconFolder,
   IconArrowLeft,
   IconHome,
+  IconUpload,
+  IconTrash,
+  IconFile,
+  IconAlertCircle,
+  IconExternalLink,
 } from '@tabler/icons-react';
 
 const Periods = () => {
@@ -42,6 +47,26 @@ const Periods = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [downloadingId, setDownloadingId] = useState(null);
+
+  // Published PDF Uploads map (key: `${start_date}_${end_date}`)
+  const [publishedUploads, setPublishedUploads] = useState({});
+
+  // 12-Month Publication Calendar Modal (for Editor)
+  const [showPublicationCalendarModal, setShowPublicationCalendarModal] = useState(false);
+  const [calendarSelectedYear, setCalendarSelectedYear] = useState(currentYearStr);
+  const [selectedCalendarMonthIndex, setSelectedCalendarMonthIndex] = useState(new Date().getMonth());
+
+  // Direct PDF Upload state for 12-Month Publication Calendar
+  const [uploadingSlotKey, setUploadingSlotKey] = useState(null);
+  const [dragOverSlotKey, setDragOverSlotKey] = useState(null);
+
+  // PDF Delete Confirmation Modal state
+  const [deletePdfModal, setDeletePdfModal] = useState({
+    isOpen: false,
+    uploadId: null,
+    title: '',
+    isDeleting: false,
+  });
 
   // Admin & CH Role: Centers, Centre Heads, and Group Heads data
   const [allCenters, setAllCenters] = useState([]);
@@ -80,10 +105,36 @@ const Periods = () => {
   // Defaults to current year (e.g. '2026') on mount
   const [filterMode, setFilterMode] = useState(currentYearStr);
 
+  // Multi-Year Range Selection State
+  const [yearSelectionType, setYearSelectionType] = useState('range');
+  const [selectedFromYear, setSelectedFromYear] = useState(currentYearStr);
+  const [selectedToYear, setSelectedToYear] = useState(currentYearStr);
+
+  // Available Categories for Category-Wise Filter & Download
+  const [availableCategories, setAvailableCategories] = useState([]);
+  const [selectedFilterCategory, setSelectedFilterCategory] = useState('all');
+
   // Top Specific Filter (Year & Month & Half) - default to current year
   const [selectedFilterYear, setSelectedFilterYear] = useState(currentYearStr);
   const [selectedFilterMonth, setSelectedFilterMonth] = useState('');
   const [selectedFilterHalf, setSelectedFilterHalf] = useState('');
+
+  const fetchPublishedUploads = async () => {
+    try {
+      const res = await api.get('/newsletter-upload/');
+      const list = res.data || [];
+      const map = {};
+      list.forEach((item) => {
+        if (item.start_date && item.end_date) {
+          const key = `${item.start_date}_${item.end_date}`;
+          map[key] = item;
+        }
+      });
+      setPublishedUploads(map);
+    } catch (err) {
+      console.error('Failed to fetch published newsletter uploads:', err);
+    }
+  };
 
   useEffect(() => {
     if (!user) {
@@ -115,7 +166,15 @@ const Periods = () => {
         console.error('Failed to fetch centers/chs/ghs:', hierarchyErr);
       }
 
-      // 2. If CH, fetch all active groups under this center
+      // 2. Fetch available categories for category-wise filtering and download
+      try {
+        const catRes = await api.get('/categories/');
+        setAvailableCategories(catRes.data || []);
+      } catch (catErr) {
+        console.error('Failed to fetch categories:', catErr);
+      }
+
+      // 3. If CH, fetch all active groups under this center
       if (isChUser && user?.center) {
         setSelectedCenter(user.center);
         try {
@@ -128,12 +187,13 @@ const Periods = () => {
         }
       }
 
-      // 3. Fetch available years and load current year's periods
+      // 4. Fetch available years, published uploads, and load current year's periods
       const initialCenter = isEditor ? 'all' : (isChUser ? user?.center : undefined);
       const initialGroup = 'all';
       setSelectedGroup('all');
       fetchAvailableYears(initialGroup, initialCenter);
-      fetchPeriods(currentYearStr, currentYearStr, '', initialGroup, initialCenter);
+      fetchPublishedUploads();
+      fetchPeriods(currentYearStr, currentYearStr, '', initialGroup, initialCenter, 'single');
     };
 
     initPeriods();
@@ -224,12 +284,71 @@ const Periods = () => {
     return combined;
   }, [curYr, availableYears]);
 
+  // 12-Month Calendar Grid Data for the Editor Publication Timetable
+  const calendarMonthsData = useMemo(() => {
+    const yr = parseInt(calendarSelectedYear || currentYearStr, 10);
+    const monthDefs = [
+      { fullName: 'January', name: 'Jan', index: 0 },
+      { fullName: 'February', name: 'Feb', index: 1 },
+      { fullName: 'March', name: 'Mar', index: 2 },
+      { fullName: 'April', name: 'April', index: 3 },
+      { fullName: 'May', name: 'May', index: 4 },
+      { fullName: 'June', name: 'June', index: 5 },
+      { fullName: 'July', name: 'July', index: 6 },
+      { fullName: 'August', name: 'Aug', index: 7 },
+      { fullName: 'September', name: 'Sept', index: 8 },
+      { fullName: 'October', name: 'Oct', index: 9 },
+      { fullName: 'November', name: 'Nov', index: 10 },
+      { fullName: 'December', name: 'Dec', index: 11 },
+    ];
+
+    return monthDefs.map((m) => {
+      const padMo = String(m.index + 1).padStart(2, '0');
+      const lastDay = new Date(yr, m.index + 1, 0).getDate();
+
+      const h1Start = `${yr}-${padMo}-01`;
+      const h1End = `${yr}-${padMo}-15`;
+      const h1Key = `${h1Start}_${h1End}`;
+      const h1Upload = publishedUploads[h1Key] || null;
+
+      const h2Start = `${yr}-${padMo}-16`;
+      const h2End = `${yr}-${padMo}-${String(lastDay).padStart(2, '0')}`;
+      const h2Key = `${h2Start}_${h2End}`;
+      const h2Upload = publishedUploads[h2Key] || null;
+
+      const publishedCount = (h1Upload ? 1 : 0) + (h2Upload ? 1 : 0);
+
+      return {
+        ...m,
+        year: yr,
+        lastDay,
+        publishedCount,
+        isPublished: publishedCount > 0,
+        h1: {
+          startDate: h1Start,
+          endDate: h1End,
+          label: `${m.name} 01 – 15`,
+          upload: h1Upload,
+        },
+        h2: {
+          startDate: h2Start,
+          endDate: h2End,
+          label: `${m.name} 16 – End`,
+          upload: h2Upload,
+        },
+      };
+    });
+  }, [calendarSelectedYear, publishedUploads, currentYearStr]);
+
   const fetchPeriods = async (
     mode = currentYearStr,
     filterYear = selectedFilterYear,
     filterMonth = selectedFilterMonth,
     grp = selectedGroup,
-    targetCenter = (isEditor ? selectedCenter : isChUser ? user?.center : undefined)
+    targetCenter = (isEditor ? selectedCenter : isChUser ? user?.center : undefined),
+    rangeType = yearSelectionType,
+    fromYr = selectedFromYear,
+    toYr = selectedToYear
   ) => {
     setLoading(true);
     setError('');
@@ -247,8 +366,28 @@ const Periods = () => {
         if (userGroup) params.push(`group_name=${encodeURIComponent(userGroup)}`);
       }
 
-      if (mode === 'all' || filterYear === 'all') {
+      if (mode === 'all' || filterYear === 'all' || rangeType === 'all') {
         params.push('all_years=true');
+        if (filterMonth) {
+          params.push(`month=${filterMonth}`);
+        }
+      } else if (rangeType === 'past2' || mode === 'past2') {
+        params.push(`from_year=${curYr - 1}`);
+        params.push(`to_year=${curYr}`);
+        if (filterMonth) {
+          params.push(`month=${filterMonth}`);
+        }
+      } else if (rangeType === 'past3' || mode === 'past3') {
+        params.push(`from_year=${curYr - 2}`);
+        params.push(`to_year=${curYr}`);
+        if (filterMonth) {
+          params.push(`month=${filterMonth}`);
+        }
+      } else if (rangeType === 'range' || mode === 'range') {
+        const minY = Math.min(parseInt(fromYr || curYr - 2, 10), parseInt(toYr || curYr, 10));
+        const maxY = Math.max(parseInt(fromYr || curYr - 2, 10), parseInt(toYr || curYr, 10));
+        params.push(`from_year=${minY}`);
+        params.push(`to_year=${maxY}`);
         if (filterMonth) {
           params.push(`month=${filterMonth}`);
         }
@@ -288,6 +427,28 @@ const Periods = () => {
       fetchPeriods(filterMode, selectedFilterYear, selectedFilterMonth, 'all', centerName);
       fetchAvailableYears('all', centerName);
     }
+  };
+
+  const handleResetAllFilters = () => {
+    const defaultCenter = isEditor ? 'all' : (user?.center || 'all');
+    setSelectedCenter(defaultCenter);
+    setSelectedGroup('all');
+    setSelectedCombinedCenter(defaultCenter);
+    setSelectedCombinedGroup('all');
+    if (isEditor) {
+      setCenterGroups([]);
+    }
+    setSelectedFromYear(currentYearStr);
+    setSelectedToYear(currentYearStr);
+    setSelectedFilterMonth('');
+    setSelectedFilterHalf('');
+    setSelectedFilterYear(currentYearStr);
+    setFilterMode('range');
+    setYearSelectionType('range');
+    setSelectedFilterCategory('all');
+
+    fetchPeriods('range', '', '', 'all', defaultCenter, 'range', currentYearStr, currentYearStr);
+    fetchAvailableYears('all', defaultCenter);
   };
 
   const handleOpenDownloadModal = async (e, period) => {
@@ -376,6 +537,79 @@ const Periods = () => {
     }
   };
 
+  const handleDirectPdfUpload = async (file, startDate, endDate, rangeLabel, existingUpload = null) => {
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf') {
+      alert('Please select a valid PDF file (.pdf).');
+      return;
+    }
+
+    if (file.size > 50 * 1024 * 1024) {
+      alert('File size exceeds 50MB limit.');
+      return;
+    }
+
+    const slotKey = `${startDate}_${endDate}`;
+    setUploadingSlotKey(slotKey);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('start_date', startDate);
+      formData.append('end_date', endDate);
+      formData.append('uploaded_by', user.id);
+
+      const defaultTitle =
+        existingUpload?.title ||
+        file.name.replace(/\.pdf$/i, '').trim() ||
+        `CMTI Official Newsletter — ${rangeLabel}`;
+      formData.append('title', defaultTitle);
+
+      await api.post('/newsletter-upload/', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      await fetchPublishedUploads();
+      await fetchPeriods(
+        filterMode,
+        selectedFilterYear,
+        selectedFilterMonth,
+        selectedGroup,
+        isEditor ? selectedCenter : user?.center
+      );
+    } catch (err) {
+      console.error('Failed to upload published newsletter PDF:', err);
+      alert(err.response?.data?.detail || 'Failed to upload PDF. Please check server connection.');
+    } finally {
+      setUploadingSlotKey(null);
+      setDragOverSlotKey(null);
+    }
+  };
+
+  const handleConfirmDeletePdf = async () => {
+    if (!deletePdfModal.uploadId) return;
+    setDeletePdfModal((prev) => ({ ...prev, isDeleting: true }));
+    try {
+      await api.delete(`/newsletter-upload/${deletePdfModal.uploadId}?user_id=${user.id}`);
+      setDeletePdfModal({ isOpen: false, uploadId: null, title: '', isDeleting: false });
+      await fetchPublishedUploads();
+      await fetchPeriods(
+        filterMode,
+        selectedFilterYear,
+        selectedFilterMonth,
+        selectedGroup,
+        isEditor ? selectedCenter : user?.center
+      );
+    } catch (err) {
+      console.error('Failed to delete published PDF:', err);
+      alert(err.response?.data?.detail || 'Failed to delete published newsletter PDF.');
+      setDeletePdfModal((prev) => ({ ...prev, isDeleting: false }));
+    }
+  };
+
   const executeDownloadCombinedDocx = async (overrideParams = null) => {
     const userDept = user?.group || user?.group_name || '';
     const targetCenter =
@@ -386,6 +620,10 @@ const Periods = () => {
       overrideParams?.group_name !== undefined
         ? overrideParams.group_name
         : (!isEditor && !isChUser && userDept ? userDept : (selectedGroup || 'all'));
+    const targetCategory =
+      overrideParams?.category !== undefined
+        ? overrideParams.category
+        : (selectedFilterCategory && selectedFilterCategory !== 'all' ? selectedFilterCategory : null);
 
     setDownloadingCombined(true);
     try {
@@ -398,46 +636,85 @@ const Periods = () => {
       if (targetGroup && targetGroup !== 'all') {
         url += `&group_name=${encodeURIComponent(targetGroup)}`;
       }
+      if (targetCategory && targetCategory !== 'all') {
+        url += `&category=${encodeURIComponent(targetCategory)}`;
+      }
+
       let filenameLabel = '';
+      if (targetCategory && targetCategory !== 'all') {
+        filenameLabel += `_${targetCategory.replace(/\s+/g, '_')}`;
+      }
 
       if (overrideParams?.start_date && overrideParams?.end_date) {
         url += `&start_date=${overrideParams.start_date}&end_date=${overrideParams.end_date}`;
-        filenameLabel = `_${overrideParams.start_date}_to_${overrideParams.end_date}`;
-      } else if (overrideParams) {
-        if (overrideParams.year) {
-          url += `&year=${overrideParams.year}`;
-          filenameLabel += `_Year_${overrideParams.year}`;
+        filenameLabel += `_${overrideParams.start_date}_to_${overrideParams.end_date}`;
+      } else if (overrideParams?.from_year && overrideParams?.to_year) {
+        const minY = Math.min(overrideParams.from_year, overrideParams.to_year);
+        const maxY = Math.max(overrideParams.from_year, overrideParams.to_year);
+        url += `&from_year=${minY}&to_year=${maxY}`;
+        if (minY === maxY && overrideParams.month) {
+          const padMo = String(overrideParams.month).padStart(2, '0');
+          url += `&month=${overrideParams.month}`;
+          filenameLabel += `_${minY}_Month_${padMo}`;
+        } else {
+          filenameLabel += `_${minY}_to_${maxY}`;
         }
+      } else if (overrideParams?.all_years) {
+        url += '&all_years=true';
+        filenameLabel += '_All_Years';
         if (overrideParams.month) {
           const padMo = String(overrideParams.month).padStart(2, '0');
           url += `&month=${overrideParams.month}`;
           filenameLabel += `_Month_${padMo}`;
         }
-        if (!overrideParams.year && !overrideParams.month) {
-          filenameLabel += '_All_Periods';
+      } else if (overrideParams?.year) {
+        url += `&year=${overrideParams.year}`;
+        filenameLabel += `_Year_${overrideParams.year}`;
+        if (overrideParams.month) {
+          const padMo = String(overrideParams.month).padStart(2, '0');
+          url += `&month=${overrideParams.month}`;
+          filenameLabel += `_Month_${padMo}`;
         }
       } else {
-        const yr = parseInt(selectedCombinedYear || currentYearStr, 10);
-        const mo = parseInt(selectedCombinedMonth || String(new Date().getMonth() + 1), 10);
-        const padMo = String(mo).padStart(2, '0');
-        const lastDay = new Date(yr, mo, 0).getDate();
-
-        if (combinedScope === 'h1') {
-          const sDate = `${yr}-${padMo}-01`;
-          const eDate = `${yr}-${padMo}-15`;
-          url += `&start_date=${sDate}&end_date=${eDate}`;
-          filenameLabel = `_${sDate}_to_${eDate}`;
-        } else if (combinedScope === 'h2') {
-          const sDate = `${yr}-${padMo}-16`;
-          const eDate = `${yr}-${padMo}-${String(lastDay).padStart(2, '0')}`;
-          url += `&start_date=${sDate}&end_date=${eDate}`;
-          filenameLabel = `_${sDate}_to_${eDate}`;
-        } else if (combinedScope === 'month') {
-          url += `&year=${yr}&month=${mo}`;
-          filenameLabel = `_${yr}_Month_${padMo}`;
-        } else if (combinedScope === 'year') {
+        // Fall back to active filter state
+        if (yearSelectionType === 'past2' || filterMode === 'past2') {
+          url += `&from_year=${curYr - 1}&to_year=${curYr}`;
+          filenameLabel += `_${curYr - 1}_to_${curYr}`;
+          if (selectedFilterMonth) {
+            url += `&month=${selectedFilterMonth}`;
+            filenameLabel += `_Month_${String(selectedFilterMonth).padStart(2, '0')}`;
+          }
+        } else if (yearSelectionType === 'past3' || filterMode === 'past3') {
+          url += `&from_year=${curYr - 2}&to_year=${curYr}`;
+          filenameLabel += `_${curYr - 2}_to_${curYr}`;
+          if (selectedFilterMonth) {
+            url += `&month=${selectedFilterMonth}`;
+            filenameLabel += `_Month_${String(selectedFilterMonth).padStart(2, '0')}`;
+          }
+        } else if (yearSelectionType === 'range' || filterMode === 'range') {
+          const minY = Math.min(parseInt(selectedFromYear, 10), parseInt(selectedToYear, 10));
+          const maxY = Math.max(parseInt(selectedFromYear, 10), parseInt(selectedToYear, 10));
+          url += `&from_year=${minY}&to_year=${maxY}`;
+          filenameLabel += `_${minY}_to_${maxY}`;
+          if (selectedFilterMonth) {
+            url += `&month=${selectedFilterMonth}`;
+            filenameLabel += `_Month_${String(selectedFilterMonth).padStart(2, '0')}`;
+          }
+        } else if (yearSelectionType === 'all' || filterMode === 'all' || selectedFilterYear === 'all') {
+          url += '&all_years=true';
+          filenameLabel += '_All_Years';
+          if (selectedFilterMonth) {
+            url += `&month=${selectedFilterMonth}`;
+            filenameLabel += `_Month_${String(selectedFilterMonth).padStart(2, '0')}`;
+          }
+        } else {
+          const yr = parseInt(selectedFilterYear || currentYearStr, 10);
           url += `&year=${yr}`;
-          filenameLabel = `_Year_${yr}`;
+          filenameLabel += `_Year_${yr}`;
+          if (selectedFilterMonth) {
+            url += `&month=${selectedFilterMonth}`;
+            filenameLabel += `_Month_${String(selectedFilterMonth).padStart(2, '0')}`;
+          }
         }
       }
 
@@ -479,7 +756,15 @@ const Periods = () => {
   };
 
   // Helper: Group periods array into Month Cards (each card represents one month with Half 1 & Half 2)
-  const groupPeriodsIntoMonthCards = (periodsList, currentMode, currentYearFilter, currentMonthFilter) => {
+  const groupPeriodsIntoMonthCards = (
+    periodsList,
+    currentMode,
+    currentYearFilter,
+    currentMonthFilter,
+    rangeType = yearSelectionType,
+    fromYr = selectedFromYear,
+    toYr = selectedToYear
+  ) => {
     const monthMap = {};
     const monthNamesFull = [
       'January',
@@ -512,9 +797,19 @@ const Periods = () => {
 
     // Determine which years to populate
     let targetYears = [];
-    if (currentYearFilter && currentYearFilter !== 'all') {
+    if (rangeType === 'range' || currentMode === 'range') {
+      const minY = Math.min(parseInt(fromYr || curYr - 2, 10), parseInt(toYr || curYr, 10));
+      const maxY = Math.max(parseInt(fromYr || curYr - 2, 10), parseInt(toYr || curYr, 10));
+      for (let y = maxY; y >= minY; y--) {
+        targetYears.push(y);
+      }
+    } else if (rangeType === 'past2' || currentMode === 'past2') {
+      targetYears = [curYr, curYr - 1];
+    } else if (rangeType === 'past3' || currentMode === 'past3') {
+      targetYears = [curYr, curYr - 1, curYr - 2];
+    } else if (currentYearFilter && currentYearFilter !== 'all' && rangeType === 'single') {
       targetYears = [parseInt(currentYearFilter, 10)];
-    } else if (currentMode === 'all' || currentYearFilter === 'all') {
+    } else if (currentMode === 'all' || currentYearFilter === 'all' || rangeType === 'all') {
       const yearsFromPeriods = periodsList
         .map((p) => (p.start_date ? parseInt(p.start_date.split('-')[0], 10) : null))
         .filter(Boolean);
@@ -561,13 +856,18 @@ const Periods = () => {
       const padMonth = String(monthIndex + 1).padStart(2, '0');
       const monthKey = `${year}-${padMonth}`;
 
+      // If a specific month is selected, skip any period that belongs to other months
+      if (currentMonthFilter && (monthIndex + 1) !== parseInt(currentMonthFilter, 10)) {
+        return;
+      }
+
       if (monthMap[monthKey]) {
         if (day <= 15) {
           monthMap[monthKey].half1.push(period);
         } else {
           monthMap[monthKey].half2.push(period);
         }
-      } else if (currentMode === 'all' || currentYearFilter === 'all') {
+      } else if (currentMode === 'all' || currentYearFilter === 'all' || rangeType === 'all' || rangeType === 'range' || rangeType === 'past2' || rangeType === 'past3') {
         const lastDay = new Date(year, monthIndex + 1, 0).getDate();
         monthMap[monthKey] = {
           yearMonthStr: monthKey,
@@ -850,9 +1150,20 @@ const Periods = () => {
     const periodsInHalf = halfNum === 1 ? monthData.half1 : monthData.half2;
     const hasPeriods = Array.isArray(periodsInHalf) && periodsInHalf.length > 0;
 
+    const yr = monthData.year;
+    const mo = monthData.monthIndex + 1;
+    const padMo = String(mo).padStart(2, '0');
     const startDay = halfNum === 1 ? 1 : 16;
     const endDay = halfNum === 1 ? 15 : monthData.lastDayOfMonth;
+    const sDate = halfNum === 1 ? `${yr}-${padMo}-01` : `${yr}-${padMo}-16`;
+    const eDate = halfNum === 1 ? `${yr}-${padMo}-15` : `${yr}-${padMo}-${String(endDay).padStart(2, '0')}`;
     const rangeLabel = `${monthData.monthAbbrev} ${startDay} – ${monthData.monthAbbrev} ${endDay}`;
+    const cycleKey = `${sDate}_${eDate}`;
+
+    // Look up published upload for this cycle
+    const publishedUpload =
+      publishedUploads[cycleKey] ||
+      (hasPeriods ? periodsInHalf.find((p) => p.newsletter_upload)?.newsletter_upload : null);
 
     if (hasPeriods) {
       const allFinalized = periodsInHalf.every((p) => p.edit === false);
@@ -891,24 +1202,62 @@ const Periods = () => {
           </div>
 
           {/* Right side: Action Buttons */}
-          <div
-            className="half-actions-group"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Status Badge */}
-            {allFinalized ? (
-              <span className="status-badge-finalized" title="Finalized (View-only for all users)">
-                <IconLock size={12} />
-                <span>Finalized</span>
-              </span>
-            ) : (
-              <span className="status-badge-open" title="Open for editing & submissions">
-                <IconCircleCheck size={12} />
-                <span>Open</span>
-              </span>
+          <div className="half-actions-group">
+            {/* Official Published PDF icon button (Visible when published by Editor, on LEFT side of Open status badge) */}
+            {publishedUpload && (
+              <button
+                type="button"
+                className="action-icon-btn pdf-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  window.open(publishedUpload.file_url, '_blank', 'noopener,noreferrer');
+                }}
+                title={`View published official newsletter PDF (${publishedUpload.title || publishedUpload.file_name})`}
+                aria-label="View published PDF"
+              >
+                <IconFileText size={15} strokeWidth={2.2} />
+              </button>
             )}
 
-            {/* GH Finalize Action Button */}
+            {/* Status Badge: Open / Finalized (Always visible for non-editors, and for editors when finalized) */}
+            {!isEditor ? (
+              allFinalized ? (
+                <span
+                  className="status-badge-finalized"
+                  title="Finalized (View-only for all users). Click to view categories."
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleHalfRowClick(periodsInHalf, rangeLabel);
+                  }}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <IconLock size={12} />
+                  <span>Finalized</span>
+                </span>
+              ) : (
+                <span
+                  className="status-badge-open"
+                  title="Open for editing & submissions. Click to view categories."
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleHalfRowClick(periodsInHalf, rangeLabel);
+                  }}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <IconCircleCheck size={12} />
+                  <span>Open</span>
+                </span>
+              )
+            ) : (
+              allFinalized && (
+                <span className="status-badge-finalized" title="Finalized">
+                  <IconLock size={12} />
+                  <span>Finalized</span>
+                </span>
+              )
+            )}
+
+            {/* GH Finalize Action Button (Group Head only) */}
             {myGhPeriod && myGhPeriod.edit !== false && (
               <button
                 type="button"
@@ -920,7 +1269,7 @@ const Periods = () => {
                 title="Finalize newsletter (Group Head only)"
                 aria-label="Finalize newsletter"
               >
-                <IconCheck size={16} strokeWidth={2.5} />
+                <IconCheck size={15} strokeWidth={2.5} />
               </button>
             )}
 
@@ -941,7 +1290,7 @@ const Periods = () => {
                   border: '1px solid #fde68a',
                 }}
               >
-                <IconLockOpen size={16} strokeWidth={2.4} />
+                <IconLockOpen size={15} strokeWidth={2.4} />
               </button>
             )}
 
@@ -1001,15 +1350,38 @@ const Periods = () => {
           </div>
 
           {/* Right side: Actions */}
-          <div
-            className="half-actions-group"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Status Badge: Open */}
-            <span className="status-badge-open" title="Open for entries">
-              <IconCircleCheck size={12} />
-              <span>Open</span>
-            </span>
+          <div className="half-actions-group">
+            {/* Official Published PDF icon button (if uploaded for this cycle, on LEFT of Open status badge) */}
+            {publishedUpload && (
+              <button
+                type="button"
+                className="action-icon-btn pdf-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  window.open(publishedUpload.file_url, '_blank', 'noopener,noreferrer');
+                }}
+                title={`View published official newsletter PDF (${publishedUpload.title || publishedUpload.file_name})`}
+                aria-label="View published PDF"
+              >
+                <IconFileText size={15} strokeWidth={2.2} />
+              </button>
+            )}
+
+            {/* Status Badge: Open (Only for Non-Editors, clickable to open and add entries) */}
+            {!isEditor && (
+              <span
+                className="status-badge-open"
+                title="Open for entries. Click to open."
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleEmptyHalfClick(monthData, halfNum, rangeLabel);
+                }}
+                style={{ cursor: 'pointer' }}
+              >
+                <IconCircleCheck size={12} />
+                <span>Open</span>
+              </span>
+            )}
 
             {/* Download DOCX Button */}
             <button
@@ -1059,7 +1431,10 @@ const Periods = () => {
     periods,
     filterMode,
     activeYearForGrouping,
-    selectedFilterMonth
+    selectedFilterMonth,
+    yearSelectionType,
+    selectedFromYear,
+    selectedToYear
   );
 
   return (
@@ -1135,45 +1510,21 @@ const Periods = () => {
       </div>
 
       {/* 1.4 Unified Filter Toolbar (For All Roles) */}
-      <div
-        style={{
-          backgroundColor: '#ffffff',
-          border: '1px solid #e2e8f0',
-          borderRadius: '14px',
-          padding: '10px 16px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '10px',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-          marginBottom: '16px',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', flex: '1 1 auto' }}>
+      <div className="unified-filter-card">
+        {/* Left: All Filter Capsules in One Clean Compact Row */}
+        <div className="unified-filter-group">
           {/* Center Dropdown (Admin/Editor only) */}
           {isEditor && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <IconBuilding size={16} style={{ color: '#2563eb' }} />
-              <span style={{ fontSize: '0.82rem', fontWeight: '700', color: '#1e293b' }}>
-                Center:
+            <div className={`filter-capsule ${selectedCenter !== 'all' ? 'active-filter' : ''}`}>
+              <span className="filter-capsule-label">
+                <IconBuilding size={14} style={{ color: selectedCenter !== 'all' ? '#2563eb' : '#64748b' }} />
+                Center
               </span>
               <select
+                className="filter-capsule-select"
                 value={selectedCenter}
                 onChange={(e) => handleSelectCenter(e.target.value)}
-                style={{
-                  padding: '6px 10px',
-                  borderRadius: '8px',
-                  border: '1.5px solid #cbd5e1',
-                  backgroundColor: '#ffffff',
-                  fontSize: '0.82rem',
-                  fontWeight: '600',
-                  color: '#1e293b',
-                  cursor: 'pointer',
-                  minWidth: '140px',
-                  outline: 'none',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
-                }}
+                style={{ minWidth: '100px', maxWidth: '140px' }}
               >
                 <option value="all">🌐 All Centers ({allCenters.length})</option>
                 {allCenters.map((cName) => (
@@ -1187,36 +1538,25 @@ const Periods = () => {
 
           {/* Department Filter (Admin & CH: Select dropdown) */}
           {(isEditor || isChUser) && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <IconUsersGroup size={16} style={{ color: '#2563eb' }} />
-              <span style={{ fontSize: '0.82rem', fontWeight: '700', color: '#1e293b' }}>
-                Dept{isChUser ? ` (${user?.center || 'Center'})` : ''}:
+            <div className={`filter-capsule ${selectedGroup !== 'all' ? 'active-filter' : ''}`}>
+              <span className="filter-capsule-label">
+                <IconUsersGroup size={14} style={{ color: selectedGroup !== 'all' ? '#2563eb' : '#64748b' }} />
+                Dept{isChUser ? ` (${user?.center || 'Center'})` : ''}
               </span>
               <select
+                className="filter-capsule-select"
                 value={selectedGroup}
                 onChange={(e) => {
                   const grp = e.target.value;
                   setSelectedGroup(grp);
                   const targetCenter = isEditor ? selectedCenter : user?.center;
-                  fetchPeriods(filterMode, selectedFilterYear, selectedFilterMonth, grp, targetCenter);
+                  fetchPeriods(filterMode, selectedFilterYear, selectedFilterMonth, grp, targetCenter, yearSelectionType, selectedFromYear, selectedToYear);
                   fetchAvailableYears(grp, targetCenter);
                 }}
-                style={{
-                  padding: '6px 10px',
-                  borderRadius: '8px',
-                  border: '1.5px solid #cbd5e1',
-                  backgroundColor: '#ffffff',
-                  fontSize: '0.82rem',
-                  fontWeight: '600',
-                  color: '#1e293b',
-                  cursor: 'pointer',
-                  minWidth: '145px',
-                  outline: 'none',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
-                }}
+                style={{ minWidth: '100px', maxWidth: '140px' }}
               >
                 <option value="all">
-                  All Depts {centerGroups.length > 0 ? `(${centerGroups.length})` : ''}
+                  📁 All Depts {centerGroups.length > 0 ? `(${centerGroups.length})` : ''}
                 </option>
                 {centerGroups.map((grp) => (
                   <option key={grp} value={grp}>
@@ -1227,49 +1567,91 @@ const Periods = () => {
             </div>
           )}
 
-          {/* Year Dropdown Filter (Default shows Current Year, lists down to 2019) */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <span style={{ fontSize: '0.82rem', fontWeight: '700', color: '#475569' }}>
-              Year:
+          {/* Category Filter Dropdown */}
+          <div className={`filter-capsule ${selectedFilterCategory !== 'all' ? 'active-filter' : ''}`}>
+            <span className="filter-capsule-label">
+              <IconFileText size={14} style={{ color: selectedFilterCategory !== 'all' ? '#2563eb' : '#64748b' }} />
+              Category
             </span>
             <select
-              className="custom-select-input"
-              value={selectedFilterYear || currentYearStr}
+              className="filter-capsule-select"
+              value={selectedFilterCategory}
+              onChange={(e) => setSelectedFilterCategory(e.target.value)}
+              style={{ minWidth: '120px', maxWidth: '180px' }}
+              title="Filter newsletter export by specific category (e.g., Training & Programs)"
+            >
+              <option value="all">📂 All Categories</option>
+              {availableCategories.map((cat) => (
+                <option key={cat.id || cat.name} value={cat.name}>
+                  🏷️ {cat.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Year Range: From & To */}
+          <div className={`filter-capsule ${selectedFromYear !== currentYearStr || selectedToYear !== currentYearStr ? 'active-filter' : ''}`}>
+            <span className="filter-capsule-label">
+              <IconCalendarEvent size={14} style={{ color: selectedFromYear !== currentYearStr || selectedToYear !== currentYearStr ? '#2563eb' : '#64748b' }} />
+              Years
+            </span>
+            <select
+              className="filter-capsule-select"
+              value={selectedFromYear}
               onChange={(e) => {
-                const val = e.target.value;
-                setSelectedFilterYear(val);
-                setFilterMode(val);
+                const newFrom = e.target.value;
+                setSelectedFromYear(newFrom);
                 const targetCenter = isEditor ? selectedCenter : user?.center;
-                fetchPeriods(val, val, selectedFilterMonth, selectedGroup, targetCenter);
+                const minY = Math.min(parseInt(newFrom, 10), parseInt(selectedToYear, 10));
+                const maxY = Math.max(parseInt(newFrom, 10), parseInt(selectedToYear, 10));
+                setYearSelectionType('range');
+                setFilterMode('range');
+                fetchPeriods('range', '', selectedFilterMonth, selectedGroup, targetCenter, 'range', String(minY), String(maxY));
               }}
-              style={{
-                padding: '6px 10px',
-                borderRadius: '8px',
-                border: '1.5px solid #cbd5e1',
-                backgroundColor: '#ffffff',
-                fontSize: '0.82rem',
-                fontWeight: '600',
-                color: '#1e293b',
-                cursor: 'pointer',
-                minWidth: '95px',
-                outline: 'none',
-              }}
+              style={{ minWidth: '60px' }}
+              title="From Year"
             >
               {allSelectableYears.map((yr) => (
-                <option key={yr} value={yr}>
-                  {yr} {yr === parseInt(currentYearStr, 10) ? '(Current)' : ''}
+                <option key={yr} value={String(yr)}>
+                  {yr}
+                </option>
+              ))}
+            </select>
+
+            <span className="filter-range-separator">→</span>
+
+            <select
+              className="filter-capsule-select"
+              value={selectedToYear}
+              onChange={(e) => {
+                const newTo = e.target.value;
+                setSelectedToYear(newTo);
+                const targetCenter = isEditor ? selectedCenter : user?.center;
+                const minY = Math.min(parseInt(selectedFromYear, 10), parseInt(newTo, 10));
+                const maxY = Math.max(parseInt(selectedFromYear, 10), parseInt(newTo, 10));
+                setYearSelectionType('range');
+                setFilterMode('range');
+                fetchPeriods('range', '', selectedFilterMonth, selectedGroup, targetCenter, 'range', String(minY), String(maxY));
+              }}
+              style={{ minWidth: '60px' }}
+              title="To Year"
+            >
+              {allSelectableYears.map((yr) => (
+                <option key={yr} value={String(yr)}>
+                  {yr}
                 </option>
               ))}
             </select>
           </div>
 
           {/* Month Dropdown Filter */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <span style={{ fontSize: '0.82rem', fontWeight: '700', color: '#475569' }}>
-              Month:
+          <div className={`filter-capsule ${selectedFilterMonth ? 'active-filter' : ''}`}>
+            <span className="filter-capsule-label">
+              <IconCalendar size={14} style={{ color: selectedFilterMonth ? '#2563eb' : '#64748b' }} />
+              Month
             </span>
             <select
-              className="custom-select-input"
+              className="filter-capsule-select"
               value={selectedFilterMonth}
               onChange={(e) => {
                 const val = e.target.value;
@@ -1277,22 +1659,10 @@ const Periods = () => {
                 if (!val) {
                   setSelectedFilterHalf('');
                 }
-                const yr = selectedFilterYear || (filterMode !== 'all' && filterMode && !isNaN(parseInt(filterMode, 10)) ? filterMode : currentYearStr);
                 const targetCenter = isEditor ? selectedCenter : user?.center;
-                fetchPeriods(yr, yr, val, selectedGroup, targetCenter);
+                fetchPeriods('range', '', val, selectedGroup, targetCenter, 'range', selectedFromYear, selectedToYear);
               }}
-              style={{
-                padding: '6px 10px',
-                borderRadius: '8px',
-                border: '1.5px solid #cbd5e1',
-                backgroundColor: '#ffffff',
-                fontSize: '0.82rem',
-                fontWeight: '600',
-                color: '#1e293b',
-                cursor: 'pointer',
-                minWidth: '115px',
-                outline: 'none',
-              }}
+              style={{ minWidth: '95px' }}
             >
               <option value="">All Months</option>
               <option value="1">January</option>
@@ -1311,29 +1681,22 @@ const Periods = () => {
           </div>
 
           {/* Half / Period Dropdown Filter */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <span style={{ fontSize: '0.82rem', fontWeight: '700', color: selectedFilterMonth ? '#475569' : '#94a3b8' }}>
-              Half:
+          <div
+            className={`filter-capsule ${selectedFilterHalf ? 'active-filter' : ''}`}
+            style={{ opacity: selectedFilterMonth ? 1 : 0.6 }}
+          >
+            <span className="filter-capsule-label">
+              <IconClock size={14} style={{ color: selectedFilterHalf ? '#2563eb' : selectedFilterMonth ? '#64748b' : '#94a3b8' }} />
+              Half
             </span>
             <select
-              className="custom-select-input"
+              className="filter-capsule-select"
               value={selectedFilterHalf}
               disabled={!selectedFilterMonth}
               onChange={(e) => {
                 setSelectedFilterHalf(e.target.value);
               }}
-              style={{
-                padding: '6px 10px',
-                borderRadius: '8px',
-                border: '1.5px solid #cbd5e1',
-                backgroundColor: selectedFilterMonth ? '#ffffff' : '#f1f5f9',
-                fontSize: '0.82rem',
-                fontWeight: '600',
-                color: selectedFilterMonth ? '#1e293b' : '#94a3b8',
-                cursor: selectedFilterMonth ? 'pointer' : 'not-allowed',
-                minWidth: '125px',
-                outline: 'none',
-              }}
+              style={{ minWidth: '95px' }}
               title={!selectedFilterMonth ? 'Select a month first to filter by half' : 'Select specific half period'}
             >
               <option value="">Both Halves</option>
@@ -1341,104 +1704,86 @@ const Periods = () => {
               <option value="2">2nd Half (16–End)</option>
             </select>
           </div>
+        </div>
 
+        {/* Right: Actions (Reset & Download DOCX) */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, marginLeft: 'auto' }}>
           {/* Reset Filter Button */}
-          {((selectedFilterYear && selectedFilterYear !== currentYearStr) || selectedFilterMonth || selectedFilterHalf || filterMode === 'all') && (
+          {(selectedCenter !== (isEditor ? 'all' : user?.center || 'all') || selectedGroup !== 'all' || selectedFilterCategory !== 'all' || selectedFromYear !== currentYearStr || selectedToYear !== currentYearStr || selectedFilterMonth || selectedFilterHalf || filterMode !== 'range') && (
             <button
               type="button"
-              className="filter-reset-btn"
-              onClick={() => {
-                setSelectedFilterYear(currentYearStr);
-                setSelectedFilterMonth('');
-                setSelectedFilterHalf('');
-                setFilterMode(currentYearStr);
-                const targetCenter = isEditor ? selectedCenter : user?.center;
-                fetchPeriods(currentYearStr, currentYearStr, '', selectedGroup, targetCenter);
-              }}
-              title="Reset Filters"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '5px 10px',
-                borderRadius: '7px',
-                border: '1px solid #e2e8f0',
-                backgroundColor: '#f8fafc',
-                color: '#475569',
-                fontSize: '0.78rem',
-                fontWeight: '700',
-                cursor: 'pointer',
-              }}
+              className="filter-clear-btn"
+              onClick={handleResetAllFilters}
+              title="Reset all filters to defaults"
             >
               <IconRotateClockwise size={13} />
               <span>Reset</span>
             </button>
           )}
-        </div>
 
-        {/* Right: Download DOCX Button (Available for ALL users) */}
-        <div style={{ flexShrink: 0, marginLeft: 'auto' }}>
           <button
             type="button"
+            className="filter-export-btn"
             disabled={downloadingCombined}
             onClick={() => {
-              const yr = selectedFilterYear || (filterMode !== 'all' && filterMode ? filterMode : currentYearStr);
-              const mo = selectedFilterMonth ? parseInt(selectedFilterMonth, 10) : null;
               const userDept = user?.group || user?.group_name || '';
               const grp = (!isEditor && !isChUser && userDept) ? userDept : (selectedGroup || 'all');
               const ctr = isEditor ? selectedCenter : (user?.center || 'all');
+              const cat = selectedFilterCategory !== 'all' ? selectedFilterCategory : null;
+              const mo = selectedFilterMonth ? parseInt(selectedFilterMonth, 10) : null;
 
-              if (mo && selectedFilterHalf) {
-                const padMo = String(mo).padStart(2, '0');
-                const yrNum = parseInt(yr, 10);
-                if (selectedFilterHalf === '1') {
-                  const sDate = `${yrNum}-${padMo}-01`;
-                  const eDate = `${yrNum}-${padMo}-15`;
-                  executeDownloadCombinedDocx({
-                    center: ctr,
-                    group_name: grp,
-                    start_date: sDate,
-                    end_date: eDate,
-                  });
-                } else if (selectedFilterHalf === '2') {
-                  const lastDay = new Date(yrNum, mo, 0).getDate();
-                  const sDate = `${yrNum}-${padMo}-16`;
-                  const eDate = `${yrNum}-${padMo}-${String(lastDay).padStart(2, '0')}`;
-                  executeDownloadCombinedDocx({
-                    center: ctr,
-                    group_name: grp,
-                    start_date: sDate,
-                    end_date: eDate,
-                  });
-                }
-              } else {
+              if (yearSelectionType === 'all' || filterMode === 'all') {
                 executeDownloadCombinedDocx({
                   center: ctr,
                   group_name: grp,
-                  year: yr ? parseInt(yr, 10) : null,
+                  category: cat,
+                  all_years: true,
                   month: mo,
                 });
+              } else {
+                const minY = Math.min(parseInt(selectedFromYear, 10), parseInt(selectedToYear, 10));
+                const maxY = Math.max(parseInt(selectedFromYear, 10), parseInt(selectedToYear, 10));
+
+                if (minY === maxY && mo && selectedFilterHalf) {
+                  const padMo = String(mo).padStart(2, '0');
+                  if (selectedFilterHalf === '1') {
+                    const sDate = `${minY}-${padMo}-01`;
+                    const eDate = `${minY}-${padMo}-15`;
+                    executeDownloadCombinedDocx({
+                      center: ctr,
+                      group_name: grp,
+                      category: cat,
+                      start_date: sDate,
+                      end_date: eDate,
+                    });
+                  } else if (selectedFilterHalf === '2') {
+                    const lastDay = new Date(minY, mo, 0).getDate();
+                    const sDate = `${minY}-${padMo}-16`;
+                    const eDate = `${minY}-${padMo}-${String(lastDay).padStart(2, '0')}`;
+                    executeDownloadCombinedDocx({
+                      center: ctr,
+                      group_name: grp,
+                      category: cat,
+                      start_date: sDate,
+                      end_date: eDate,
+                    });
+                  }
+                } else {
+                  executeDownloadCombinedDocx({
+                    center: ctr,
+                    group_name: grp,
+                    category: cat,
+                    from_year: minY,
+                    to_year: maxY,
+                    month: mo,
+                  });
+                }
               }
             }}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '7px 16px',
-              borderRadius: '9px',
-              background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
-              color: '#ffffff',
-              border: 'none',
-              fontSize: '0.82rem',
-              fontWeight: '700',
-              cursor: downloadingCombined ? 'not-allowed' : 'pointer',
-              opacity: downloadingCombined ? 0.7 : 1,
-              boxShadow: '0 2px 8px rgba(37, 99, 235, 0.28)',
-              transition: 'all 0.18s ease',
-              whiteSpace: 'nowrap',
-            }}
             title={
-              (!isEditor && !isChUser)
+              selectedFilterCategory !== 'all'
+                ? `Download newsletter (.docx) for category: ${selectedFilterCategory}`
+                : (!isEditor && !isChUser)
                 ? `Download newsletter (.docx) for ${user?.group || user?.group_name || 'Department'}`
                 : `Download newsletter (.docx) based on active filters`
             }
@@ -1620,26 +1965,29 @@ const Periods = () => {
       )}
 
       {/* 2. Control & Filter Panel */}
-      <div className="periods-control-panel">
+      <div className="periods-control-panel" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
         {/* Quick Year Pill Selectors */}
         <div className="periods-quick-years" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-          <span className="quick-year-label">Select Year:</span>
+          <span className="quick-year-label">Quick Select:</span>
 
           {topThreeYears.map((yr) => {
             const isSelected =
-              (selectedFilterYear === String(yr) || (!selectedFilterYear && filterMode === String(yr))) &&
-              filterMode !== 'all';
+              filterMode !== 'all' &&
+              selectedFromYear === String(yr) &&
+              selectedToYear === String(yr);
             return (
               <button
                 key={yr}
                 type="button"
                 className={`year-tab-btn ${isSelected ? 'active' : ''}`}
                 onClick={() => {
-                  setSelectedFilterYear(String(yr));
+                  setYearSelectionType('range');
+                  setSelectedFromYear(String(yr));
+                  setSelectedToYear(String(yr));
                   setSelectedFilterMonth('');
                   setSelectedFilterHalf('');
-                  setFilterMode(String(yr));
-                  fetchPeriods(String(yr), String(yr), '', selectedGroup, isEditor ? selectedCenter : user?.center);
+                  setFilterMode('range');
+                  fetchPeriods('range', '', '', selectedGroup, isEditor ? selectedCenter : user?.center, 'range', String(yr), String(yr));
                 }}
               >
                 <span>{yr}</span>
@@ -1647,23 +1995,43 @@ const Periods = () => {
             );
           })}
 
+          {/* All Years Pill */}
+          <button
+            type="button"
+            className={`year-tab-btn ${yearSelectionType === 'all' || filterMode === 'all' ? 'active' : ''}`}
+            onClick={() => {
+              setYearSelectionType('all');
+              setSelectedFromYear(String(allSelectableYears[allSelectableYears.length - 1] || '2019'));
+              setSelectedToYear(currentYearStr);
+              setSelectedFilterMonth('');
+              setSelectedFilterHalf('');
+              setFilterMode('all');
+              fetchPeriods('all', 'all', '', selectedGroup, isEditor ? selectedCenter : user?.center, 'all');
+            }}
+            title="View all years"
+          >
+            <span>All Years</span>
+          </button>
+
           {/* More Years Dropdown Selector */}
           <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
             <select
-              className={`year-tab-btn ${moreYearsList.includes(parseInt(selectedFilterYear || filterMode, 10)) ? 'active' : ''}`}
+              className={`year-tab-btn ${moreYearsList.includes(parseInt(selectedFromYear, 10)) && selectedFromYear === selectedToYear && filterMode !== 'all' ? 'active' : ''}`}
               value={
-                moreYearsList.includes(parseInt(selectedFilterYear || filterMode, 10))
-                  ? String(selectedFilterYear || filterMode)
+                moreYearsList.includes(parseInt(selectedFromYear, 10)) && selectedFromYear === selectedToYear && filterMode !== 'all'
+                  ? String(selectedFromYear)
                   : ''
               }
               onChange={(e) => {
                 const val = e.target.value;
                 if (!val) return;
-                setSelectedFilterYear(val);
+                setYearSelectionType('range');
+                setSelectedFromYear(val);
+                setSelectedToYear(val);
                 setSelectedFilterMonth('');
                 setSelectedFilterHalf('');
-                setFilterMode(val);
-                fetchPeriods(val, val, '', selectedGroup, isEditor ? selectedCenter : user?.center);
+                setFilterMode('range');
+                fetchPeriods('range', '', '', selectedGroup, isEditor ? selectedCenter : user?.center, 'range', val, val);
               }}
               style={{
                 cursor: 'pointer',
@@ -1676,8 +2044,8 @@ const Periods = () => {
               }}
             >
               <option value="" disabled style={{ backgroundColor: '#ffffff', color: '#64748b' }}>
-                {moreYearsList.includes(parseInt(selectedFilterYear || filterMode, 10))
-                  ? `Year: ${selectedFilterYear || filterMode}`
+                {moreYearsList.includes(parseInt(selectedFromYear, 10)) && selectedFromYear === selectedToYear && filterMode !== 'all'
+                  ? `Year: ${selectedFromYear}`
                   : 'More Years...'}
               </option>
               {moreYearsList.map((yr) => (
@@ -1689,6 +2057,23 @@ const Periods = () => {
           </div>
         </div>
 
+        {/* Central Upload PDF Button (Editor Only) */}
+        {isEditor && (
+          <button
+            type="button"
+            className="editor-calendar-portal-btn"
+            onClick={() => {
+              setCalendarSelectedYear(selectedFilterYear || currentYearStr);
+              const moNum = selectedFilterMonth ? parseInt(selectedFilterMonth, 10) - 1 : new Date().getMonth();
+              setSelectedCalendarMonthIndex(moNum >= 0 && moNum <= 11 ? moNum : new Date().getMonth());
+              setShowPublicationCalendarModal(true);
+            }}
+            title="Upload and manage published newsletter PDFs"
+          >
+            <IconUpload size={15} strokeWidth={2.4} />
+            <span>Upload PDF</span>
+          </button>
+        )}
       </div>
 
       {/* 3. Main Content: Month Cards Grid */}
@@ -1735,8 +2120,8 @@ const Periods = () => {
             There are no records matching your current filter selection.
           </p>
         </div>
-      ) : filterMode === 'all' && !selectedFilterYear && !selectedFilterMonth ? (
-        /* All Years Grouped View */
+      ) : (new Set(monthCardsList.map(m => m.year)).size > 1) ? (
+        /* Multi-Year Grouped View with Year Section Headers */
         <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
           {(() => {
             const monthsByYear = monthCardsList.reduce((acc, monthCard) => {
@@ -3020,7 +3405,951 @@ const Periods = () => {
         </div>
       )}
 
+      {/* 4.5. Master-Detail 12-Month Publication Calendar / Timetable Modal (Editor Only) */}
+      {showPublicationCalendarModal && (() => {
+        const currentSelectedMonth = calendarMonthsData[selectedCalendarMonthIndex] || calendarMonthsData[0];
+        const totalYearUploads = calendarMonthsData.reduce((acc, m) => acc + m.publishedCount, 0);
 
+        return (
+          <div
+            className="modal-backdrop"
+            onClick={() => setShowPublicationCalendarModal(false)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(15, 23, 42, 0.65)',
+              backdropFilter: 'blur(5px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 9990,
+              padding: '16px',
+            }}
+          >
+            <div
+              className="modal-card"
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                backgroundColor: '#ffffff',
+                borderRadius: '16px',
+                maxWidth: '1200px',
+                width: '100%',
+                maxHeight: '92vh',
+                display: 'flex',
+                flexDirection: 'column',
+                boxShadow: '0 25px 50px -12px rgba(15, 23, 42, 0.25)',
+                overflow: 'hidden',
+                border: '1px solid #e2e8f0',
+                animation: 'profilePopIn 0.2s ease-out',
+              }}
+            >
+              {/* Modal Header */}
+              <div
+                style={{
+                  padding: '16px 24px',
+                  borderBottom: '1px solid #e2e8f0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  backgroundColor: '#ffffff',
+                  flexWrap: 'wrap',
+                  gap: '12px',
+                }}
+              >
+                {/* Title & Badge */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div
+                    style={{
+                      width: '40px',
+                      height: '40px',
+                      borderRadius: '10px',
+                      backgroundColor: '#eff6ff',
+                      border: '1px solid #dbeafe',
+                      color: '#2563eb',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <IconCalendarEvent size={22} />
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#0f172a', fontWeight: '800', letterSpacing: '-0.01em' }}>
+                      Newsletter Timetable &amp; Calendar
+                    </h3>
+                    <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                      Manage and upload monthly editions.
+                    </span>
+                  </div>
+                </div>
+
+                {/* Year Switcher inside Modal + Close Button */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      background: '#f1f5f9',
+                      padding: '3px 6px',
+                      borderRadius: '10px',
+                      border: '1px solid #e2e8f0',
+                    }}
+                  >
+                    <span style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: '700', padding: '0 4px' }}>Year:</span>
+                    {topThreeYears.map((yr) => {
+                      const isSelected = String(yr) === String(calendarSelectedYear);
+                      return (
+                        <button
+                          key={yr}
+                          type="button"
+                          onClick={() => setCalendarSelectedYear(String(yr))}
+                          style={{
+                            padding: '4px 10px',
+                            borderRadius: '7px',
+                            border: 'none',
+                            fontSize: '0.8rem',
+                            fontWeight: isSelected ? '700' : '600',
+                            cursor: 'pointer',
+                            backgroundColor: isSelected ? '#ffffff' : 'transparent',
+                            color: isSelected ? '#2563eb' : '#64748b',
+                            boxShadow: isSelected ? '0 1px 3px rgba(0, 0, 0, 0.08)' : 'none',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          {yr}
+                        </button>
+                      );
+                    })}
+                    <select
+                      value={moreYearsList.includes(parseInt(calendarSelectedYear, 10)) ? calendarSelectedYear : ''}
+                      onChange={(e) => e.target.value && setCalendarSelectedYear(e.target.value)}
+                      style={{
+                        background: moreYearsList.includes(parseInt(calendarSelectedYear, 10)) ? '#ffffff' : 'transparent',
+                        color: moreYearsList.includes(parseInt(calendarSelectedYear, 10)) ? '#2563eb' : '#64748b',
+                        border: '1px solid transparent',
+                        padding: '3px 6px',
+                        borderRadius: '6px',
+                        fontSize: '0.78rem',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        outline: 'none',
+                      }}
+                    >
+                      <option value="" disabled style={{ color: '#94a3b8', background: '#ffffff' }}>
+                        More...
+                      </option>
+                      {moreYearsList.map((yr) => (
+                        <option key={yr} value={yr} style={{ color: '#1e293b', background: '#ffffff' }}>
+                          {yr}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowPublicationCalendarModal(false)}
+                    style={{
+                      background: '#f8fafc',
+                      border: '1px solid #e2e8f0',
+                      cursor: 'pointer',
+                      color: '#64748b',
+                      padding: '6px',
+                      borderRadius: '8px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = '#f1f5f9';
+                      e.currentTarget.style.color = '#0f172a';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = '#f8fafc';
+                      e.currentTarget.style.color = '#64748b';
+                    }}
+                    title="Close Calendar"
+                  >
+                    <IconX size={18} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Master-Detail Split Body */}
+              <div className="calendar-split-container">
+                {/* Left Column: Month List (3 Columns x 4 Rows) */}
+                <div className="calendar-split-left">
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                    <h4 style={{ fontSize: '0.96rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
+                      Month List
+                    </h4>
+                    <span style={{ fontSize: '0.74rem', color: '#64748b', fontWeight: '600', backgroundColor: '#ffffff', border: '1px solid #e2e8f0', padding: '2px 8px', borderRadius: '9999px' }}>
+                      12 Months
+                    </span>
+                  </div>
+
+                  <div className="calendar-month-grid-3col">
+                    {calendarMonthsData.map((m) => {
+                      const isSelected = selectedCalendarMonthIndex === m.index;
+                      const hasBoth = m.h1.upload && m.h2.upload;
+                      const hasAny = m.h1.upload || m.h2.upload;
+
+                      return (
+                        <div
+                          key={m.index}
+                          className={`calendar-month-tile ${isSelected ? 'active' : ''}`}
+                          onClick={() => setSelectedCalendarMonthIndex(m.index)}
+                        >
+                          {/* Month Header */}
+                          <div className="calendar-month-tile-header">
+                            <span className="calendar-month-tile-name">
+                              <IconCalendarEvent size={15} style={{ color: isSelected ? '#2563eb' : '#64748b' }} />
+                              <span>{m.name}</span>
+                            </span>
+
+                            {hasBoth ? (
+                              <span
+                                style={{
+                                  width: '16px',
+                                  height: '16px',
+                                  borderRadius: '50%',
+                                  backgroundColor: '#ecfdf5',
+                                  border: '1px solid #a7f3d0',
+                                  color: '#059669',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                                title="Both H1 and H2 uploaded"
+                              >
+                                <IconCheck size={11} strokeWidth={3} />
+                              </span>
+                            ) : hasAny ? (
+                              <span
+                                style={{
+                                  width: '7px',
+                                  height: '7px',
+                                  borderRadius: '50%',
+                                  backgroundColor: '#10b981',
+                                }}
+                                title="1 of 2 uploaded"
+                              />
+                            ) : null}
+                          </div>
+
+                          {/* 2 Sub-lines for H1 and H2 */}
+                          <div className="calendar-month-tile-body">
+                            {/* H1 line */}
+                            <div className="calendar-status-line">
+                              <span className={`calendar-status-dot ${m.h1.upload ? 'green' : 'gray'}`} />
+                              <span style={{ color: m.h1.upload ? '#059669' : '#94a3b8', fontWeight: m.h1.upload ? '700' : '500' }}>
+                                {m.h1.upload ? '✓ H1' : 'H1 · Empty'}
+                              </span>
+                            </div>
+
+                            {/* H2 line */}
+                            <div className="calendar-status-line">
+                              <span className={`calendar-status-dot ${m.h2.upload ? 'green' : 'gray'}`} />
+                              <span style={{ color: m.h2.upload ? '#059669' : '#94a3b8', fontWeight: m.h2.upload ? '700' : '500' }}>
+                                {m.h2.upload ? '✓ H2' : 'H2 · Empty'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Right Column: Detail View for Selected Month */}
+                <div className="calendar-split-right">
+                  <div style={{ fontSize: '0.76rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Detail View
+                  </div>
+                  <h2 style={{ fontSize: '1.35rem', fontWeight: '800', color: '#0f172a', margin: '2px 0 18px 0' }}>
+                    {currentSelectedMonth.fullName} {currentSelectedMonth.year}
+                  </h2>
+
+                  {/* H1 Section (01 – 15) */}
+                  <div className="calendar-detail-section">
+                    <input
+                      id="h1-direct-file-input"
+                      type="file"
+                      accept=".pdf,application/pdf"
+                      style={{ display: 'none' }}
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files.length > 0) {
+                          handleDirectPdfUpload(
+                            e.target.files[0],
+                            currentSelectedMonth.h1.startDate,
+                            currentSelectedMonth.h1.endDate,
+                            currentSelectedMonth.h1.label,
+                            currentSelectedMonth.h1.upload
+                          );
+                          e.target.value = '';
+                        }
+                      }}
+                    />
+
+                    <div className="calendar-detail-section-header">
+                      <div className="calendar-detail-section-title">
+                        <span className="calendar-slot-badge">H1</span>
+                        <span className="calendar-slot-date-label">
+                          {currentSelectedMonth.name} 01 – 15, {currentSelectedMonth.year}
+                        </span>
+                      </div>
+
+                      {uploadingSlotKey === `${currentSelectedMonth.h1.startDate}_${currentSelectedMonth.h1.endDate}` ? (
+                        <span
+                          style={{
+                            fontSize: '0.74rem',
+                            fontWeight: '700',
+                            color: '#2563eb',
+                            backgroundColor: '#eff6ff',
+                            border: '1px solid #bfdbfe',
+                            padding: '3px 10px',
+                            borderRadius: '9999px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                          }}
+                        >
+                          <IconLoader2 size={13} className="animate-spin" /> Uploading...
+                        </span>
+                      ) : currentSelectedMonth.h1.upload ? (
+                        <span
+                          style={{
+                            fontSize: '0.76rem',
+                            fontWeight: '700',
+                            color: '#059669',
+                            backgroundColor: '#ecfdf5',
+                            border: '1px solid #a7f3d0',
+                            padding: '3px 10px',
+                            borderRadius: '9999px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                          }}
+                          title="Published PDF Present"
+                        >
+                          <IconCheck size={12} strokeWidth={3} /> Published
+                        </span>
+                      ) : (
+                        <span
+                          style={{
+                            fontSize: '0.76rem',
+                            fontWeight: '600',
+                            color: '#64748b',
+                            backgroundColor: '#f1f5f9',
+                            border: '1px solid #e2e8f0',
+                            padding: '3px 10px',
+                            borderRadius: '9999px',
+                          }}
+                        >
+                          Not Uploaded
+                        </span>
+                      )}
+                    </div>
+
+                    {uploadingSlotKey === `${currentSelectedMonth.h1.startDate}_${currentSelectedMonth.h1.endDate}` ? (
+                      <div
+                        className="calendar-doc-card"
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '12px',
+                          padding: '24px',
+                          backgroundColor: '#eff6ff',
+                          border: '1.5px dashed #3b82f6',
+                        }}
+                      >
+                        <IconLoader2 size={22} className="animate-spin" style={{ color: '#2563eb' }} />
+                        <span style={{ fontWeight: '700', fontSize: '0.9rem', color: '#1d4ed8' }}>
+                          Uploading &amp; Publishing Newsletter PDF...
+                        </span>
+                      </div>
+                    ) : currentSelectedMonth.h1.upload ? (
+                      <div className="calendar-doc-card">
+                        <div className="calendar-doc-row">
+                          <div className="calendar-doc-icon-box">
+                            <IconFileText size={22} strokeWidth={1.8} />
+                            <span style={{ fontSize: '0.58rem', fontWeight: '800', color: '#dc2626', marginTop: '1px' }}>PDF</span>
+                          </div>
+                          <div className="calendar-doc-info">
+                            <div className="calendar-doc-title">
+                              {currentSelectedMonth.h1.upload.title || currentSelectedMonth.h1.upload.file_name}
+                            </div>
+                            <div className="calendar-doc-meta">
+                              <span>Official Published Edition • {currentSelectedMonth.name} 01–15</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="calendar-doc-actions">
+                          <button
+                            type="button"
+                            onClick={() => window.open(currentSelectedMonth.h1.upload.file_url, '_blank', 'noopener,noreferrer')}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              padding: '6px 12px',
+                              borderRadius: '8px',
+                              border: '1px solid #bfdbfe',
+                              backgroundColor: '#eff6ff',
+                              color: '#1d4ed8',
+                              fontSize: '0.8rem',
+                              fontWeight: '700',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <IconFileText size={14} />
+                            <span>View PDF</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => document.getElementById('h1-direct-file-input')?.click()}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              padding: '6px 12px',
+                              borderRadius: '8px',
+                              border: '1px solid #cbd5e1',
+                              backgroundColor: '#ffffff',
+                              color: '#334155',
+                              fontSize: '0.8rem',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <IconUpload size={14} />
+                            <span>Replace</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeletePdfModal({
+                              isOpen: true,
+                              uploadId: currentSelectedMonth.h1.upload.id,
+                              title: currentSelectedMonth.h1.upload.title || currentSelectedMonth.h1.upload.file_name,
+                              isDeleting: false,
+                            })}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              padding: '6px 12px',
+                              borderRadius: '8px',
+                              border: '1px solid #fecdd3',
+                              backgroundColor: '#fff1f2',
+                              color: '#e11d48',
+                              fontSize: '0.8rem',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <IconTrash size={14} />
+                            <span>Delete</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        className={`calendar-dropzone-box ${dragOverSlotKey === `${currentSelectedMonth.h1.startDate}_${currentSelectedMonth.h1.endDate}` ? 'dragover' : ''}`}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          setDragOverSlotKey(`${currentSelectedMonth.h1.startDate}_${currentSelectedMonth.h1.endDate}`);
+                        }}
+                        onDragLeave={() => setDragOverSlotKey(null)}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setDragOverSlotKey(null);
+                          if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+                            handleDirectPdfUpload(
+                              e.dataTransfer.files[0],
+                              currentSelectedMonth.h1.startDate,
+                              currentSelectedMonth.h1.endDate,
+                              currentSelectedMonth.h1.label,
+                              null
+                            );
+                          }
+                        }}
+                        onClick={() => document.getElementById('h1-direct-file-input')?.click()}
+                      >
+                        <div
+                          style={{
+                            width: '36px',
+                            height: '36px',
+                            borderRadius: '50%',
+                            backgroundColor: '#eff6ff',
+                            color: '#2563eb',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <IconUpload size={18} strokeWidth={2.2} />
+                        </div>
+                        <span style={{ fontSize: '0.88rem', fontWeight: '700', color: '#1e293b' }}>
+                          + Drag &amp; drop or Browse PDF
+                        </span>
+                        <span style={{ fontSize: '0.74rem', color: '#94a3b8' }}>
+                          Click to upload PDF edition for {currentSelectedMonth.name} 01 – 15
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* H2 Section (16 – End) */}
+                  <div className="calendar-detail-section">
+                    <input
+                      id="h2-direct-file-input"
+                      type="file"
+                      accept=".pdf,application/pdf"
+                      style={{ display: 'none' }}
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files.length > 0) {
+                          handleDirectPdfUpload(
+                            e.target.files[0],
+                            currentSelectedMonth.h2.startDate,
+                            currentSelectedMonth.h2.endDate,
+                            currentSelectedMonth.h2.label,
+                            currentSelectedMonth.h2.upload
+                          );
+                          e.target.value = '';
+                        }
+                      }}
+                    />
+
+                    <div className="calendar-detail-section-header">
+                      <div className="calendar-detail-section-title">
+                        <span className="calendar-slot-badge">H2</span>
+                        <span className="calendar-slot-date-label">
+                          {currentSelectedMonth.name} 16 – {currentSelectedMonth.lastDay}, {currentSelectedMonth.year}
+                        </span>
+                      </div>
+
+                      {uploadingSlotKey === `${currentSelectedMonth.h2.startDate}_${currentSelectedMonth.h2.endDate}` ? (
+                        <span
+                          style={{
+                            fontSize: '0.74rem',
+                            fontWeight: '700',
+                            color: '#2563eb',
+                            backgroundColor: '#eff6ff',
+                            border: '1px solid #bfdbfe',
+                            padding: '3px 10px',
+                            borderRadius: '9999px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                          }}
+                        >
+                          <IconLoader2 size={13} className="animate-spin" /> Uploading...
+                        </span>
+                      ) : currentSelectedMonth.h2.upload ? (
+                        <span
+                          style={{
+                            fontSize: '0.76rem',
+                            fontWeight: '700',
+                            color: '#059669',
+                            backgroundColor: '#ecfdf5',
+                            border: '1px solid #a7f3d0',
+                            padding: '3px 10px',
+                            borderRadius: '9999px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                          }}
+                          title="Published PDF Present"
+                        >
+                          <IconCheck size={12} strokeWidth={3} /> Published
+                        </span>
+                      ) : (
+                        <span
+                          style={{
+                            fontSize: '0.76rem',
+                            fontWeight: '600',
+                            color: '#64748b',
+                            backgroundColor: '#f1f5f9',
+                            border: '1px solid #e2e8f0',
+                            padding: '3px 10px',
+                            borderRadius: '9999px',
+                          }}
+                        >
+                          Not Uploaded
+                        </span>
+                      )}
+                    </div>
+
+                    {uploadingSlotKey === `${currentSelectedMonth.h2.startDate}_${currentSelectedMonth.h2.endDate}` ? (
+                      <div
+                        className="calendar-doc-card"
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '12px',
+                          padding: '24px',
+                          backgroundColor: '#eff6ff',
+                          border: '1.5px dashed #3b82f6',
+                        }}
+                      >
+                        <IconLoader2 size={22} className="animate-spin" style={{ color: '#2563eb' }} />
+                        <span style={{ fontWeight: '700', fontSize: '0.9rem', color: '#1d4ed8' }}>
+                          Uploading &amp; Publishing Newsletter PDF...
+                        </span>
+                      </div>
+                    ) : currentSelectedMonth.h2.upload ? (
+                      <div className="calendar-doc-card">
+                        <div className="calendar-doc-row">
+                          <div className="calendar-doc-icon-box">
+                            <IconFileText size={22} strokeWidth={1.8} />
+                            <span style={{ fontSize: '0.58rem', fontWeight: '800', color: '#dc2626', marginTop: '1px' }}>PDF</span>
+                          </div>
+                          <div className="calendar-doc-info">
+                            <div className="calendar-doc-title">
+                              {currentSelectedMonth.h2.upload.title || currentSelectedMonth.h2.upload.file_name}
+                            </div>
+                            <div className="calendar-doc-meta">
+                              <span>Official Published Edition • {currentSelectedMonth.name} 16–{currentSelectedMonth.lastDay}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="calendar-doc-actions">
+                          <button
+                            type="button"
+                            onClick={() => window.open(currentSelectedMonth.h2.upload.file_url, '_blank', 'noopener,noreferrer')}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              padding: '6px 12px',
+                              borderRadius: '8px',
+                              border: '1px solid #bfdbfe',
+                              backgroundColor: '#eff6ff',
+                              color: '#1d4ed8',
+                              fontSize: '0.8rem',
+                              fontWeight: '700',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <IconFileText size={14} />
+                            <span>View PDF</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => document.getElementById('h2-direct-file-input')?.click()}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              padding: '6px 12px',
+                              borderRadius: '8px',
+                              border: '1px solid #cbd5e1',
+                              backgroundColor: '#ffffff',
+                              color: '#334155',
+                              fontSize: '0.8rem',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <IconUpload size={14} />
+                            <span>Replace</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeletePdfModal({
+                              isOpen: true,
+                              uploadId: currentSelectedMonth.h2.upload.id,
+                              title: currentSelectedMonth.h2.upload.title || currentSelectedMonth.h2.upload.file_name,
+                              isDeleting: false,
+                            })}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              padding: '6px 12px',
+                              borderRadius: '8px',
+                              border: '1px solid #fecdd3',
+                              backgroundColor: '#fff1f2',
+                              color: '#e11d48',
+                              fontSize: '0.8rem',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <IconTrash size={14} />
+                            <span>Delete</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        className={`calendar-dropzone-box ${dragOverSlotKey === `${currentSelectedMonth.h2.startDate}_${currentSelectedMonth.h2.endDate}` ? 'dragover' : ''}`}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          setDragOverSlotKey(`${currentSelectedMonth.h2.startDate}_${currentSelectedMonth.h2.endDate}`);
+                        }}
+                        onDragLeave={() => setDragOverSlotKey(null)}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setDragOverSlotKey(null);
+                          if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+                            handleDirectPdfUpload(
+                              e.dataTransfer.files[0],
+                              currentSelectedMonth.h2.startDate,
+                              currentSelectedMonth.h2.endDate,
+                              currentSelectedMonth.h2.label,
+                              null
+                            );
+                          }
+                        }}
+                        onClick={() => document.getElementById('h2-direct-file-input')?.click()}
+                      >
+                        <div
+                          style={{
+                            width: '36px',
+                            height: '36px',
+                            borderRadius: '50%',
+                            backgroundColor: '#eff6ff',
+                            color: '#2563eb',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <IconUpload size={18} strokeWidth={2.2} />
+                        </div>
+                        <span style={{ fontSize: '0.88rem', fontWeight: '700', color: '#1e293b' }}>
+                          + Drag &amp; drop or Browse PDF
+                        </span>
+                        <span style={{ fontSize: '0.74rem', color: '#94a3b8' }}>
+                          Click to upload PDF edition for {currentSelectedMonth.name} 16 – {currentSelectedMonth.lastDay}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div
+                style={{
+                  padding: '12px 24px',
+                  borderTop: '1px solid #e2e8f0',
+                  backgroundColor: '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '12px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', color: '#64748b' }}>
+                  <span
+                    style={{
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
+                      backgroundColor: totalYearUploads > 0 ? '#10b981' : '#cbd5e1',
+                    }}
+                  />
+                  <span>
+                    Year <strong>{calendarSelectedYear}</strong>: <strong>{totalYearUploads} of 24</strong> bi-monthly editions published
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowPublicationCalendarModal(false)}
+                  style={{
+                    padding: '7px 22px',
+                    borderRadius: '8px',
+                    border: '1px solid #cbd5e1',
+                    backgroundColor: '#ffffff',
+                    color: '#334155',
+                    fontSize: '0.84rem',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#f8fafc';
+                    e.currentTarget.style.borderColor = '#94a3b8';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = '#ffffff';
+                    e.currentTarget.style.borderColor = '#cbd5e1';
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 6. Delete Published PDF Confirmation Modal */}
+      {deletePdfModal.isOpen && (
+        <div
+          className="modal-backdrop"
+          onClick={() => !deletePdfModal.isDeleting && setDeletePdfModal({ isOpen: false, uploadId: null, title: '', isDeleting: false })}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '20px',
+          }}
+        >
+          <div
+            className="modal-card"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: '#ffffff',
+              borderRadius: '16px',
+              maxWidth: '440px',
+              width: '100%',
+              boxShadow: '0 24px 38px -6px rgba(0, 0, 0, 0.18)',
+              overflow: 'hidden',
+              border: '1px solid #e2e8f0',
+              animation: 'profilePopIn 0.18s ease-out',
+            }}
+          >
+            {/* Header */}
+            <div
+              style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.15)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                background: 'linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 50%, #2563eb 100%)',
+                color: '#ffffff',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div
+                  style={{
+                    width: '34px',
+                    height: '34px',
+                    borderRadius: '8px',
+                    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                    color: '#ffffff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <IconTrash size={18} />
+                </div>
+                <h3 style={{ margin: 0, fontSize: '1rem', color: '#ffffff', fontWeight: '700' }}>
+                  Delete Published PDF
+                </h3>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => !deletePdfModal.isDeleting && setDeletePdfModal({ isOpen: false, uploadId: null, title: '', isDeleting: false })}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.18)',
+                  border: '1px solid rgba(255, 255, 255, 0.28)',
+                  cursor: 'pointer',
+                  color: '#ffffff',
+                  padding: '5px',
+                  borderRadius: '6px',
+                  display: 'flex',
+                }}
+              >
+                <IconX size={16} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div style={{ padding: '20px 22px' }}>
+              <p style={{ margin: 0, color: '#334155', fontSize: '0.92rem', lineHeight: '1.5' }}>
+                Are you sure you want to delete <strong style={{ color: '#0f172a', wordBreak: 'break-all' }}>{deletePdfModal.title}</strong>?
+              </p>
+            </div>
+
+            {/* Footer */}
+            <div
+              style={{
+                padding: '14px 22px',
+                borderTop: '1px solid #f1f5f9',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                gap: '10px',
+                backgroundColor: '#f8fafc',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setDeletePdfModal({ isOpen: false, uploadId: null, title: '', isDeleting: false })}
+                disabled={deletePdfModal.isDeleting}
+                style={{
+                  padding: '8px 18px',
+                  fontSize: '0.86rem',
+                  fontWeight: '600',
+                  borderRadius: '8px',
+                  backgroundColor: '#ffffff',
+                  border: '1px solid #cbd5e1',
+                  color: '#475569',
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={handleConfirmDeletePdf}
+                disabled={deletePdfModal.isDeleting}
+                style={{
+                  padding: '8px 18px',
+                  fontSize: '0.86rem',
+                  fontWeight: '600',
+                  borderRadius: '8px',
+                  backgroundColor: '#2563eb',
+                  border: 'none',
+                  color: '#ffffff',
+                  cursor: deletePdfModal.isDeleting ? 'not-allowed' : 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: '0 2px 6px rgba(37, 99, 235, 0.3)',
+                  opacity: deletePdfModal.isDeleting ? 0.75 : 1,
+                }}
+              >
+                {deletePdfModal.isDeleting ? (
+                  <>
+                    <IconLoader2 size={16} className="animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <IconTrash size={16} />
+                    <span>Delete</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Deadline Reminder Modal Popup (Presented on First Page After Login) */}
       <DeadlineModal />
