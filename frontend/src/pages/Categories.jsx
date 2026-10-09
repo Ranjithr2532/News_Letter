@@ -1177,13 +1177,13 @@ const Categories = () => {
                                           <div
                                             key={photo.id}
                                             className="entry-photo-card"
-                                            onClick={() => setPreviewPhoto({ url: photoUrl, name: photo.original_filename, raw: photo })}
+                                            onClick={() => setPreviewPhoto({ url: photoUrl, name: 'Photo Preview', raw: photo })}
                                             style={{ cursor: 'pointer' }}
                                             title="Click to preview image"
                                           >
                                             <img
                                               src={photoUrl}
-                                              alt={photo.original_filename || 'Entry photo'}
+                                              alt="Entry photo"
                                               onError={(e) => handleImgError(e, photo)}
                                             />
                                             {!isViewOnly && (
@@ -1352,13 +1352,13 @@ const Categories = () => {
                                         <div
                                           key={photo.id}
                                           className="entry-photo-card"
-                                          onClick={() => setPreviewPhoto({ url: photoUrl, name: photo.original_filename, raw: photo })}
+                                          onClick={() => setPreviewPhoto({ url: photoUrl, name: 'Photo Preview', raw: photo })}
                                           style={{ cursor: 'pointer' }}
                                           title="Click to preview image"
                                         >
                                           <img
                                             src={photoUrl}
-                                            alt={photo.original_filename || 'Entry photo'}
+                                            alt="Entry photo"
                                             onError={(e) => handleImgError(e, photo)}
                                           />
                                           {!isViewOnly && (
@@ -2291,12 +2291,12 @@ const Categories = () => {
                                               padding: '8px',
                                               transition: 'transform 0.15s ease, box-shadow 0.15s ease',
                                             }}
-                                            onClick={() => setPreviewPhoto({ url: photoUrl, name: photo.original_filename, raw: photo })}
+                                            onClick={() => setPreviewPhoto({ url: photoUrl, name: 'Photo Preview', raw: photo })}
                                             title="Click to view full size on big screen"
                                           >
                                             <img
                                               src={photoUrl}
-                                              alt={photo.original_filename || 'Entry Photo'}
+                                              alt="Entry Photo"
                                               onError={(e) => handleImgError(e, photo)}
                                               style={{
                                                 maxWidth: '100%',
@@ -2307,21 +2307,6 @@ const Categories = () => {
                                                 margin: '0 auto',
                                               }}
                                             />
-                                            {photo.original_filename && (
-                                              <p
-                                                style={{
-                                                  marginTop: '6px',
-                                                  fontSize: '0.8rem',
-                                                  color: '#64748b',
-                                                  whiteSpace: 'nowrap',
-                                                  overflow: 'hidden',
-                                                  textOverflow: 'ellipsis',
-                                                  padding: '0 4px',
-                                                }}
-                                              >
-                                                {photo.original_filename}
-                                              </p>
-                                            )}
                                           </div>
                                         );
                                       })}

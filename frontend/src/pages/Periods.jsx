@@ -31,6 +31,12 @@ import {
   IconExternalLink,
 } from '@tabler/icons-react';
 
+const getMonthBlockClass = (monthIndex) => {
+  if (monthIndex < 4) return 'month-block-1'; // Jan - Apr
+  if (monthIndex < 8) return 'month-block-2'; // May - Aug
+  return 'month-block-3'; // Sep - Dec
+};
+
 const Periods = () => {
   const { user } = useUser();
   const navigate = useNavigate();
@@ -283,6 +289,13 @@ const Periods = () => {
     const combined = Array.from(new Set([...list, ...availableYears])).sort((a, b) => b - a);
     return combined;
   }, [curYr, availableYears]);
+
+  // 4. Selectable To-Years in Dropdown: Only years >= selectedFromYear
+  const toYearOptions = useMemo(() => {
+    const fromY = parseInt(selectedFromYear, 10);
+    if (isNaN(fromY)) return allSelectableYears;
+    return allSelectableYears.filter((yr) => yr >= fromY);
+  }, [allSelectableYears, selectedFromYear]);
 
   // 12-Month Calendar Grid Data for the Editor Publication Timetable
   const calendarMonthsData = useMemo(() => {
@@ -1601,12 +1614,15 @@ const Periods = () => {
               onChange={(e) => {
                 const newFrom = e.target.value;
                 setSelectedFromYear(newFrom);
+                let newTo = selectedToYear;
+                if (parseInt(newFrom, 10) > parseInt(selectedToYear, 10)) {
+                  newTo = newFrom;
+                  setSelectedToYear(newFrom);
+                }
                 const targetCenter = isEditor ? selectedCenter : user?.center;
-                const minY = Math.min(parseInt(newFrom, 10), parseInt(selectedToYear, 10));
-                const maxY = Math.max(parseInt(newFrom, 10), parseInt(selectedToYear, 10));
                 setYearSelectionType('range');
                 setFilterMode('range');
-                fetchPeriods('range', '', selectedFilterMonth, selectedGroup, targetCenter, 'range', String(minY), String(maxY));
+                fetchPeriods('range', '', selectedFilterMonth, selectedGroup, targetCenter, 'range', String(newFrom), String(newTo));
               }}
               style={{ minWidth: '60px' }}
               title="From Year"
@@ -1626,17 +1642,20 @@ const Periods = () => {
               onChange={(e) => {
                 const newTo = e.target.value;
                 setSelectedToYear(newTo);
+                let newFrom = selectedFromYear;
+                if (parseInt(newTo, 10) < parseInt(selectedFromYear, 10)) {
+                  newFrom = newTo;
+                  setSelectedFromYear(newFrom);
+                }
                 const targetCenter = isEditor ? selectedCenter : user?.center;
-                const minY = Math.min(parseInt(selectedFromYear, 10), parseInt(newTo, 10));
-                const maxY = Math.max(parseInt(selectedFromYear, 10), parseInt(newTo, 10));
                 setYearSelectionType('range');
                 setFilterMode('range');
-                fetchPeriods('range', '', selectedFilterMonth, selectedGroup, targetCenter, 'range', String(minY), String(maxY));
+                fetchPeriods('range', '', selectedFilterMonth, selectedGroup, targetCenter, 'range', String(newFrom), String(newTo));
               }}
               style={{ minWidth: '60px' }}
               title="To Year"
             >
-              {allSelectableYears.map((yr) => (
+              {toYearOptions.map((yr) => (
                 <option key={yr} value={String(yr)}>
                   {yr}
                 </option>
@@ -1784,8 +1803,8 @@ const Periods = () => {
               selectedFilterCategory !== 'all'
                 ? `Download newsletter (.docx) for category: ${selectedFilterCategory}`
                 : (!isEditor && !isChUser)
-                ? `Download newsletter (.docx) for ${user?.group || user?.group_name || 'Department'}`
-                : `Download newsletter (.docx) based on active filters`
+                  ? `Download newsletter (.docx) for ${user?.group || user?.group_name || 'Department'}`
+                  : `Download newsletter (.docx) based on active filters`
             }
           >
             {downloadingCombined ? (
@@ -1968,7 +1987,7 @@ const Periods = () => {
       <div className="periods-control-panel" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
         {/* Quick Year Pill Selectors */}
         <div className="periods-quick-years" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-          <span className="quick-year-label">Quick Select:</span>
+          <span className="quick-year-label">Select Year:</span>
 
           {topThreeYears.map((yr) => {
             const isSelected =
@@ -1994,24 +2013,6 @@ const Periods = () => {
               </button>
             );
           })}
-
-          {/* All Years Pill */}
-          <button
-            type="button"
-            className={`year-tab-btn ${yearSelectionType === 'all' || filterMode === 'all' ? 'active' : ''}`}
-            onClick={() => {
-              setYearSelectionType('all');
-              setSelectedFromYear(String(allSelectableYears[allSelectableYears.length - 1] || '2019'));
-              setSelectedToYear(currentYearStr);
-              setSelectedFilterMonth('');
-              setSelectedFilterHalf('');
-              setFilterMode('all');
-              fetchPeriods('all', 'all', '', selectedGroup, isEditor ? selectedCenter : user?.center, 'all');
-            }}
-            title="View all years"
-          >
-            <span>All Years</span>
-          </button>
 
           {/* More Years Dropdown Selector */}
           <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
@@ -2162,22 +2163,25 @@ const Periods = () => {
 
                 {/* Grid for Year */}
                 <div className="month-cards-grid">
-                  {monthsByYear[yr].map((monthData) => (
-                    <div key={monthData.yearMonthStr} className="month-card">
-                      <div className="month-card-header">
-                        <h4 className="month-card-title">
-                          <IconCalendarEvent size={18} className="month-card-icon" />
-                          <span>{monthData.monthName}</span>
-                        </h4>
-                      </div>
+                  {monthsByYear[yr].map((monthData) => {
+                    const blockClass = getMonthBlockClass(monthData.monthIndex);
+                    return (
+                      <div key={monthData.yearMonthStr} className={`month-card ${blockClass}`}>
+                        <div className="month-card-header">
+                          <h4 className="month-card-title">
+                            <IconCalendarEvent size={18} className="month-card-icon" />
+                            <span>{monthData.monthName}</span>
+                          </h4>
+                        </div>
 
-                      <div className="month-card-body">
-                        {(!selectedFilterHalf || selectedFilterHalf === '1') && renderHalfRow(monthData, 1)}
-                        {!selectedFilterHalf && <div className="row-separator" />}
-                        {(!selectedFilterHalf || selectedFilterHalf === '2') && renderHalfRow(monthData, 2)}
+                        <div className="month-card-body">
+                          {(!selectedFilterHalf || selectedFilterHalf === '1') && renderHalfRow(monthData, 1)}
+                          {!selectedFilterHalf && <div className="row-separator" />}
+                          {(!selectedFilterHalf || selectedFilterHalf === '2') && renderHalfRow(monthData, 2)}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             ));
@@ -2186,22 +2190,25 @@ const Periods = () => {
       ) : (
         /* Standard Month Cards Grid (Single Department / Specific Filtered View) */
         <div className="month-cards-grid">
-          {monthCardsList.map((monthData) => (
-            <div key={monthData.yearMonthStr} className="month-card">
-              <div className="month-card-header">
-                <h4 className="month-card-title">
-                  <IconCalendarEvent size={18} className="month-card-icon" />
-                  <span>{monthData.monthName}</span>
-                </h4>
-              </div>
+          {monthCardsList.map((monthData) => {
+            const blockClass = getMonthBlockClass(monthData.monthIndex);
+            return (
+              <div key={monthData.yearMonthStr} className={`month-card ${blockClass}`}>
+                <div className="month-card-header">
+                  <h4 className="month-card-title">
+                    <IconCalendarEvent size={18} className="month-card-icon" />
+                    <span>{monthData.monthName}</span>
+                  </h4>
+                </div>
 
-              <div className="month-card-body">
-                {(!selectedFilterHalf || selectedFilterHalf === '1') && renderHalfRow(monthData, 1)}
-                {!selectedFilterHalf && <div className="row-separator" />}
-                {(!selectedFilterHalf || selectedFilterHalf === '2') && renderHalfRow(monthData, 2)}
+                <div className="month-card-body">
+                  {(!selectedFilterHalf || selectedFilterHalf === '1') && renderHalfRow(monthData, 1)}
+                  {!selectedFilterHalf && <div className="row-separator" />}
+                  {(!selectedFilterHalf || selectedFilterHalf === '2') && renderHalfRow(monthData, 2)}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -3594,13 +3601,14 @@ const Periods = () => {
                   <div className="calendar-month-grid-3col">
                     {calendarMonthsData.map((m) => {
                       const isSelected = selectedCalendarMonthIndex === m.index;
+                      const blockClass = getMonthBlockClass(m.index);
                       const hasBoth = m.h1.upload && m.h2.upload;
                       const hasAny = m.h1.upload || m.h2.upload;
 
                       return (
                         <div
                           key={m.index}
-                          className={`calendar-month-tile ${isSelected ? 'active' : ''}`}
+                          className={`calendar-month-tile ${blockClass} ${isSelected ? 'active' : ''}`}
                           onClick={() => setSelectedCalendarMonthIndex(m.index)}
                         >
                           {/* Month Header */}
