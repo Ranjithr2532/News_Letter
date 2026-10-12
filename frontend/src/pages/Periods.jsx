@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/api';
 import { useUser } from '../context/UserContext';
@@ -29,12 +29,14 @@ import {
   IconFile,
   IconAlertCircle,
   IconExternalLink,
+  IconSearch,
+  IconChevronDown,
 } from '@tabler/icons-react';
 
 const getMonthBlockClass = (monthIndex) => {
-  if (monthIndex < 4) return 'month-block-1'; // Jan - Apr
-  if (monthIndex < 8) return 'month-block-2'; // May - Aug
-  return 'month-block-3'; // Sep - Dec
+  if (monthIndex < 4) return 'month-block-1'; // Jan - Apr: Corporate Navy & Royal Blue
+  if (monthIndex < 8) return 'month-block-2'; // May - Aug: Deep Steel & Indigo
+  return 'month-block-3'; // Sep - Dec: Slate Teal & Ocean Slate
 };
 
 const Periods = () => {
@@ -119,6 +121,10 @@ const Periods = () => {
   // Available Categories for Category-Wise Filter & Download
   const [availableCategories, setAvailableCategories] = useState([]);
   const [selectedFilterCategory, setSelectedFilterCategory] = useState('all');
+  const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
+  const [categorySearchQuery, setCategorySearchQuery] = useState('');
+  const categoryDropdownRef = useRef(null);
+  const categorySearchInputRef = useRef(null);
 
   // Top Specific Filter (Year & Month & Half) - default to current year
   const [selectedFilterYear, setSelectedFilterYear] = useState(currentYearStr);
@@ -141,6 +147,37 @@ const Periods = () => {
       console.error('Failed to fetch published newsletter uploads:', err);
     }
   };
+
+  useEffect(() => {
+    if (categoryDropdownOpen && categorySearchInputRef.current) {
+      categorySearchInputRef.current.focus();
+    }
+  }, [categoryDropdownOpen]);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (categoryDropdownRef.current && !categoryDropdownRef.current.contains(event.target)) {
+        setCategoryDropdownOpen(false);
+      }
+    };
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setCategoryDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
+  const filteredCategories = useMemo(() => {
+    const q = categorySearchQuery.trim().toLowerCase();
+    if (!q) return availableCategories;
+    return availableCategories.filter((c) => (c.name || '').toLowerCase().includes(q));
+  }, [availableCategories, categorySearchQuery]);
 
   useEffect(() => {
     if (!user) {
@@ -172,10 +209,34 @@ const Periods = () => {
         console.error('Failed to fetch centers/chs/ghs:', hierarchyErr);
       }
 
-      // 2. Fetch available categories for category-wise filtering and download
+      // 2. Fetch available categories (scoped to department/center, including custom categories)
       try {
-        const catRes = await api.get('/categories/');
-        setAvailableCategories(catRes.data || []);
+        const initialCenter = isEditor ? 'all' : (isChUser ? user?.center : undefined);
+        const initialGroup = 'all';
+        let catUrl = '/categories/?include_custom=true';
+        const catParams = [];
+        if (initialCenter && initialCenter !== 'all') {
+          catParams.push(`center=${encodeURIComponent(initialCenter)}`);
+        }
+        if (initialGroup && initialGroup !== 'all') {
+          catParams.push(`group_name=${encodeURIComponent(initialGroup)}`);
+        } else if (!isEditor && !isChUser) {
+          const uGrp = user?.group || user?.group_name || '';
+          if (uGrp) catParams.push(`group_name=${encodeURIComponent(uGrp)}`);
+        }
+        if (catParams.length > 0) catUrl += '&' + catParams.join('&');
+        const catRes = await api.get(catUrl);
+        const rawCats = catRes.data || [];
+        const uniqueCats = [];
+        const seenNames = new Set();
+        for (const cat of rawCats) {
+          const norm = (cat.name || '').trim().toLowerCase();
+          if (norm && !seenNames.has(norm)) {
+            seenNames.add(norm);
+            uniqueCats.push(cat);
+          }
+        }
+        setAvailableCategories(uniqueCats);
       } catch (catErr) {
         console.error('Failed to fetch categories:', catErr);
       }
@@ -257,6 +318,57 @@ const Periods = () => {
       console.error('Failed to fetch period years:', err);
       const curYr = new Date().getFullYear();
       setAvailableYears([curYr, curYr - 1, curYr - 2, curYr - 3]);
+    }
+  };
+
+  const fetchAvailableCategories = async (
+    grp = selectedGroup,
+    targetCenter = (isEditor ? selectedCenter : isChUser ? user?.center : undefined),
+    fromYr = selectedFromYear,
+    toYr = selectedToYear,
+    mo = selectedFilterMonth
+  ) => {
+    try {
+      let url = '/categories/?include_custom=true';
+      const params = [];
+      if (targetCenter && targetCenter !== 'all') {
+        params.push(`center=${encodeURIComponent(targetCenter)}`);
+      }
+      if (grp && grp !== 'all') {
+        params.push(`group_name=${encodeURIComponent(grp)}`);
+      } else if (!isEditor && !isChUser) {
+        const userGroup = user?.group || user?.group_name || '';
+        if (userGroup) params.push(`group_name=${encodeURIComponent(userGroup)}`);
+      }
+      if (fromYr && toYr) {
+        params.push(`from_year=${Math.min(parseInt(fromYr, 10), parseInt(toYr, 10))}`);
+        params.push(`to_year=${Math.max(parseInt(fromYr, 10), parseInt(toYr, 10))}`);
+      }
+      if (mo) {
+        params.push(`month=${mo}`);
+      }
+      if (params.length > 0) {
+        url += '&' + params.join('&');
+      }
+      const res = await api.get(url);
+      const fetchedCats = res.data || [];
+      const uniqueCats = [];
+      const seenNames = new Set();
+      for (const cat of fetchedCats) {
+        const norm = (cat.name || '').trim().toLowerCase();
+        if (norm && !seenNames.has(norm)) {
+          seenNames.add(norm);
+          uniqueCats.push(cat);
+        }
+      }
+      setAvailableCategories(uniqueCats);
+      setSelectedFilterCategory((prev) => {
+        if (prev === 'all') return 'all';
+        const exists = uniqueCats.some((c) => c.name.toLowerCase() === prev.toLowerCase());
+        return exists ? prev : 'all';
+      });
+    } catch (catErr) {
+      console.error('Failed to fetch available categories:', catErr);
     }
   };
 
@@ -430,6 +542,7 @@ const Periods = () => {
       setCenterGroups([]);
       fetchPeriods(filterMode, selectedFilterYear, selectedFilterMonth, 'all', 'all');
       fetchAvailableYears('all', 'all');
+      fetchAvailableCategories('all', 'all');
     } else {
       try {
         const gRes = await api.get(`/users/groups/list?center=${encodeURIComponent(centerName)}`);
@@ -439,6 +552,7 @@ const Periods = () => {
       }
       fetchPeriods(filterMode, selectedFilterYear, selectedFilterMonth, 'all', centerName);
       fetchAvailableYears('all', centerName);
+      fetchAvailableCategories('all', centerName);
     }
   };
 
@@ -462,6 +576,7 @@ const Periods = () => {
 
     fetchPeriods('range', '', '', 'all', defaultCenter, 'range', currentYearStr, currentYearStr);
     fetchAvailableYears('all', defaultCenter);
+    fetchAvailableCategories('all', defaultCenter);
   };
 
   const handleOpenDownloadModal = async (e, period) => {
@@ -1565,6 +1680,7 @@ const Periods = () => {
                   const targetCenter = isEditor ? selectedCenter : user?.center;
                   fetchPeriods(filterMode, selectedFilterYear, selectedFilterMonth, grp, targetCenter, yearSelectionType, selectedFromYear, selectedToYear);
                   fetchAvailableYears(grp, targetCenter);
+                  fetchAvailableCategories(grp, targetCenter);
                 }}
                 style={{ minWidth: '100px', maxWidth: '140px' }}
               >
@@ -1580,26 +1696,100 @@ const Periods = () => {
             </div>
           )}
 
-          {/* Category Filter Dropdown */}
-          <div className={`filter-capsule ${selectedFilterCategory !== 'all' ? 'active-filter' : ''}`}>
+          {/* Category Filter Combobox (Search-as-you-type) */}
+          <div
+            className={`filter-capsule filter-capsule-combobox ${selectedFilterCategory !== 'all' ? 'active-filter' : ''} ${categoryDropdownOpen ? 'open' : ''}`}
+            ref={categoryDropdownRef}
+          >
             <span className="filter-capsule-label">
               <IconFileText size={14} style={{ color: selectedFilterCategory !== 'all' ? '#2563eb' : '#64748b' }} />
               Category
             </span>
-            <select
-              className="filter-capsule-select"
-              value={selectedFilterCategory}
-              onChange={(e) => setSelectedFilterCategory(e.target.value)}
-              style={{ minWidth: '120px', maxWidth: '180px' }}
-              title="Filter newsletter export by specific category (e.g., Training & Programs)"
+            <button
+              type="button"
+              className="filter-capsule-trigger"
+              onClick={() => {
+                setCategoryDropdownOpen((prev) => !prev);
+                setCategorySearchQuery('');
+              }}
+              title="Click to search & filter by category"
             >
-              <option value="all">📂 All Categories</option>
-              {availableCategories.map((cat) => (
-                <option key={cat.id || cat.name} value={cat.name}>
-                  🏷️ {cat.name}
-                </option>
-              ))}
-            </select>
+              <span className="filter-trigger-text">
+                {selectedFilterCategory === 'all' ? '📂 All Categories' : `🏷️ ${selectedFilterCategory}`}
+              </span>
+              <IconChevronDown size={13} className={`chevron-indicator ${categoryDropdownOpen ? 'rotated' : ''}`} />
+            </button>
+
+            {/* Searchable Popover Menu */}
+            {categoryDropdownOpen && (
+              <div className="category-combobox-popover" onClick={(e) => e.stopPropagation()}>
+                <div className="category-search-box">
+                  <IconSearch size={14} className="category-search-icon" />
+                  <input
+                    ref={categorySearchInputRef}
+                    type="text"
+                    className="category-search-input"
+                    placeholder="Search category..."
+                    value={categorySearchQuery}
+                    onChange={(e) => setCategorySearchQuery(e.target.value)}
+                  />
+                  {categorySearchQuery && (
+                    <button
+                      type="button"
+                      className="category-search-clear"
+                      onClick={() => setCategorySearchQuery('')}
+                      title="Clear search"
+                    >
+                      <IconX size={12} />
+                    </button>
+                  )}
+                </div>
+
+                <div className="category-options-list">
+                  {/* All Categories Option */}
+                  {(!categorySearchQuery || 'all categories'.includes(categorySearchQuery.toLowerCase())) && (
+                    <div
+                      className={`category-option-item ${selectedFilterCategory === 'all' ? 'selected' : ''}`}
+                      onClick={() => {
+                        setSelectedFilterCategory('all');
+                        setCategoryDropdownOpen(false);
+                        setCategorySearchQuery('');
+                      }}
+                    >
+                      <span className="category-option-label">📂 All Categories</span>
+                      {selectedFilterCategory === 'all' && <IconCheck size={14} className="category-check-icon" />}
+                    </div>
+                  )}
+
+                  {/* Filtered Category Items */}
+                  {filteredCategories.map((cat) => {
+                    const isSelected = selectedFilterCategory.toLowerCase() === cat.name.toLowerCase();
+                    return (
+                      <div
+                        key={cat.id || cat.name}
+                        className={`category-option-item ${isSelected ? 'selected' : ''}`}
+                        onClick={() => {
+                          setSelectedFilterCategory(cat.name);
+                          setCategoryDropdownOpen(false);
+                          setCategorySearchQuery('');
+                        }}
+                      >
+                        <span className="category-option-label">🏷️ {cat.name}</span>
+                        {isSelected && <IconCheck size={14} className="category-check-icon" />}
+                      </div>
+                    );
+                  })}
+
+                  {filteredCategories.length === 0 &&
+                    categorySearchQuery &&
+                    !'all categories'.includes(categorySearchQuery.toLowerCase()) && (
+                      <div className="category-no-results">
+                        No matching categories
+                      </div>
+                    )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Year Range: From & To */}
@@ -1871,6 +2061,7 @@ const Periods = () => {
                       setSelectedGroup('all');
                       fetchPeriods(filterMode, selectedFilterYear, selectedFilterMonth, 'all', selectedCenter);
                       fetchAvailableYears('all', selectedCenter);
+                      fetchAvailableCategories('all', selectedCenter);
                     }
                   }}
                   style={{
@@ -1913,6 +2104,7 @@ const Periods = () => {
                   setSelectedGroup('all');
                   fetchPeriods(filterMode, selectedFilterYear, selectedFilterMonth, 'all', selectedCenter);
                   fetchAvailableYears('all', selectedCenter);
+                  fetchAvailableCategories('all', selectedCenter);
                 }}
                 style={{
                   display: 'inline-flex',

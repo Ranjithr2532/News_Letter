@@ -38,6 +38,18 @@ class CategoryStage(Base):
     entries = relationship("NewsletterEntry", back_populates="category")
     period = relationship("NewsletterPeriod", backref="custom_categories")
 
+    @property
+    def is_custom(self) -> bool:
+        return self.period_id is not None
+
+    @property
+    def group_name(self) -> str:
+        return self.period.group_name if self.period else ""
+
+    @property
+    def center(self) -> str:
+        return self.period.center if self.period else ""
+
 
 class NewsletterPeriod(Base):
     __tablename__ = "newsletter_periods"

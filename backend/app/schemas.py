@@ -79,6 +79,9 @@ class CategoryRead(BaseModel):
     stage_number: int
     is_active: bool
     period_id: Optional[int] = None
+    group_name: Optional[str] = None
+    center: Optional[str] = None
+    is_custom: Optional[bool] = False
 
 
 # ---------- Newsletter Period ----------

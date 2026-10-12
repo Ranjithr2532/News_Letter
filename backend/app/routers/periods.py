@@ -468,17 +468,24 @@ def generate_center_combined_docx(
     if req_cat and req_cat.lower() in ("all", "all categories", "undefined", "null", ""):
         req_cat = None
 
-    cat_query = db.query(models.CategoryStage).filter(
-        models.CategoryStage.is_active == True,
-        (models.CategoryStage.period_id == None) | (models.CategoryStage.period_id.in_(period_ids)),
-    )
     if category_id:
-        cat_query = cat_query.filter(models.CategoryStage.id == category_id)
+        cat_query = db.query(models.CategoryStage).filter(
+            models.CategoryStage.is_active == True,
+            models.CategoryStage.id == category_id,
+        )
     elif req_cat:
-        cat_query = cat_query.filter(
-            (func.lower(models.CategoryStage.name) == req_cat.lower()) |
-            (func.lower(models.CategoryStage.name) == req_cat.lower().replace('&', 'and')) |
-            (func.lower(models.CategoryStage.name) == req_cat.lower().replace('and', '&'))
+        cat_query = db.query(models.CategoryStage).filter(
+            models.CategoryStage.is_active == True,
+            (
+                (func.lower(models.CategoryStage.name) == req_cat.lower()) |
+                (func.lower(models.CategoryStage.name) == req_cat.lower().replace('&', 'and')) |
+                (func.lower(models.CategoryStage.name) == req_cat.lower().replace('and', '&'))
+            ),
+        )
+    else:
+        cat_query = db.query(models.CategoryStage).filter(
+            models.CategoryStage.is_active == True,
+            (models.CategoryStage.period_id == None) | (models.CategoryStage.period_id.in_(period_ids)),
         )
 
     categories = (
