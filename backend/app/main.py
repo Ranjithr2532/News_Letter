@@ -37,15 +37,7 @@ def serve_upload(file_path: str):
 # Allowed Origins for CORS security (Local development and CMTI intranet access)
 # Strict Allowed Origins for CORS security
 ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "http://127.0.0.1:5174",
-    "http://localhost:3000",
-    "http://172.18.7.91:8005",
-    "http://127.0.0.1:3000",
-    "http://172.18.100.55:5174",
-    "http://172.18.100.55:3000",
-    "http://172.18.7.91:3055"
+    "*"
 ]
 
 app.add_middleware(

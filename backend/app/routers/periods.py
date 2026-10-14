@@ -343,11 +343,11 @@ def build_combined_center_docx(
     # Determine header & main title text
     cat_suffix = f" - {category_name.upper()}" if category_name and category_name.strip().lower() not in ("all", "all categories", "undefined", "null", "") else ""
     if is_all_centers:
-        title_text = f"CMTI{cat_suffix} Event Details from {period_label}"
+        title_text = f"The Science of Making{cat_suffix} - Event Details from {period_label}"
     elif group_name:
-        title_text = f"{center_name} - {group_name}{cat_suffix} Event Details from {period_label}"
+        title_text = f"The Science of Making - {center_name} ({group_name}){cat_suffix} - Event Details from {period_label}"
     else:
-        title_text = f"{center_name}{cat_suffix} Event Details from {period_label}"
+        title_text = f"The Science of Making - {center_name}{cat_suffix} - Event Details from {period_label}"
 
     # 1. Word Header for ALL pages
     section = doc.sections[0]
@@ -611,7 +611,7 @@ def generate_center_combined_docx(
     clean_center = sanitize_header_filename(center_display)
     clean_group = sanitize_header_filename(group_display)
     clean_cat = f"_{sanitize_header_filename(req_cat)}" if req_cat else ""
-    filename = f"CMTI_{clean_center}_{clean_group}{clean_cat}_Newsletter_{clean_label}.docx"
+    filename = f"The_Science_of_Making_{clean_center}_{clean_group}{clean_cat}_{clean_label}.docx"
     filename = re.sub(r'_+', '_', filename)
 
     buffer = io.BytesIO()

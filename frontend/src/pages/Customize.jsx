@@ -43,7 +43,16 @@ const Customize = () => {
   }, [user, hasAdminAccess, isGhUser, navigate]);
 
   // Active Tab: 'users' | 'categories' | 'directory'
-  const [activeTab, setActiveTab] = useState('users');
+  const [activeTab, setActiveTab] = useState(isEditor ? 'categories' : 'users');
+
+  // Ensure GH cannot stay on categories tab, and Editor defaults to categories tab
+  useEffect(() => {
+    if (isGhUser && activeTab === 'categories') {
+      setActiveTab('users');
+    } else if (isEditor && activeTab === 'users') {
+      setActiveTab('categories');
+    }
+  }, [isGhUser, isEditor, activeTab]);
 
   // Section A: User Form States
   const [userName, setUserName] = useState('');
@@ -109,14 +118,18 @@ const Customize = () => {
   };
 
   useEffect(() => {
-    if (user && (isAdmin || isGhUser)) {
-      fetchCategories();
-      fetchUsers('all', 'all');
+    if (user) {
+      if (isAdmin || isEditor) {
+        fetchCategories();
+      }
+      if (isAdmin || isGhUser) {
+        fetchUsers('all', 'all');
+      }
       if (isAdmin) {
         fetchAdminMeta();
       }
     }
-  }, [user, isAdmin, isGhUser]);
+  }, [user, isAdmin, isGhUser, isEditor]);
 
   const fetchAdminMeta = async () => {
     try {
@@ -336,7 +349,7 @@ const Customize = () => {
     });
   };
 
-  if (!user || (!isAdmin && !isGhUser)) return null;
+  if (!user || (!isAdmin && !isGhUser && !isEditor)) return null;
 
   const getInitials = (name) => {
     if (!name) return 'U';
@@ -351,6 +364,7 @@ const Customize = () => {
     if (lower === 'admin') return 'System Administrator';
     if (lower === 'ch') return 'Centre Head (CH)';
     if (lower === 'gh') return 'Group Head (GH)';
+    if (lower === 'edit' || lower === 'editor') return 'Editor / Compilation Lead';
     if (lower === 'scientist') return 'Scientist';
     if (lower === 'technical staff') return 'Technical Staff';
     return role.charAt(0).toUpperCase() + role.slice(1);
@@ -362,6 +376,7 @@ const Customize = () => {
     if (lower === 'admin') return 'role-admin';
     if (lower === 'ch') return 'role-ch';
     if (lower === 'gh') return 'role-gh';
+    if (lower === 'edit' || lower === 'editor') return 'role-editor';
     if (lower === 'technical staff') return 'role-tech';
     return 'role-scientist';
   };
@@ -396,7 +411,13 @@ const Customize = () => {
         <div className="admin-hero-title-group">
           <h2>
             <IconAdjustments size={26} style={{ color: '#2563eb' }} />
-            <span>{isAdmin ? 'System Administration & Configuration' : 'Admin & Configuration'}</span>
+            <span>
+              {isAdmin
+                ? 'System Administration & Configuration'
+                : isEditor
+                ? 'Category Configuration & Stages'
+                : 'Department Team Management'}
+            </span>
           </h2>
           <p>
             {isAdmin ? (
@@ -407,6 +428,15 @@ const Customize = () => {
                 </span>
                 <span style={{ color: '#2563eb', fontWeight: '700' }}>• Institutional Oversight</span>
                 <span>• Managing users, centers, leadership, and global category stages</span>
+              </>
+            ) : isEditor ? (
+              <>
+                <span className="role-badge role-editor" style={{ padding: '3px 10px', fontSize: '0.78rem' }}>
+                  <IconListNumbers size={14} />
+                  Editor / Compilation Lead
+                </span>
+                <span style={{ color: '#2563eb', fontWeight: '700' }}>• Category Stages</span>
+                <span>• Manage global category stages and publication ordering</span>
               </>
             ) : (
               <>
@@ -450,47 +480,55 @@ const Customize = () => {
             </div>
           )}
 
-          <div className="stat-pill">
-            <div className="stat-pill-icon blue">
-              <IconUsers size={18} />
+          {(isAdmin || isGhUser) && (
+            <div className="stat-pill">
+              <div className="stat-pill-icon blue">
+                <IconUsers size={18} />
+              </div>
+              <div className="stat-pill-info">
+                <span className="stat-pill-count">{groupUsers.length}</span>
+                <span className="stat-pill-label">{isAdmin ? 'Total Users' : 'Team Members'}</span>
+              </div>
             </div>
-            <div className="stat-pill-info">
-              <span className="stat-pill-count">{groupUsers.length}</span>
-              <span className="stat-pill-label">{isAdmin ? 'Total Users' : 'Team Members'}</span>
-            </div>
-          </div>
+          )}
 
-          <div className="stat-pill">
-            <div className="stat-pill-icon emerald">
-              <IconListNumbers size={18} />
+          {(isAdmin || isEditor) && (
+            <div className="stat-pill">
+              <div className="stat-pill-icon emerald">
+                <IconListNumbers size={18} />
+              </div>
+              <div className="stat-pill-info">
+                <span className="stat-pill-count">{categories.length}</span>
+                <span className="stat-pill-label">Global Stages</span>
+              </div>
             </div>
-            <div className="stat-pill-info">
-              <span className="stat-pill-count">{categories.length}</span>
-              <span className="stat-pill-label">Global Stages</span>
-            </div>
-          </div>
+          )}
         </div>
       </div>
 
       {/* 3. Section Switcher Tabs */}
       <div className="admin-tabs-nav">
-        <button
-          type="button"
-          className={`admin-tab-btn ${activeTab === 'users' ? 'active' : ''}`}
-          onClick={() => setActiveTab('users')}
-        >
-          <IconUserPlus size={18} />
-          <span>{isAdmin ? 'User Management & Roles' : 'Team Members & Accounts'}</span>
-        </button>
+        {(isAdmin || isGhUser) && (
+          <button
+            type="button"
+            className={`admin-tab-btn ${activeTab === 'users' ? 'active' : ''}`}
+            onClick={() => setActiveTab('users')}
+          >
+            <IconUserPlus size={18} />
+            <span>{isAdmin ? 'User Management & Roles' : 'Team Members & Accounts'}</span>
+          </button>
+        )}
 
-        <button
-          type="button"
-          className={`admin-tab-btn ${activeTab === 'categories' ? 'active' : ''}`}
-          onClick={() => setActiveTab('categories')}
-        >
-          <IconListNumbers size={18} />
-          <span>Category Stages</span>
-        </button>
+        {(isAdmin || isEditor) && (
+          <button
+            type="button"
+            className={`admin-tab-btn ${activeTab === 'categories' ? 'active' : ''}`}
+            onClick={() => setActiveTab('categories')}
+          >
+            <IconListNumbers size={18} />
+            <span>Category Stages</span>
+          </button>
+        )}
 
         {isAdmin && (
           <button
@@ -504,8 +542,8 @@ const Customize = () => {
         )}
       </div>
 
-      {/* 4. Tab 1: User & Account Management */}
-      {activeTab === 'users' && (
+      {/* 4. Tab 1: User & Account Management (Admin & GH Only) */}
+      {(isAdmin || isGhUser) && activeTab === 'users' && (
         <div className="admin-grid-layout">
           {/* Left Form Card: Create User */}
           <div className="admin-card">
@@ -944,8 +982,8 @@ const Customize = () => {
         </div>
       )}
 
-      {/* 5. Tab 2: Category Stages Management */}
-      {activeTab === 'categories' && (
+      {/* 5. Tab 2: Category Stages Management (Admin & Editor Only) */}
+      {(isAdmin || isEditor) && activeTab === 'categories' && (
         <div className="admin-grid-layout">
           {/* Left Form Card: Add Global Stage */}
           <div className="admin-card">

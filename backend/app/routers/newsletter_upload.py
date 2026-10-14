@@ -83,7 +83,7 @@ def upload_published_newsletter(
         )
 
     file_url = minio_service.get_minio_url(object_name)
-    pub_title = title.strip() if title and title.strip() else f"CMTI Newsletter ({start_date} to {end_date})"
+    pub_title = title.strip() if title and title.strip() else f"The Science of Making ({start_date} to {end_date})"
 
     if existing_upload:
         existing_upload.title = pub_title
