@@ -4,10 +4,6 @@
 
 /* Global CSS Theme Variables */
 :root {
-  --sidebar-bg: #0f172a;
-  --sidebar-active-bg: #2563eb;
-  --sidebar-active-text: #ffffff;
-  --sidebar-text: #cbd5e1;
   --page-bg: #f8fafc;
   --card-bg: #ffffff;
   --primary-btn: #1e40af;
@@ -575,45 +571,6 @@ body {
   background-color: #e2e8f0;
 }
 
-.btn-ghost-primary {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  background: transparent;
-  color: var(--primary-btn);
-  border: 1px solid var(--primary-btn);
-  border-radius: 6px;
-  font-weight: 600;
-  font-size: 0.85rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-ghost-primary:hover {
-  background-color: var(--primary-btn);
-  color: #ffffff;
-}
-
-.btn-ghost-danger {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  background: transparent;
-  color: var(--danger-btn);
-  border: 1px solid var(--danger-btn);
-  border-radius: 6px;
-  font-weight: 600;
-  font-size: 0.85rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-ghost-danger:hover {
-  background-color: var(--danger-btn);
-  color: #ffffff;
-}
 
 .btn-link-back {
   display: inline-flex;

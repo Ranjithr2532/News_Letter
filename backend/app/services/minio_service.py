@@ -2,7 +2,7 @@ import json
 import os
 import io
 import mimetypes
-from typing import Optional, BinaryIO
+from typing import Optional
 import urllib3
 from minio import Minio
 from minio.error import S3Error
@@ -115,36 +115,6 @@ def upload_file_bytes(
         return False
 
 
-def upload_file_stream(
-    object_name: str,
-    stream: BinaryIO,
-    length: int,
-    content_type: Optional[str] = None,
-) -> bool:
-    """
-    Uploads from a binary stream/file-like object to MinIO.
-    """
-    client = get_minio_client()
-    if not client:
-        return False
-
-    if not content_type:
-        content_type, _ = mimetypes.guess_type(object_name)
-        content_type = content_type or "application/octet-stream"
-
-    try:
-        client.put_object(
-            bucket_name=MINIO_BUCKET,
-            object_name=object_name,
-            data=stream,
-            length=length,
-            content_type=content_type,
-        )
-        return True
-    except Exception as e:
-        print(f"[MinIO] Failed to upload stream {object_name}: {e}")
-        return False
-
 
 def get_minio_url(object_name: str) -> str:
     """
@@ -208,26 +178,6 @@ def get_file_bytes(object_name: str) -> Optional[bytes]:
 
     return None
 
-
-def get_object_stream(object_name: str):
-    """
-    Returns (response_stream, content_type) from MinIO for streaming responses.
-    """
-    client = get_minio_client()
-    if not client:
-        return None, None
-
-    candidates = extract_object_candidates(object_name)
-
-    for cand in candidates:
-        try:
-            response = client.get_object(MINIO_BUCKET, cand)
-            content_type = response.headers.get("Content-Type") or mimetypes.guess_type(cand)[0] or "application/octet-stream"
-            return response, content_type
-        except Exception:
-            continue
-
-    return None, None
 
 
 def delete_file(object_name: str) -> bool:
