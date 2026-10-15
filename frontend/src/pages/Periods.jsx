@@ -1022,35 +1022,9 @@ const Periods = () => {
     return { total, finalized, open };
   }, [periods]);
 
-  // Open Department Selection Modal to View Categories (or directly open for CH)
+  // Open Department Selection Modal or navigate directly to specific period
   const handleHalfRowClick = (periodsInHalf, rangeLabel) => {
-    if (isEditor) return;
     if (!periodsInHalf || periodsInHalf.length === 0) return;
-
-    if (isChUser) {
-      const allPeriodIds = periodsInHalf.map((p) => p.id).join(',');
-      const combinedTitle = `${user?.center || 'Center'} Combined — ${rangeLabel}`;
-      navigate(`/categories/${periodsInHalf[0].id}?all_periods=${allPeriodIds}`, {
-        state: {
-          periodTitle: combinedTitle,
-          rangeLabel,
-          allPeriodIds: periodsInHalf.map((p) => p.id),
-          isCombined: periodsInHalf.length > 1,
-        },
-      });
-      return;
-    }
-
-    const userGrp = (user?.group || user?.group_name || '').trim().toUpperCase();
-    const myPeriod = periodsInHalf.find(
-      (p) => (p.group_name || '').trim().toUpperCase() === userGrp
-    );
-    if (myPeriod) {
-      navigate(`/categories/${myPeriod.id}`, {
-        state: { periodTitle: myPeriod.title },
-      });
-      return;
-    }
 
     // Deduplicate periods by group_name
     const distinctDeptsMap = new Map();
@@ -1062,9 +1036,23 @@ const Periods = () => {
     });
     const uniquePeriods = Array.from(distinctDeptsMap.values());
 
+    // For non-admin/non-CH users, if their own group's period is present, open directly
+    if (!isEditor && !isChUser) {
+      const userGrp = (user?.group || user?.group_name || '').trim().toUpperCase();
+      const myPeriod = periodsInHalf.find(
+        (p) => (p.group_name || '').trim().toUpperCase() === userGrp
+      );
+      if (myPeriod) {
+        navigate(`/categories/${myPeriod.id}`, {
+          state: { periodTitle: myPeriod.title, rangeLabel },
+        });
+        return;
+      }
+    }
+
     if (uniquePeriods.length === 1) {
       navigate(`/categories/${uniquePeriods[0].id}`, {
-        state: { periodTitle: uniquePeriods[0].title },
+        state: { periodTitle: uniquePeriods[0].title, rangeLabel },
       });
     } else {
       setDeptSelectModal({
@@ -1076,8 +1064,6 @@ const Periods = () => {
 
   // On-demand click for empty / un-instantiated half slots
   const handleEmptyHalfClick = async (monthData, halfNum, rangeLabel) => {
-    if (isEditor) return;
-
     const yr = monthData.year;
     const mo = monthData.monthIndex + 1;
     const padMo = String(mo).padStart(2, '0');
@@ -1089,26 +1075,29 @@ const Periods = () => {
     setCreatingHalfKey(slotKey);
 
     try {
-      if (isChUser) {
-        if (!user?.center) {
-          alert('Center information is missing for your account.');
+      if (isChUser || isEditor) {
+        const centerToEnsure = isEditor
+          ? (selectedCenter !== 'all' ? selectedCenter : (allCenters[0] || user?.center))
+          : user?.center;
+
+        if (!centerToEnsure) {
+          alert('Please select a specific Center from the filter toolbar above to initialize or inspect this period.');
           setCreatingHalfKey(null);
           return;
         }
 
         const res = await api.post(
-          `/periods/ensure-half-center?center=${encodeURIComponent(user.center)}&start_date=${sDate}&end_date=${eDate}&created_by=${user.id}`
+          `/periods/ensure-half-center?center=${encodeURIComponent(centerToEnsure)}&start_date=${sDate}&end_date=${eDate}&created_by=${user.id}`
         );
 
         const ensuredPeriods = res.data || [];
         if (ensuredPeriods.length === 0) {
-          alert('No departments found under your center to create periods.');
+          alert(`No departments found under center "${centerToEnsure}" to create periods.`);
           setCreatingHalfKey(null);
           return;
         }
 
-        const allPeriodIds = ensuredPeriods.map((p) => p.id).join(',');
-        const combinedTitle = `${user.center} Combined — ${rangeLabel}`;
+        const targetPeriod = ensuredPeriods[0];
 
         // Update local periods state so the card immediately reflects the newly created periods
         setPeriods((prev) => {
@@ -1117,12 +1106,10 @@ const Periods = () => {
           return [...prev, ...newToAdd];
         });
 
-        navigate(`/categories/${ensuredPeriods[0].id}?all_periods=${allPeriodIds}`, {
+        navigate(`/categories/${targetPeriod.id}`, {
           state: {
-            periodTitle: combinedTitle,
+            periodTitle: targetPeriod.title,
             rangeLabel,
-            allPeriodIds: ensuredPeriods.map((p) => p.id),
-            isCombined: ensuredPeriods.length > 1,
           },
         });
       } else {
@@ -1291,18 +1278,15 @@ const Periods = () => {
         ? periodsInHalf.find((p) => (p.group_name || '').trim().toUpperCase() === userGrp || !p.group_name)
         : null;
 
-      const rowTooltip = isChUser
-        ? `Period: ${rangeLabel}. Click to open entries from all departments.`
-        : periodsInHalf.length > 1
-          ? `${periodsInHalf.length} departments (${periodsInHalf.map((p) => p.group_name).filter(Boolean).join(', ')}). Click to select department.`
-          : `Period: ${rangeLabel}${periodsInHalf[0]?.group_name ? ` (${periodsInHalf[0].group_name})` : ''}. Click to view.`;
+      const rowTooltip = periodsInHalf.length > 1
+        ? `${periodsInHalf.length} departments (${periodsInHalf.map((p) => p.group_name).filter(Boolean).join(', ')}). Click to select department.`
+        : `Period: ${rangeLabel}${periodsInHalf[0]?.group_name ? ` (${periodsInHalf[0].group_name})` : ''}. Click to view categories.`;
 
       return (
         <div
-          className={`half-row ${isEditor ? '' : 'clickable'}`}
+          className="half-row clickable"
           onClick={() => handleHalfRowClick(periodsInHalf, rangeLabel)}
-          title={isEditor ? `Period: ${rangeLabel}` : rowTooltip}
-          style={isEditor ? { cursor: 'default' } : {}}
+          title={rowTooltip}
         >
           {/* Left side: Badge + Clean Date Range */}
           <div className="half-left-meta">
@@ -1335,42 +1319,33 @@ const Periods = () => {
               </button>
             )}
 
-            {/* Status Badge: Open / Finalized (Always visible for non-editors, and for editors when finalized) */}
-            {!isEditor ? (
-              allFinalized ? (
-                <span
-                  className="status-badge-finalized"
-                  title="Finalized (View-only for all users). Click to view categories."
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleHalfRowClick(periodsInHalf, rangeLabel);
-                  }}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <IconLock size={12} />
-                  <span>Finalized</span>
-                </span>
-              ) : (
-                <span
-                  className="status-badge-open"
-                  title="Open for editing & submissions. Click to view categories."
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleHalfRowClick(periodsInHalf, rangeLabel);
-                  }}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <IconCircleCheck size={12} />
-                  <span>Open</span>
-                </span>
-              )
+            {/* Status Badge: Open / Finalized */}
+            {allFinalized ? (
+              <span
+                className="status-badge-finalized"
+                title="Finalized (View-only for all users). Click to view categories."
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleHalfRowClick(periodsInHalf, rangeLabel);
+                }}
+                style={{ cursor: 'pointer' }}
+              >
+                <IconLock size={12} />
+                <span>Finalized</span>
+              </span>
             ) : (
-              allFinalized && (
-                <span className="status-badge-finalized" title="Finalized">
-                  <IconLock size={12} />
-                  <span>Finalized</span>
-                </span>
-              )
+              <span
+                className="status-badge-open"
+                title={isEditor ? "Open for submissions. Click to review categories." : "Open for editing & submissions. Click to view categories."}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleHalfRowClick(periodsInHalf, rangeLabel);
+                }}
+                style={{ cursor: 'pointer' }}
+              >
+                <IconCircleCheck size={12} />
+                <span>Open</span>
+              </span>
             )}
 
             {/* GH Finalize Action Button (Group Head only) */}
@@ -1426,18 +1401,16 @@ const Periods = () => {
               )}
             </button>
 
-            {/* View Chevron Link - Only for non-admin users */}
-            {!isEditor && (
-              <div
-                className="chevron-arrow"
-                onClick={() => handleHalfRowClick(periodsInHalf, rangeLabel)}
-                title="View Categories"
-                role="button"
-                tabIndex={0}
-              >
-                <IconChevronRight size={18} />
-              </div>
-            )}
+            {/* View Chevron Link */}
+            <div
+              className="chevron-arrow"
+              onClick={() => handleHalfRowClick(periodsInHalf, rangeLabel)}
+              title="View Categories"
+              role="button"
+              tabIndex={0}
+            >
+              <IconChevronRight size={18} />
+            </div>
           </div>
         </div>
       );
@@ -1447,10 +1420,9 @@ const Periods = () => {
 
       return (
         <div
-          className={`half-row ${isEditor ? '' : 'clickable'}`}
-          onClick={() => !isEditor && handleEmptyHalfClick(monthData, halfNum, rangeLabel)}
-          title={isEditor ? `Period: ${rangeLabel}` : `Period: ${rangeLabel}. Click to open and add entries.`}
-          style={isEditor ? { cursor: 'default' } : {}}
+          className="half-row clickable"
+          onClick={() => handleEmptyHalfClick(monthData, halfNum, rangeLabel)}
+          title={isEditor ? `Period: ${rangeLabel}. Click to inspect categories.` : `Period: ${rangeLabel}. Click to open and add entries.`}
         >
           {/* Left side: Badge + Date Range */}
           <div className="half-left-meta">
@@ -1483,21 +1455,19 @@ const Periods = () => {
               </button>
             )}
 
-            {/* Status Badge: Open (Only for Non-Editors, clickable to open and add entries) */}
-            {!isEditor && (
-              <span
-                className="status-badge-open"
-                title="Open for entries. Click to open."
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleEmptyHalfClick(monthData, halfNum, rangeLabel);
-                }}
-                style={{ cursor: 'pointer' }}
-              >
-                <IconCircleCheck size={12} />
-                <span>Open</span>
-              </span>
-            )}
+            {/* Status Badge: Open */}
+            <span
+              className="status-badge-open"
+              title={isEditor ? "Open. Click to inspect categories." : "Open for entries. Click to open."}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleEmptyHalfClick(monthData, halfNum, rangeLabel);
+              }}
+              style={{ cursor: 'pointer' }}
+            >
+              <IconCircleCheck size={12} />
+              <span>Open</span>
+            </span>
 
             {/* Download DOCX Button */}
             <button
@@ -1515,22 +1485,20 @@ const Periods = () => {
               )}
             </button>
 
-            {/* View Chevron Link - Only for non-admin users */}
-            {!isEditor && (
-              <div
-                className="chevron-arrow"
-                onClick={() => handleEmptyHalfClick(monthData, halfNum, rangeLabel)}
-                title="Open period"
-                role="button"
-                tabIndex={0}
-              >
-                {isCreating ? (
-                  <IconLoader2 size={16} className="animate-spin text-blue-600" />
-                ) : (
-                  <IconChevronRight size={18} />
-                )}
-              </div>
-            )}
+            {/* View Chevron Link */}
+            <div
+              className="chevron-arrow"
+              onClick={() => handleEmptyHalfClick(monthData, halfNum, rangeLabel)}
+              title="Open period"
+              role="button"
+              tabIndex={0}
+            >
+              {isCreating ? (
+                <IconLoader2 size={16} className="animate-spin text-blue-600" />
+              ) : (
+                <IconChevronRight size={18} />
+              )}
+            </div>
           </div>
         </div>
       );
@@ -2493,7 +2461,7 @@ const Periods = () => {
                     onClick={() => {
                       setDeptSelectModal(null);
                       navigate(`/categories/${period.id}`, {
-                        state: { periodTitle: period.title },
+                        state: { periodTitle: period.title, rangeLabel: deptSelectModal.rangeLabel },
                       });
                     }}
                     style={{

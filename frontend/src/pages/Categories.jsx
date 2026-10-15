@@ -151,13 +151,9 @@ const Categories = () => {
       navigate('/');
       return;
     }
-    if (isEditor) {
-      navigate('/periods', { replace: true });
-      return;
-    }
     fetchPeriod();
     fetchCategories();
-  }, [user, periodId, allPeriodsParam, isEditor, navigate]);
+  }, [user, periodId, allPeriodsParam, navigate]);
 
   const fetchPeriod = async () => {
     try {
@@ -658,9 +654,35 @@ const Categories = () => {
     }
   };
 
-  if (!user) return null;
+  const passedRangeLabel = location.state?.rangeLabel;
 
-  const displayPeriodTitle = period?.title || passedPeriodTitle || `Newsletter Period #${periodId}`;
+  const getEditorTitle = () => {
+    if (passedRangeLabel) return `The Science of Making — ${passedRangeLabel}`;
+    if (period?.start_date && period?.end_date) {
+      const parts = period.start_date.split('-');
+      const eParts = period.end_date.split('-');
+      if (parts.length === 3 && eParts.length === 3) {
+        const s = new Date(parts[0], parts[1] - 1, parts[2]);
+        const e = new Date(eParts[0], eParts[1] - 1, eParts[2]);
+        const sMonth = s.toLocaleString('en-US', { month: 'short' });
+        const eMonth = e.toLocaleString('en-US', { month: 'short' });
+        const sDay = s.getDate();
+        const eDay = e.getDate();
+        const year = e.getFullYear();
+        if (sMonth === eMonth) {
+          return `The Science of Making — ${sMonth} ${sDay}–${eDay}, ${year}`;
+        }
+        return `The Science of Making — ${sMonth} ${sDay} – ${eMonth} ${eDay}, ${year}`;
+      }
+    }
+    return period?.title || 'The Science of Making Overview';
+  };
+
+  const displayPeriodTitle = isEditor
+    ? getEditorTitle()
+    : ((isCombinedMode && passedPeriodTitle)
+      ? passedPeriodTitle
+      : (period?.title || passedPeriodTitle || `Newsletter Period #${periodId}`));
 
   return (
     <div className="categories-page">
@@ -698,11 +720,31 @@ const Categories = () => {
             <span>Department:</span>
             <span className="group-badge-hero">
               <IconUsersGroup size={13} />
-              {isCombinedMode
-                ? `All Departments (${user?.center || period?.center || 'Center'})`
-                : (period?.group_name || user.group || user.group_name || 'General')}
+              {isEditor
+                ? 'All Departments'
+                : isCombinedMode
+                  ? `All Departments (${period?.center || user?.center || 'Center'})`
+                  : (period?.group_name || user?.group || user?.group_name || 'General')}
             </span>
-            {(isChUser || isEditor) && (
+            {isEditor ? (
+              <>
+                <span>•</span>
+                <span>Scope:</span>
+                <span
+                  style={{
+                    backgroundColor: '#faf5ff',
+                    color: '#7e22ce',
+                    border: '1px solid #e9d5ff',
+                    padding: '2px 8px',
+                    borderRadius: '8px',
+                    fontSize: '0.78rem',
+                    fontWeight: '700',
+                  }}
+                >
+                  Editor Oversight (All Centers)
+                </span>
+              </>
+            ) : isChUser && (
               <>
                 <span>•</span>
                 <span>Center:</span>
@@ -717,7 +759,7 @@ const Categories = () => {
                     fontWeight: '700',
                   }}
                 >
-                  {period?.center || user.center || 'Center'} ({isEditor ? 'Editor Oversight' : 'CH Oversight'})
+                  {period?.center || user?.center || 'Center'} (CH Oversight)
                 </span>
               </>
             )}
@@ -2112,7 +2154,7 @@ const Categories = () => {
                         {previewCategory ? `${previewCategory.name} — Event Details` : displayPeriodTitle}
                       </h2>
                       <div style={{ fontSize: '0.82rem', color: '#475569', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span>Department: <strong>{user.group || user.group_name || 'General'}</strong></span>
+                        <span>Department: <strong>{isEditor ? 'All Departments' : (period?.group_name || user?.group || user?.group_name || 'General')}</strong></span>
                         {previewCategory && (
                           <>
                             <span>•</span>
