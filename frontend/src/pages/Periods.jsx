@@ -680,7 +680,7 @@ const Periods = () => {
       const defaultTitle =
         existingUpload?.title ||
         file.name.replace(/\.pdf$/i, '').trim() ||
-        `CMTI Official Newsletter — ${rangeLabel}`;
+        `The Science of Making — ${rangeLabel}`;
       formData.append('title', defaultTitle);
 
       await api.post('/newsletter-upload/', formData, {
@@ -1560,7 +1560,7 @@ const Periods = () => {
         <div className="periods-hero-title-group">
           <h2>
             <IconCalendarEvent size={26} style={{ color: '#2563eb' }} />
-            <span>Newsletter</span>
+            <span>The Science of Making</span>
           </h2>
           <p>
             {isEditor ? (

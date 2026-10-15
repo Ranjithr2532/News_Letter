@@ -76,7 +76,7 @@ const Layout = () => {
           <div
             className="topbar-brand"
             onClick={() => navigate('/periods')}
-            title="CMTI Newsletter Portal"
+            title="The Science of Making"
             role="button"
             tabIndex={0}
           >
@@ -89,9 +89,9 @@ const Layout = () => {
             </div>
             <div className="brand-text">
               <span className="brand-title">
-                CMTI <span className="brand-highlight">Newsletter</span>
+                The Science of <span className="brand-highlight">Making</span>
               </span>
-              <span className="brand-subtitle">Activity & Publication Portal</span>
+              <span className="brand-subtitle">CMTI Publication Portal</span>
             </div>
           </div>
 
@@ -168,21 +168,20 @@ const Layout = () => {
                         <span>Role:</span>
                       </span>
                       <span
-                        className={`detail-value role-badge ${
-                          isEditor
+                        className={`detail-value role-badge ${isEditor
                             ? 'role-editor'
                             : isAdmin
-                            ? 'role-admin'
-                            : isChUser
-                            ? 'role-ch'
-                            : isGhUser
-                            ? 'role-gh'
-                            : isUserTech
-                            ? 'role-tech'
-                            : isUserSci
-                            ? 'role-scientist'
-                            : ''
-                        }`}
+                              ? 'role-admin'
+                              : isChUser
+                                ? 'role-ch'
+                                : isGhUser
+                                  ? 'role-gh'
+                                  : isUserTech
+                                    ? 'role-tech'
+                                    : isUserSci
+                                      ? 'role-scientist'
+                                      : ''
+                          }`}
                       >
                         {formatRole(user.activeRole || user.role)}
                       </span>
@@ -236,14 +235,20 @@ const Layout = () => {
             )}
           </div>
 
-          {/* Settings Icon Button (Group Head only, hidden for Admin) */}
-          {isGhUser && !isAdmin && (
+          {/* Settings / Configuration Icon Button */}
+          {(isAdmin || isEditor || isGhUser) && (
             <NavLink
               to="/customize"
               className={({ isActive }) =>
                 `topbar-admin-btn ${isActive ? 'active' : ''}`
               }
-              title="Settings & Team Management"
+              title={
+                isAdmin
+                  ? 'System Administration'
+                  : isEditor
+                  ? 'Category Stages & Configuration'
+                  : 'Settings & Team Management'
+              }
               aria-label="Settings"
             >
               <IconSettings size={18} />

@@ -209,7 +209,7 @@ def send_otp_email(email: str, otp: str):
         msg = MIMEMultipart()
         msg["From"] = SENDER_EMAIL
         msg["To"] = email
-        msg["Subject"] = "Your OTP for Password Reset - CMTI Newsletter"
+        msg["Subject"] = "Your OTP for Password Reset - The Science of Making"
 
         body = f"""
 Dear User,
