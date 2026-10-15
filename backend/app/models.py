@@ -125,6 +125,11 @@ class NewsletterEntry(Base):
     def updated_by_name(self) -> str:
         return self.updater.name if self.updater else f"User #{self.updated_by}"
 
+    @property
+    def center(self) -> str:
+        c = (self.creator.center if self.creator and self.creator.center else None) or (self.period.center if self.period and self.period.center else None)
+        return c.strip() if c else "Main"
+
 
 class EntryPhoto(Base):
     __tablename__ = "entry_photos"

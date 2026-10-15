@@ -1026,6 +1026,15 @@ const Periods = () => {
   const handleHalfRowClick = (periodsInHalf, rangeLabel) => {
     if (!periodsInHalf || periodsInHalf.length === 0) return;
 
+    // For Editor: directly navigate to Categories page with all departments in this half — NO POPUP!
+    if (isEditor) {
+      const allPeriodIds = periodsInHalf.map((p) => p.id).join(',');
+      navigate(`/categories/${periodsInHalf[0].id}?all_periods=${allPeriodIds}`, {
+        state: { periodTitle: periodsInHalf[0].title, rangeLabel },
+      });
+      return;
+    }
+
     // Deduplicate periods by group_name
     const distinctDeptsMap = new Map();
     periodsInHalf.forEach((p) => {
@@ -1106,7 +1115,12 @@ const Periods = () => {
           return [...prev, ...newToAdd];
         });
 
-        navigate(`/categories/${targetPeriod.id}`, {
+        const allPeriodIds = isEditor ? ensuredPeriods.map((p) => p.id).join(',') : null;
+        const targetUrl = isEditor
+          ? `/categories/${targetPeriod.id}?all_periods=${allPeriodIds}`
+          : `/categories/${targetPeriod.id}`;
+
+        navigate(targetUrl, {
           state: {
             periodTitle: targetPeriod.title,
             rangeLabel,
@@ -1278,7 +1292,9 @@ const Periods = () => {
         ? periodsInHalf.find((p) => (p.group_name || '').trim().toUpperCase() === userGrp || !p.group_name)
         : null;
 
-      const rowTooltip = periodsInHalf.length > 1
+      const rowTooltip = isEditor
+        ? `Period: ${rangeLabel} (${periodsInHalf.length} department${periodsInHalf.length > 1 ? 's' : ''}). Click to view all department categories.`
+        : periodsInHalf.length > 1
         ? `${periodsInHalf.length} departments (${periodsInHalf.map((p) => p.group_name).filter(Boolean).join(', ')}). Click to select department.`
         : `Period: ${rangeLabel}${periodsInHalf[0]?.group_name ? ` (${periodsInHalf[0].group_name})` : ''}. Click to view categories.`;
 

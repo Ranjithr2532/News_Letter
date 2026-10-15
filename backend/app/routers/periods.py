@@ -426,7 +426,7 @@ def generate_center_combined_docx(
         .join(models.User, models.NewsletterPeriod.created_by == models.User.id)
     )
     if not is_all:
-        query = query.filter(models.User.center == center)
+        query = query.filter(func.lower(func.trim(models.User.center)) == center.strip().lower())
     if not is_all_groups:
         query = query.filter(models.NewsletterPeriod.group_name == group_name)
 
@@ -1110,6 +1110,7 @@ def get_period_contributors(period_id: str, db: Session = Depends(get_db)):
             "designation": u.designation,
             "role": u.role,
             "group": getattr(u, "group_name", None) or u.group,
+            "center": (u.center or "").strip(),
             "entry_count": entry_counts.get(u.id, 0),
         })
 

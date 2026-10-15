@@ -182,6 +182,7 @@ class EntryRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     photos: List[PhotoRead] = []
+    center: Optional[str] = None
 
 
 # ---------- Entry Edit History ----------

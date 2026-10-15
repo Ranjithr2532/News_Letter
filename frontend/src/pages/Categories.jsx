@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import api from '../api/api';
 import { useUser } from '../context/UserContext';
@@ -29,6 +29,8 @@ import {
   IconFilter,
   IconUserCheck,
   IconAlertTriangle,
+  IconBuilding,
+  IconSearch,
 } from '@tabler/icons-react';
 
 const Categories = () => {
@@ -38,11 +40,18 @@ const Categories = () => {
   const location = useLocation();
 
   const passedPeriodTitle = location.state?.periodTitle;
+  const passedRangeLabel = location.state?.rangeLabel;
+
+  const currentRole = (user?.activeRole || user?.role || '').toLowerCase().trim();
+  const isEditor = currentRole === 'edit' || currentRole === 'editor';
+  const isAdmin = currentRole === 'admin';
+  const isChUser = currentRole === 'ch';
+  const isGhUser = currentRole === 'gh';
 
   const searchParams = new URLSearchParams(location.search);
   const allPeriodsParam = searchParams.get('all_periods');
   const queryPeriodId = allPeriodsParam || periodId;
-  const isCombinedMode = Boolean(allPeriodsParam && allPeriodsParam.includes(','));
+  const isCombinedMode = Boolean((allPeriodsParam && allPeriodsParam.includes(',')) || isEditor);
 
   const [period, setPeriod] = useState(null);
   const [categories, setCategories] = useState([]);
@@ -51,11 +60,6 @@ const Categories = () => {
   const [downloading, setDownloading] = useState(false);
   const [downloadingCategoryId, setDownloadingCategoryId] = useState(null);
 
-  const currentRole = (user?.activeRole || user?.role || '').toLowerCase().trim();
-  const isEditor = currentRole === 'edit' || currentRole === 'editor';
-  const isAdmin = currentRole === 'admin';
-  const isChUser = currentRole === 'ch';
-  const isGhUser = currentRole === 'gh';
   const isViewOnly = isEditor || period?.edit === false;
   const canViewAll = isEditor || isChUser || isGhUser || isViewOnly;
 
@@ -85,15 +89,110 @@ const Categories = () => {
   const [creatingOther, setCreatingOther] = useState(false);
   const [otherError, setOtherError] = useState('');
 
-  // Preview Newsletter Modal & Contributor Filter state
+  // Preview Newsletter Modal & Filter state
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [previewCategory, setPreviewCategory] = useState(null);
   const [contributors, setContributors] = useState([]);
   const [loadingContributors, setLoadingContributors] = useState(false);
   const [selectedContributorId, setSelectedContributorId] = useState(null);
+  const [selectedCenterFilter, setSelectedCenterFilter] = useState('all');
   const [previewEntries, setPreviewEntries] = useState([]);
   const [loadingPreviewData, setLoadingPreviewData] = useState(false);
   const [downloadingPreviewDocx, setDownloadingPreviewDocx] = useState(false);
+
+  // Group preview entries by Centre for Editor view
+  const previewCenters = useMemo(() => {
+    const counts = {};
+    previewEntries.forEach((e) => {
+      const cName = (
+        e.center ||
+        contributors.find((c) => c.id === e.created_by)?.center ||
+        'Main'
+      ).trim();
+      counts[cName] = (counts[cName] || 0) + 1;
+    });
+    return Object.entries(counts)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [previewEntries, contributors]);
+
+  // Main Page Period Entries & Category Filter Toolbar state
+  const [allPeriodEntries, setAllPeriodEntries] = useState([]);
+  const [mainPageCenterFilter, setMainPageCenterFilter] = useState('all');
+  const [hideEmptyCategories, setHideEmptyCategories] = useState(() => isEditor);
+  const [categorySearchQuery, setCategorySearchQuery] = useState('');
+
+  // Default to showing populated categories for Editor
+  useEffect(() => {
+    if (isEditor) {
+      setHideEmptyCategories(true);
+    }
+  }, [isEditor]);
+
+  // Group all period entries by Centre for main page filtering
+  const mainPageCenters = useMemo(() => {
+    const counts = {};
+    allPeriodEntries.forEach((e) => {
+      const cName = (e.center || 'Main').trim();
+      counts[cName] = (counts[cName] || 0) + 1;
+    });
+    return Object.entries(counts)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [allPeriodEntries]);
+
+  // Count of entries per category on the main page (reacts to mainPageCenterFilter)
+  const categoryEntryCounts = useMemo(() => {
+    const map = {};
+    allPeriodEntries.forEach((e) => {
+      if (mainPageCenterFilter && mainPageCenterFilter !== 'all') {
+        const entryCenter = (e.center || '').trim().toLowerCase();
+        if (entryCenter !== mainPageCenterFilter.trim().toLowerCase()) return;
+      }
+      map[e.category_id] = (map[e.category_id] || 0) + 1;
+    });
+    return map;
+  }, [allPeriodEntries, mainPageCenterFilter]);
+
+  // Auto-expand first populated category for editor on initial load
+  const autoExpandedRef = useRef(false);
+  useEffect(() => {
+    if (isEditor && !autoExpandedRef.current && categories.length > 0 && allPeriodEntries.length > 0) {
+      const firstWithEntries = categories.find((c) => (categoryEntryCounts[c.id] || 0) > 0);
+      if (firstWithEntries) {
+        setExpandedCategoryId(firstWithEntries.id);
+        fetchCategoryEntries(firstWithEntries.id);
+        autoExpandedRef.current = true;
+      }
+    }
+  }, [isEditor, categories, allPeriodEntries, categoryEntryCounts]);
+
+  // Filtered categories for display based on search & hideEmptyCategories
+  const displayedCategories = useMemo(() => {
+    const hasAnyEntries = allPeriodEntries.length > 0;
+    return categories.filter((category) => {
+      const count = categoryEntryCounts[category.id] || 0;
+      if (hideEmptyCategories && hasAnyEntries && count === 0) return false;
+
+      if (categorySearchQuery.trim()) {
+        const q = categorySearchQuery.toLowerCase();
+        const matchesName = category.name.toLowerCase().includes(q);
+        const hasMatchingEntry = allPeriodEntries.some((e) => {
+          if (e.category_id !== category.id) return false;
+          if (mainPageCenterFilter !== 'all' && (e.center || '').trim().toLowerCase() !== mainPageCenterFilter.trim().toLowerCase()) return false;
+          return (
+            (e.title && e.title.toLowerCase().includes(q)) ||
+            (e.description && e.description.toLowerCase().includes(q)) ||
+            (e.created_by_name && e.created_by_name.toLowerCase().includes(q)) ||
+            (e.group_name && e.group_name.toLowerCase().includes(q)) ||
+            (e.center && e.center.toLowerCase().includes(q))
+          );
+        });
+        if (!matchesName && !hasMatchingEntry) return false;
+      }
+      return true;
+    });
+  }, [categories, categoryEntryCounts, hideEmptyCategories, categorySearchQuery, allPeriodEntries, mainPageCenterFilter]);
 
   // Photo Lightbox modal
   const [previewPhoto, setPreviewPhoto] = useState(null);
@@ -153,6 +252,7 @@ const Categories = () => {
     }
     fetchPeriod();
     fetchCategories();
+    fetchAllPeriodEntries();
   }, [user, periodId, allPeriodsParam, navigate]);
 
   const fetchPeriod = async () => {
@@ -187,6 +287,20 @@ const Categories = () => {
       setError('Failed to load categories. Please try again.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Fetch all entries for this period to compute counts and enable Centre-based filtering
+  const fetchAllPeriodEntries = async () => {
+    try {
+      let url = `/entries/?period_id=${queryPeriodId}`;
+      if (!canViewAll && user?.id) {
+        url += `&created_by=${user.id}`;
+      }
+      const res = await api.get(url);
+      setAllPeriodEntries(res.data || []);
+    } catch (err) {
+      console.error('Failed to fetch period entries:', err);
     }
   };
 
@@ -284,6 +398,7 @@ const Categories = () => {
 
       resetAddForm();
       fetchCategoryEntries(catId);
+      fetchAllPeriodEntries();
     } catch (err) {
       console.error('Failed to create entry:', err);
       setAddError(
@@ -381,6 +496,7 @@ const Categories = () => {
       });
       setEditingEntryId(null);
       fetchCategoryEntries(catId);
+      fetchAllPeriodEntries();
     } catch (err) {
       console.error('Failed to update entry:', err);
       alert(formatErrorMessage(err, 'Failed to update entry.'));
@@ -402,6 +518,7 @@ const Categories = () => {
         try {
           await api.delete(`/entries/${entryId}?user_id=${user.id}`);
           fetchCategoryEntries(catId);
+          fetchAllPeriodEntries();
         } catch (err) {
           console.error('Failed to delete entry:', err);
           alert(formatErrorMessage(err, 'Failed to delete entry.'));
@@ -473,8 +590,9 @@ const Categories = () => {
     setDownloading(true);
     try {
       let url = '';
-      if (isCombinedMode && period?.start_date && period?.end_date) {
-        url = `/periods/center/generate-combined-docx?center=${encodeURIComponent(user?.center || period?.center || 'all')}&start_date=${period.start_date}&end_date=${period.end_date}`;
+      if ((isCombinedMode || isEditor) && period?.start_date && period?.end_date) {
+        const targetCenter = isEditor ? 'all' : (user?.center || period?.center || 'all');
+        url = `/periods/center/generate-combined-docx?center=${encodeURIComponent(targetCenter)}&start_date=${period.start_date}&end_date=${period.end_date}`;
       } else {
         url = `/periods/${periodId}/generate-docx`;
         if (!canViewAll && user?.id) {
@@ -490,8 +608,9 @@ const Categories = () => {
       const urlBlob = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = urlBlob;
-      const effectiveTitle = passedPeriodTitle || period?.title || `Newsletter_Period_${periodId}`;
-      const filename = `${effectiveTitle.replace(/\s+/g, '_')}.docx`;
+      const rawTitle = passedPeriodTitle || period?.title || `Newsletter_Period_${periodId}`;
+      const cleanTitle = rawTitle.replace(/[/\\?%*:|"<>]/g, '_').trim().replace(/\s+/g, '_');
+      const filename = `${cleanTitle || 'Newsletter'}.docx`;
       link.setAttribute('download', filename);
       document.body.appendChild(link);
       link.click();
@@ -499,7 +618,19 @@ const Categories = () => {
       window.URL.revokeObjectURL(urlBlob);
     } catch (err) {
       console.error('Failed to download docx:', err);
-      alert('Failed to download newsletter.');
+      let errorMsg = 'Failed to download newsletter.';
+      if (err.response?.data instanceof Blob) {
+        try {
+          const text = await err.response.data.text();
+          const json = JSON.parse(text);
+          if (json.detail) errorMsg = json.detail;
+        } catch {
+          // ignore
+        }
+      } else if (err.response?.data?.detail) {
+        errorMsg = err.response.data.detail;
+      }
+      alert(errorMsg);
     } finally {
       setDownloading(false);
     }
@@ -509,9 +640,15 @@ const Categories = () => {
     e.stopPropagation();
     setDownloadingCategoryId(category.id);
     try {
-      let url = `/periods/${periodId}/categories/${category.id}/generate-docx`;
-      if (!canViewAll && user?.id) {
-        url += `?created_by=${user.id}`;
+      let url = '';
+      if ((isCombinedMode || isEditor) && period?.start_date && period?.end_date) {
+        const targetCenter = isEditor ? 'all' : (user?.center || period?.center || 'all');
+        url = `/periods/center/generate-combined-docx?center=${encodeURIComponent(targetCenter)}&start_date=${period.start_date}&end_date=${period.end_date}&category_id=${category.id}`;
+      } else {
+        url = `/periods/${periodId}/categories/${category.id}/generate-docx`;
+        if (!canViewAll && user?.id) {
+          url += `?created_by=${user.id}`;
+        }
       }
       const response = await api.get(url, { responseType: 'blob' });
       const blob = new Blob([response.data], {
@@ -520,7 +657,7 @@ const Categories = () => {
       const urlBlob = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = urlBlob;
-      const cleanCatName = category.name.replace(/\s+/g, '_');
+      const cleanCatName = (category.name || 'Category').replace(/[/\\?%*:|"<>]/g, '_').trim().replace(/\s+/g, '_');
       const filename = `${cleanCatName}_entries.docx`;
       link.setAttribute('download', filename);
       document.body.appendChild(link);
@@ -529,7 +666,19 @@ const Categories = () => {
       window.URL.revokeObjectURL(urlBlob);
     } catch (err) {
       console.error('Failed to download category docx:', err);
-      alert('Failed to download category document.');
+      let errorMsg = 'Failed to download category document.';
+      if (err.response?.data instanceof Blob) {
+        try {
+          const text = await err.response.data.text();
+          const json = JSON.parse(text);
+          if (json.detail) errorMsg = json.detail;
+        } catch {
+          // ignore
+        }
+      } else if (err.response?.data?.detail) {
+        errorMsg = err.response.data.detail;
+      }
+      alert(errorMsg);
     } finally {
       setDownloadingCategoryId(null);
     }
@@ -545,6 +694,7 @@ const Categories = () => {
     setPreviewCategory(validCategory);
     setShowPreviewModal(true);
     setSelectedContributorId(null);
+    setSelectedCenterFilter('all');
     setLoadingPreviewData(true);
     setLoadingContributors(true);
     try {
@@ -611,8 +761,18 @@ const Categories = () => {
     setDownloadingPreviewDocx(true);
     try {
       let url = '';
-      if (isCombinedMode && !previewCategory?.id && period?.start_date && period?.end_date) {
-        url = `/periods/center/generate-combined-docx?center=${encodeURIComponent(user?.center || period?.center || 'all')}&start_date=${period.start_date}&end_date=${period.end_date}`;
+      if (isEditor && period?.start_date && period?.end_date) {
+        const targetCenter = (selectedCenterFilter && selectedCenterFilter !== 'all') ? selectedCenterFilter : 'all';
+        url = `/periods/center/generate-combined-docx?center=${encodeURIComponent(targetCenter)}&start_date=${period.start_date}&end_date=${period.end_date}`;
+        if (previewCategory?.id) {
+          url += `&category_id=${previewCategory.id}`;
+        }
+      } else if (isCombinedMode && !previewCategory?.id && period?.start_date && period?.end_date) {
+        const targetCenter = user?.center || period?.center || 'all';
+        url = `/periods/center/generate-combined-docx?center=${encodeURIComponent(targetCenter)}&start_date=${period.start_date}&end_date=${period.end_date}`;
+      } else if (isCombinedMode && previewCategory?.id && period?.start_date && period?.end_date) {
+        const targetCenter = user?.center || period?.center || 'all';
+        url = `/periods/center/generate-combined-docx?center=${encodeURIComponent(targetCenter)}&start_date=${period.start_date}&end_date=${period.end_date}&category_id=${previewCategory.id}`;
       } else {
         url = previewCategory?.id
           ? `/periods/${periodId}/categories/${previewCategory.id}/generate-docx`
@@ -630,15 +790,18 @@ const Categories = () => {
       const urlBlob = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = urlBlob;
-      const baseTitle = previewCategory?.name
-        ? `${previewCategory.name.replace(/\s+/g, '_')}_entries`
-        : (passedPeriodTitle || period?.title || `Newsletter_Period_${periodId}`).replace(/\s+/g, '_');
+      const rawBase = previewCategory?.name
+        ? `${previewCategory.name}_entries`
+        : (passedPeriodTitle || period?.title || `Newsletter_Period_${periodId}`);
+      const baseTitle = rawBase.replace(/[/\\?%*:|"<>]/g, '_').trim().replace(/\s+/g, '_');
 
       let suffix = '';
-      if (activeContribId && activeContribId !== 'all') {
+      if (isEditor && selectedCenterFilter && selectedCenterFilter !== 'all') {
+        suffix = `_${selectedCenterFilter.replace(/[/\\?%*:|"<>]/g, '_').trim().replace(/\s+/g, '_')}`;
+      } else if (!isEditor && activeContribId && activeContribId !== 'all') {
         const found = contributors.find((c) => c.id === Number(activeContribId));
         const foundName = canViewAll ? found?.name : (user?.name || 'My_Entries');
-        if (foundName) suffix = `_${foundName.replace(/\s+/g, '_')}`;
+        if (foundName) suffix = `_${foundName.replace(/[/\\?%*:|"<>]/g, '_').trim().replace(/\s+/g, '_')}`;
       }
       const filename = `${baseTitle}${suffix}.docx`;
       link.setAttribute('download', filename);
@@ -648,13 +811,23 @@ const Categories = () => {
       window.URL.revokeObjectURL(urlBlob);
     } catch (err) {
       console.error('Failed to download preview docx:', err);
-      alert('Failed to download document.');
+      let errorMsg = 'Failed to download document.';
+      if (err.response?.data instanceof Blob) {
+        try {
+          const text = await err.response.data.text();
+          const json = JSON.parse(text);
+          if (json.detail) errorMsg = json.detail;
+        } catch {
+          // ignore
+        }
+      } else if (err.response?.data?.detail) {
+        errorMsg = err.response.data.detail;
+      }
+      alert(errorMsg);
     } finally {
       setDownloadingPreviewDocx(false);
     }
   };
-
-  const passedRangeLabel = location.state?.rangeLabel;
 
   const getEditorTitle = () => {
     if (passedRangeLabel) return `The Science of Making — ${passedRangeLabel}`;
@@ -717,7 +890,6 @@ const Categories = () => {
             <span>{displayPeriodTitle}</span>
           </h2>
           <div className="categories-hero-meta">
-            <span>Department:</span>
             <span className="group-badge-hero">
               <IconUsersGroup size={13} />
               {isEditor
@@ -729,7 +901,6 @@ const Categories = () => {
             {isEditor ? (
               <>
                 <span>•</span>
-                <span>Scope:</span>
                 <span
                   style={{
                     backgroundColor: '#faf5ff',
@@ -741,13 +912,12 @@ const Categories = () => {
                     fontWeight: '700',
                   }}
                 >
-                  Editor Oversight (All Centers)
+                  All Centres
                 </span>
               </>
             ) : isChUser && (
               <>
                 <span>•</span>
-                <span>Center:</span>
                 <span
                   style={{
                     backgroundColor: '#fffbeb',
@@ -759,26 +929,25 @@ const Categories = () => {
                     fontWeight: '700',
                   }}
                 >
-                  {period?.center || user?.center || 'Center'} (CH Oversight)
+                  {period?.center || user?.center || 'Center'}
                 </span>
               </>
             )}
             <span>•</span>
-            <span>Status:</span>
             {period?.edit === false ? (
               <span className="status-badge-finalized">
                 <IconLock size={12} />
-                <span>Finalized (View-Only)</span>
+                <span>Finalized</span>
               </span>
             ) : isEditor ? (
               <span className="status-badge-open" style={{ backgroundColor: '#faf5ff', color: '#7e22ce', border: '1px solid #e9d5ff' }}>
                 <IconEye size={12} />
-                <span>Editor Review Mode (Open)</span>
+                <span>Editor Review</span>
               </span>
             ) : isChUser ? (
               <span className="status-badge-open" style={{ backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }}>
                 <IconCheck size={12} strokeWidth={2.5} />
-                <span>Open for Editing (CH)</span>
+                <span>Open (CH)</span>
               </span>
             ) : (
               <span className="status-badge-open">
@@ -929,13 +1098,16 @@ const Categories = () => {
         </div>
       )}
 
-      {/* 4. Categories Section Header */}
+      {/* 4. Categories Section Header with Inline Centre Filter */}
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          marginTop: '4px',
+          flexWrap: 'wrap',
+          gap: '12px',
+          marginTop: '6px',
+          marginBottom: '2px',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -943,11 +1115,127 @@ const Categories = () => {
           <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#0f172a', fontWeight: '800' }}>
             Categories
           </h3>
-          <span className="kanban-count-badge">{categories.length}</span>
+          <span className="kanban-count-badge">
+            {displayedCategories.length !== categories.length ? `${displayedCategories.length} / ${categories.length}` : categories.length}
+          </span>
         </div>
-        <span style={{ fontSize: '0.82rem', color: '#64748b' }}>
-          Click any category below to expand entries and add content
-        </span>
+
+        {/* Inline Centre Segmented Filter & Populated Toggle */}
+        {(isEditor || (isCombinedMode && mainPageCenters.length > 1)) && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            {/* Centre segmented pill buttons */}
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                backgroundColor: '#f1f5f9',
+                padding: '3px',
+                borderRadius: '10px',
+                border: '1px solid #e2e8f0',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setMainPageCenterFilter('all')}
+                style={{
+                  padding: '4px 11px',
+                  borderRadius: '7px',
+                  fontSize: '0.78rem',
+                  fontWeight: '600',
+                  border: 'none',
+                  backgroundColor: mainPageCenterFilter === 'all' ? '#ffffff' : 'transparent',
+                  color: mainPageCenterFilter === 'all' ? '#1d4ed8' : '#64748b',
+                  boxShadow: mainPageCenterFilter === 'all' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  transition: 'all 0.15s ease',
+                }}
+                title="View categories across all centres"
+              >
+                <span>All Centres</span>
+                <span
+                  style={{
+                    fontSize: '0.7rem',
+                    padding: '1px 5px',
+                    borderRadius: '8px',
+                    backgroundColor: mainPageCenterFilter === 'all' ? '#eff6ff' : '#e2e8f0',
+                    color: mainPageCenterFilter === 'all' ? '#1d4ed8' : '#64748b',
+                    fontWeight: '700',
+                  }}
+                >
+                  {allPeriodEntries.length}
+                </span>
+              </button>
+
+              {mainPageCenters.map((c) => {
+                const isSelected = mainPageCenterFilter.toLowerCase() === c.name.toLowerCase();
+                return (
+                  <button
+                    key={c.name}
+                    type="button"
+                    onClick={() => setMainPageCenterFilter(isSelected ? 'all' : c.name)}
+                    style={{
+                      padding: '4px 11px',
+                      borderRadius: '7px',
+                      fontSize: '0.78rem',
+                      fontWeight: '600',
+                      border: 'none',
+                      backgroundColor: isSelected ? '#ffffff' : 'transparent',
+                      color: isSelected ? '#1d4ed8' : '#64748b',
+                      boxShadow: isSelected ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      transition: 'all 0.15s ease',
+                    }}
+                    title={`Filter categories to ${c.name} (${c.count} entries)`}
+                  >
+                    <span>{c.name}</span>
+                    <span
+                      style={{
+                        fontSize: '0.7rem',
+                        padding: '1px 5px',
+                        borderRadius: '8px',
+                        backgroundColor: isSelected ? '#eff6ff' : '#e2e8f0',
+                        color: isSelected ? '#1d4ed8' : '#64748b',
+                        fontWeight: '700',
+                      }}
+                    >
+                      {c.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Compact Hide Empty Toggle */}
+            <button
+              type="button"
+              onClick={() => setHideEmptyCategories(!hideEmptyCategories)}
+              style={{
+                padding: '5px 12px',
+                borderRadius: '8px',
+                fontSize: '0.78rem',
+                fontWeight: '600',
+                border: hideEmptyCategories ? '1px solid #2563eb' : '1px solid #cbd5e1',
+                backgroundColor: hideEmptyCategories ? '#eff6ff' : '#ffffff',
+                color: hideEmptyCategories ? '#1d4ed8' : '#64748b',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                transition: 'all 0.15s ease',
+              }}
+              title={hideEmptyCategories ? 'Showing categories with entries only. Click to show all.' : 'Showing all categories. Click to show populated only.'}
+            >
+              <IconFilter size={13} style={{ color: hideEmptyCategories ? '#2563eb' : '#64748b' }} />
+              <span>{hideEmptyCategories ? 'Populated Only' : 'All Categories'}</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 5. Main Categories Accordion Stack */}
@@ -972,10 +1260,50 @@ const Categories = () => {
         </div>
       ) : error ? (
         <div className="error-message">{error}</div>
+      ) : displayedCategories.length === 0 ? (
+        <div
+          style={{
+            background: '#ffffff',
+            borderRadius: '16px',
+            border: '1px dashed #cbd5e1',
+            padding: '36px 24px',
+            textAlign: 'center',
+            color: '#64748b',
+          }}
+        >
+          <IconFileText size={32} style={{ color: '#94a3b8', margin: '0 auto 8px auto' }} />
+          <h4 style={{ margin: 0, color: '#334155' }}>No matching categories</h4>
+          <p style={{ margin: '6px 0 14px 0', fontSize: '0.86rem' }}>
+            {hideEmptyCategories
+              ? `No categories have entries matching Centre "${mainPageCenterFilter}".`
+              : `No categories or entries match "${categorySearchQuery}".`}
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setHideEmptyCategories(false);
+              setMainPageCenterFilter('all');
+              setCategorySearchQuery('');
+            }}
+            style={{
+              padding: '6px 16px',
+              borderRadius: '8px',
+              fontSize: '0.82rem',
+              fontWeight: '600',
+              backgroundColor: '#eff6ff',
+              color: '#1d4ed8',
+              border: '1px solid #bfdbfe',
+              cursor: 'pointer',
+            }}
+          >
+            Reset Filters
+          </button>
+        </div>
       ) : (
         <div className="category-accordion-list">
-          {categories.map((category) => {
+          {displayedCategories.map((category) => {
             const isExpanded = expandedCategoryId === category.id;
+            const catEntryCount = categoryEntryCounts[category.id] || 0;
 
             return (
               <div
@@ -994,11 +1322,29 @@ const Categories = () => {
                     </div>
 
                     <div className="category-title-wrap">
-                      <div className="category-name-row">
+                      <div className="category-name-row" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                         <h4 className="category-name-heading">{category.name}</h4>
                         {category.period_id && (
                           <span className="category-badge-custom">Custom</span>
                         )}
+                        {/* Category Entry Count Badge */}
+                        <span
+                          style={{
+                            fontSize: '0.74rem',
+                            fontWeight: '700',
+                            padding: '2px 8px',
+                            borderRadius: '12px',
+                            backgroundColor: catEntryCount > 0 ? '#eff6ff' : '#f1f5f9',
+                            color: catEntryCount > 0 ? '#1d4ed8' : '#94a3b8',
+                            border: catEntryCount > 0 ? '1px solid #bfdbfe' : '1px solid #e2e8f0',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                          }}
+                          title={`${catEntryCount} entries in ${category.name}${mainPageCenterFilter !== 'all' ? ` for ${mainPageCenterFilter}` : ''}`}
+                        >
+                          {catEntryCount > 0 ? `${catEntryCount} ${catEntryCount === 1 ? 'entry' : 'entries'}` : '0 entries'}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -1131,9 +1477,96 @@ const Categories = () => {
                             : 'No entries were recorded for this category.'}
                         </p>
                       </div>
-                    ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                        {categoryEntries.map((entry) => (
+                    ) : (() => {
+                      const activeCatEntries = (mainPageCenterFilter && mainPageCenterFilter !== 'all')
+                        ? categoryEntries.filter((e) => (e.center || '').trim().toLowerCase() === mainPageCenterFilter.trim().toLowerCase())
+                        : categoryEntries;
+
+                      const q = categorySearchQuery.trim().toLowerCase();
+                      const finalCatEntries = q
+                        ? activeCatEntries.filter((e) =>
+                            (e.title && e.title.toLowerCase().includes(q)) ||
+                            (e.description && e.description.toLowerCase().includes(q)) ||
+                            (e.created_by_name && e.created_by_name.toLowerCase().includes(q)) ||
+                            (e.group_name && e.group_name.toLowerCase().includes(q)) ||
+                            (e.center && e.center.toLowerCase().includes(q))
+                          )
+                        : activeCatEntries;
+
+                      if (finalCatEntries.length === 0) {
+                        return (
+                          <div
+                            style={{
+                              backgroundColor: '#f8fafc',
+                              border: '1px dashed #cbd5e1',
+                              borderRadius: '10px',
+                              padding: '24px 20px',
+                              textAlign: 'center',
+                            }}
+                          >
+                            <p style={{ margin: 0, color: '#64748b', fontSize: '0.86rem' }}>
+                              No entries in {category.name} match the current filter
+                              {mainPageCenterFilter !== 'all' ? ` for Centre "${mainPageCenterFilter}"` : ''}
+                              {q ? ` with search "${categorySearchQuery}"` : ''}.
+                            </p>
+                            {mainPageCenterFilter !== 'all' && (
+                              <button
+                                type="button"
+                                onClick={() => setMainPageCenterFilter('all')}
+                                style={{
+                                  marginTop: '10px',
+                                  padding: '5px 14px',
+                                  borderRadius: '6px',
+                                  fontSize: '0.8rem',
+                                  fontWeight: '600',
+                                  backgroundColor: '#eff6ff',
+                                  color: '#1d4ed8',
+                                  border: '1px solid #bfdbfe',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                View entries across all centres ({categoryEntries.length})
+                              </button>
+                            )}
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                          {mainPageCenterFilter !== 'all' && (
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                backgroundColor: '#f0fdf4',
+                                border: '1px solid #bbf7d0',
+                                padding: '6px 12px',
+                                borderRadius: '6px',
+                                fontSize: '0.78rem',
+                                color: '#166534',
+                                fontWeight: '600',
+                              }}
+                            >
+                              <span>Showing entries for Centre: <strong>{mainPageCenterFilter}</strong> ({finalCatEntries.length} of {categoryEntries.length} entries)</span>
+                              <button
+                                type="button"
+                                onClick={() => setMainPageCenterFilter('all')}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  color: '#15803d',
+                                  textDecoration: 'underline',
+                                  cursor: 'pointer',
+                                  fontSize: '0.76rem',
+                                }}
+                              >
+                                Show All Centres
+                              </button>
+                            </div>
+                          )}
+                          {finalCatEntries.map((entry) => (
                           <div key={entry.id} className="entry-card">
                             {editingEntryId === entry.id ? (
                               /* Inline Edit Form */
@@ -1331,6 +1764,26 @@ const Categories = () => {
                                         🏢 {entry.group_name}
                                       </span>
                                     )}
+                                    {entry.center && (
+                                      <span
+                                        className="entry-center-pill"
+                                        style={{
+                                          fontSize: '0.74rem',
+                                          fontWeight: '700',
+                                          backgroundColor: '#ecfdf5',
+                                          color: '#047857',
+                                          border: '1px solid #a7f3d0',
+                                          padding: '2px 8px',
+                                          borderRadius: '6px',
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '4px',
+                                        }}
+                                        title={`Centre: ${entry.center}`}
+                                      >
+                                        🏛️ {entry.center}
+                                      </span>
+                                    )}
                                     {canViewAll && (
                                       <span
                                         className="entry-author-pill"
@@ -1482,7 +1935,8 @@ const Categories = () => {
                           </div>
                         ))}
                       </div>
-                    )}
+                    );
+                  })()}
 
                     {/* Add New Entry Mini-Form Box */}
                     {!isViewOnly && (
@@ -1929,7 +2383,7 @@ const Categories = () => {
               </button>
             </div>
 
-            {/* Contributor Filter Selector Bar */}
+            {/* Filter Selector Bar — By Centre for Editor, or by Contributor for Non-Editor */}
             <div
               style={{
                 padding: '12px 24px',
@@ -1954,68 +2408,69 @@ const Categories = () => {
                   }}
                 >
                   <IconFilter size={14} style={{ color: '#2563eb' }} />
-                  <span>{canViewAll ? 'Filter by Contributor:' : 'My Entries:'}</span>
+                  <span>{isEditor ? 'Filter by Centre:' : (canViewAll ? 'Filter by Contributor:' : 'My Entries:')}</span>
                 </span>
                 <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
-                  {canViewAll
+                  {isEditor
+                    ? `${previewCenters.length} centre${previewCenters.length === 1 ? '' : 's'} contributed ${previewCategory ? `in ${previewCategory.name}` : 'to this edition'}`
+                    : canViewAll
                     ? `${contributors.length} member${contributors.length === 1 ? '' : 's'} contributed ${previewCategory ? `in ${previewCategory.name}` : 'to this edition'}`
                     : `Showing entries for ${user.name || user.email}`}
                 </span>
               </div>
 
-              {loadingContributors ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', color: '#64748b', fontSize: '0.84rem' }}>
-                  <IconLoader2 size={16} className="animate-spin text-blue-600" />
-                  <span>Loading contributors...</span>
-                </div>
-              ) : contributors.length === 0 ? (
-                <div style={{ fontSize: '0.84rem', color: '#64748b', padding: '4px 0' }}>
-                  {canViewAll
-                    ? `No members have contributed entries yet ${previewCategory ? `in ${previewCategory.name}` : 'for this newsletter edition'}.`
-                    : `You have not contributed any entries yet ${previewCategory ? `in ${previewCategory.name}` : 'for this edition'}.`}
-                </div>
-              ) : (
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    flexWrap: 'wrap',
-                    maxHeight: '80px',
-                    overflowY: 'auto',
-                    padding: '2px 0',
-                  }}
-                >
-                  {/* "All Contributions" Pill — available for GH / canViewAll users */}
-                  {canViewAll && (
+              {isEditor ? (
+                /* Editor Centre-Based Filter Pills */
+                loadingPreviewData ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', color: '#64748b', fontSize: '0.84rem' }}>
+                    <IconLoader2 size={16} className="animate-spin text-blue-600" />
+                    <span>Loading centres...</span>
+                  </div>
+                ) : previewCenters.length === 0 ? (
+                  <div style={{ fontSize: '0.84rem', color: '#64748b', padding: '4px 0' }}>
+                    No centres have contributed entries yet {previewCategory ? `in ${previewCategory.name}` : 'for this newsletter edition'}.
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      flexWrap: 'wrap',
+                      maxHeight: '80px',
+                      overflowY: 'auto',
+                      padding: '2px 0',
+                    }}
+                  >
+                    {/* "All Centres" Pill */}
                     <button
                       type="button"
-                      onClick={() => setSelectedContributorId('all')}
+                      onClick={() => setSelectedCenterFilter('all')}
                       style={{
                         padding: '6px 14px',
                         borderRadius: '20px',
                         fontSize: '0.82rem',
                         fontWeight: '600',
-                        border: selectedContributorId === 'all' || !selectedContributorId ? '1.5px solid #2563eb' : '1px solid #cbd5e1',
-                        backgroundColor: selectedContributorId === 'all' || !selectedContributorId ? '#eff6ff' : '#ffffff',
-                        color: selectedContributorId === 'all' || !selectedContributorId ? '#1d4ed8' : '#334155',
+                        border: selectedCenterFilter === 'all' || !selectedCenterFilter ? '1.5px solid #2563eb' : '1px solid #cbd5e1',
+                        backgroundColor: selectedCenterFilter === 'all' || !selectedCenterFilter ? '#eff6ff' : '#ffffff',
+                        color: selectedCenterFilter === 'all' || !selectedCenterFilter ? '#1d4ed8' : '#334155',
                         cursor: 'pointer',
                         display: 'inline-flex',
                         alignItems: 'center',
                         gap: '6px',
                         transition: 'all 0.15s ease',
-                        boxShadow: selectedContributorId === 'all' || !selectedContributorId ? '0 1px 4px rgba(37,99,235,0.2)' : 'none',
+                        boxShadow: selectedCenterFilter === 'all' || !selectedCenterFilter ? '0 1px 4px rgba(37,99,235,0.2)' : 'none',
                       }}
-                      title="View all combined contributions from all members"
+                      title="View all combined contributions across all centres"
                     >
-                      <IconUsersGroup size={14} style={{ color: selectedContributorId === 'all' || !selectedContributorId ? '#2563eb' : '#64748b' }} />
-                      <span>All Contributions</span>
+                      <IconBuilding size={14} style={{ color: selectedCenterFilter === 'all' || !selectedCenterFilter ? '#2563eb' : '#64748b' }} />
+                      <span>All Centres</span>
                       <span
                         style={{
                           padding: '1px 6px',
                           borderRadius: '10px',
-                          backgroundColor: selectedContributorId === 'all' || !selectedContributorId ? '#bfdbfe' : '#f1f5f9',
-                          color: selectedContributorId === 'all' || !selectedContributorId ? '#1e40af' : '#64748b',
+                          backgroundColor: selectedCenterFilter === 'all' || !selectedCenterFilter ? '#bfdbfe' : '#f1f5f9',
+                          color: selectedCenterFilter === 'all' || !selectedCenterFilter ? '#1e40af' : '#64748b',
                           fontSize: '0.72rem',
                           fontWeight: '700',
                         }}
@@ -2023,67 +2478,175 @@ const Categories = () => {
                         {previewEntries.length}
                       </span>
                     </button>
-                  )}
 
-                  {/* Individual Contributor Pills — show active contributors for GH, or self for member */}
-                  {contributors.map((c) => {
-                    const isSelected = selectedContributorId === c.id;
-                    const isUserGh = c.role?.trim().toLowerCase() === 'gh';
-                    return (
+                    {/* Individual Centre Pills — Multiple contributors from same centre aggregated here */}
+                    {previewCenters.map((c) => {
+                      const isSelected = selectedCenterFilter.toLowerCase() === c.name.toLowerCase();
+                      return (
+                        <button
+                          key={c.name}
+                          type="button"
+                          onClick={() => setSelectedCenterFilter(c.name)}
+                          style={{
+                            padding: '6px 14px',
+                            borderRadius: '20px',
+                            fontSize: '0.82rem',
+                            fontWeight: '600',
+                            border: isSelected ? '1.5px solid #2563eb' : '1px solid #cbd5e1',
+                            backgroundColor: isSelected ? '#eff6ff' : '#ffffff',
+                            color: isSelected ? '#1d4ed8' : '#334155',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            transition: 'all 0.15s ease',
+                            boxShadow: isSelected ? '0 1px 4px rgba(37,99,235,0.2)' : 'none',
+                          }}
+                          title={`Centre: ${c.name} — ${c.count} total entries across all members`}
+                        >
+                          <IconBuilding size={14} style={{ color: isSelected ? '#2563eb' : '#64748b' }} />
+                          <span>{c.name}</span>
+                          <span
+                            style={{
+                              padding: '1px 6px',
+                              borderRadius: '10px',
+                              backgroundColor: isSelected ? '#bfdbfe' : '#f1f5f9',
+                              color: isSelected ? '#1e40af' : '#64748b',
+                              fontSize: '0.72rem',
+                              fontWeight: '700',
+                            }}
+                          >
+                            {c.count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )
+              ) : (
+                /* Non-Editor Contributor Pills */
+                loadingContributors ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', color: '#64748b', fontSize: '0.84rem' }}>
+                    <IconLoader2 size={16} className="animate-spin text-blue-600" />
+                    <span>Loading contributors...</span>
+                  </div>
+                ) : contributors.length === 0 ? (
+                  <div style={{ fontSize: '0.84rem', color: '#64748b', padding: '4px 0' }}>
+                    {canViewAll
+                      ? `No members have contributed entries yet ${previewCategory ? `in ${previewCategory.name}` : 'for this newsletter edition'}.`
+                      : `You have not contributed any entries yet ${previewCategory ? `in ${previewCategory.name}` : 'for this edition'}.`}
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      flexWrap: 'wrap',
+                      maxHeight: '80px',
+                      overflowY: 'auto',
+                      padding: '2px 0',
+                    }}
+                  >
+                    {/* "All Contributions" Pill — available for GH / canViewAll users */}
+                    {canViewAll && (
                       <button
-                        key={c.id}
                         type="button"
-                        onClick={() => setSelectedContributorId(c.id)}
+                        onClick={() => setSelectedContributorId('all')}
                         style={{
                           padding: '6px 14px',
                           borderRadius: '20px',
                           fontSize: '0.82rem',
                           fontWeight: '600',
-                          border: isSelected ? '1.5px solid #2563eb' : '1px solid #cbd5e1',
-                          backgroundColor: isSelected ? '#eff6ff' : '#ffffff',
-                          color: isSelected ? '#1d4ed8' : '#334155',
+                          border: selectedContributorId === 'all' || !selectedContributorId ? '1.5px solid #2563eb' : '1px solid #cbd5e1',
+                          backgroundColor: selectedContributorId === 'all' || !selectedContributorId ? '#eff6ff' : '#ffffff',
+                          color: selectedContributorId === 'all' || !selectedContributorId ? '#1d4ed8' : '#334155',
                           cursor: 'pointer',
                           display: 'inline-flex',
                           alignItems: 'center',
                           gap: '6px',
                           transition: 'all 0.15s ease',
-                          boxShadow: isSelected ? '0 1px 4px rgba(37,99,235,0.2)' : 'none',
+                          boxShadow: selectedContributorId === 'all' || !selectedContributorId ? '0 1px 4px rgba(37,99,235,0.2)' : 'none',
                         }}
-                        title={`${c.name} (${isUserGh ? 'Group Head' : c.designation || 'Member'}) — ${c.entry_count} entries`}
+                        title="View all combined contributions from all members"
                       >
-                        <IconUser size={14} style={{ color: isSelected ? '#2563eb' : '#64748b' }} />
-                        <span>{!canViewAll && c.id === user.id ? `My Entries (${c.name})` : c.name}</span>
-                        {isUserGh && (
-                          <span
-                            style={{
-                              padding: '1px 5px',
-                              borderRadius: '4px',
-                              backgroundColor: '#fef3c7',
-                              color: '#92400e',
-                              fontSize: '0.68rem',
-                              fontWeight: '800',
-                              border: '1px solid #fde68a',
-                            }}
-                          >
-                            GH
-                          </span>
-                        )}
+                        <IconUsersGroup size={14} style={{ color: selectedContributorId === 'all' || !selectedContributorId ? '#2563eb' : '#64748b' }} />
+                        <span>All Contributions</span>
                         <span
                           style={{
                             padding: '1px 6px',
                             borderRadius: '10px',
-                            backgroundColor: isSelected ? '#bfdbfe' : '#f1f5f9',
-                            color: isSelected ? '#1e40af' : '#64748b',
+                            backgroundColor: selectedContributorId === 'all' || !selectedContributorId ? '#bfdbfe' : '#f1f5f9',
+                            color: selectedContributorId === 'all' || !selectedContributorId ? '#1e40af' : '#64748b',
                             fontSize: '0.72rem',
                             fontWeight: '700',
                           }}
                         >
-                          {c.entry_count}
+                          {previewEntries.length}
                         </span>
                       </button>
-                    );
-                  })}
-                </div>
+                    )}
+
+                    {/* Individual Contributor Pills — show active contributors for GH, or self for member */}
+                    {contributors.map((c) => {
+                      const isSelected = selectedContributorId === c.id;
+                      const isUserGh = c.role?.trim().toLowerCase() === 'gh';
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => setSelectedContributorId(c.id)}
+                          style={{
+                            padding: '6px 14px',
+                            borderRadius: '20px',
+                            fontSize: '0.82rem',
+                            fontWeight: '600',
+                            border: isSelected ? '1.5px solid #2563eb' : '1px solid #cbd5e1',
+                            backgroundColor: isSelected ? '#eff6ff' : '#ffffff',
+                            color: isSelected ? '#1d4ed8' : '#334155',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            transition: 'all 0.15s ease',
+                            boxShadow: isSelected ? '0 1px 4px rgba(37,99,235,0.2)' : 'none',
+                          }}
+                          title={`${c.name} (${isUserGh ? 'Group Head' : c.designation || 'Member'}) — ${c.entry_count} entries`}
+                        >
+                          <IconUser size={14} style={{ color: isSelected ? '#2563eb' : '#64748b' }} />
+                          <span>{!canViewAll && c.id === user.id ? `My Entries (${c.name})` : c.name}</span>
+                          {isUserGh && (
+                            <span
+                              style={{
+                                padding: '1px 5px',
+                                borderRadius: '4px',
+                                backgroundColor: '#fef3c7',
+                                color: '#92400e',
+                                fontSize: '0.68rem',
+                                fontWeight: '800',
+                                border: '1px solid #fde68a',
+                              }}
+                            >
+                              GH
+                            </span>
+                          )}
+                          <span
+                            style={{
+                              padding: '1px 6px',
+                              borderRadius: '10px',
+                              backgroundColor: isSelected ? '#bfdbfe' : '#f1f5f9',
+                              color: isSelected ? '#1e40af' : '#64748b',
+                              fontSize: '0.72rem',
+                              fontWeight: '700',
+                            }}
+                          >
+                            {c.entry_count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )
               )}
             </div>
 
@@ -2176,16 +2739,27 @@ const Categories = () => {
                           border: '1px solid #bfdbfe',
                         }}
                       >
-                        Contributor: {selectedContributorId === 'all' || !selectedContributorId ? 'All Contributions' : (contributors.find((c) => c.id === Number(selectedContributorId))?.name || user?.name || 'Contributor')}
+                        {isEditor
+                          ? `Centre: ${selectedCenterFilter === 'all' || !selectedCenterFilter ? 'All Centres' : selectedCenterFilter}`
+                          : `Contributor: ${selectedContributorId === 'all' || !selectedContributorId ? 'All Contributions' : (contributors.find((c) => c.id === Number(selectedContributorId))?.name || user?.name || 'Contributor')}`}
                       </span>
                     </div>
                   </div>
 
                   {/* Render Entries Grouped by Category */}
                   {(() => {
-                    const activeEntries = (selectedContributorId && selectedContributorId !== 'all')
-                      ? previewEntries.filter((e) => e.created_by === Number(selectedContributorId))
-                      : previewEntries;
+                    const activeEntries = isEditor
+                      ? (selectedCenterFilter && selectedCenterFilter !== 'all'
+                          ? previewEntries.filter(
+                              (e) =>
+                                (e.center || contributors.find((c) => c.id === e.created_by)?.center || 'Main')
+                                  .trim()
+                                  .toLowerCase() === selectedCenterFilter.trim().toLowerCase()
+                            )
+                          : previewEntries)
+                      : ((selectedContributorId && selectedContributorId !== 'all')
+                          ? previewEntries.filter((e) => e.created_by === Number(selectedContributorId))
+                          : previewEntries);
 
                     if (activeEntries.length === 0) {
                       return (
@@ -2193,13 +2767,17 @@ const Categories = () => {
                           <IconFileText size={36} style={{ color: '#94a3b8', margin: '0 auto 10px auto' }} />
                           <h4 style={{ margin: 0, color: '#334155' }}>No entries found</h4>
                           <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem' }}>
-                            {canViewAll
-                              ? (contributors.length === 0
-                                ? previewCategory
-                                  ? `No members have contributed entries in ${previewCategory.name} yet.`
-                                  : 'No members have contributed entries to this newsletter edition yet.'
-                                : `This contributor has not submitted any entries ${previewCategory ? `in ${previewCategory.name}` : 'for this edition'}.`)
-                              : `You have not submitted any entries ${previewCategory ? `in ${previewCategory.name}` : 'for this edition'} yet.`}
+                            {isEditor
+                              ? (selectedCenterFilter === 'all'
+                                  ? `No entries have been submitted ${previewCategory ? `in ${previewCategory.name}` : 'for this newsletter edition'} yet.`
+                                  : `No entries found for Centre "${selectedCenterFilter}" ${previewCategory ? `in ${previewCategory.name}` : 'for this edition'}.`)
+                              : canViewAll
+                                ? (contributors.length === 0
+                                  ? previewCategory
+                                    ? `No members have contributed entries in ${previewCategory.name} yet.`
+                                    : 'No members have contributed entries to this newsletter edition yet.'
+                                  : `This contributor has not submitted any entries ${previewCategory ? `in ${previewCategory.name}` : 'for this edition'}.`)
+                                : `You have not submitted any entries ${previewCategory ? `in ${previewCategory.name}` : 'for this edition'} yet.`}
                           </p>
                         </div>
                       );
@@ -2243,6 +2821,11 @@ const Categories = () => {
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                             {catEntries.map((entry) => {
                               const itemNumber = globalEntryIndex++;
+                              const entryCenter = (
+                                entry.center ||
+                                contributors.find((c) => c.id === entry.created_by)?.center ||
+                                ''
+                              ).trim();
                               return (
                                 <div key={entry.id} style={{ paddingLeft: '8px' }}>
                                   {/* Title & Author Attribution */}
@@ -2273,7 +2856,23 @@ const Categories = () => {
                                         🏢 {entry.group_name}
                                       </span>
                                     )}
-                                    {selectedContributorId === 'all' && (
+                                    {entryCenter && (
+                                      <span
+                                        style={{
+                                          fontSize: '0.74rem',
+                                          color: '#047857',
+                                          backgroundColor: '#ecfdf5',
+                                          border: '1px solid #a7f3d0',
+                                          padding: '2px 8px',
+                                          borderRadius: '6px',
+                                          fontWeight: '700',
+                                        }}
+                                        title={`Centre: ${entryCenter}`}
+                                      >
+                                        🏛️ {entryCenter}
+                                      </span>
+                                    )}
+                                    {(isEditor || selectedContributorId === 'all') && (
                                       <span
                                         style={{
                                           fontSize: '0.74rem',
@@ -2380,7 +2979,11 @@ const Categories = () => {
               }}
             >
               <div style={{ fontSize: '0.82rem', color: '#64748b' }}>
-                {canViewAll
+                {isEditor
+                  ? (selectedCenterFilter === 'all' || !selectedCenterFilter
+                    ? `Showing ${previewEntries.length} entries from ${previewCenters.length} centre(s)${previewCategory ? ` in ${previewCategory.name}` : ''}`
+                    : `Showing entries for Centre: ${selectedCenterFilter}${previewCategory ? ` in ${previewCategory.name}` : ''}`)
+                  : canViewAll
                   ? (selectedContributorId === 'all' || !selectedContributorId
                     ? `Showing ${previewEntries.length} entries from ${contributors.length} contributor(s)${previewCategory ? ` in ${previewCategory.name}` : ''}`
                     : `Showing entries for: ${contributors.find((c) => c.id === Number(selectedContributorId))?.name || 'Contributor'}${previewCategory ? ` in ${previewCategory.name}` : ''}`)
@@ -2408,20 +3011,20 @@ const Categories = () => {
                 <button
                   type="button"
                   onClick={handleDownloadFilteredPreview}
-                  disabled={downloadingPreviewDocx || !selectedContributorId}
+                  disabled={downloadingPreviewDocx || (!isEditor && !selectedContributorId)}
                   style={{
                     padding: '8px 18px',
                     borderRadius: '8px',
                     fontSize: '0.86rem',
                     fontWeight: '600',
-                    backgroundColor: !selectedContributorId ? '#94a3b8' : '#059669',
+                    backgroundColor: (!isEditor && !selectedContributorId) ? '#94a3b8' : '#059669',
                     color: '#ffffff',
                     border: 'none',
-                    cursor: downloadingPreviewDocx || !selectedContributorId ? 'not-allowed' : 'pointer',
+                    cursor: downloadingPreviewDocx || (!isEditor && !selectedContributorId) ? 'not-allowed' : 'pointer',
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: '6px',
-                    boxShadow: selectedContributorId ? '0 2px 6px rgba(5,150,105,0.25)' : 'none',
+                    boxShadow: '0 2px 6px rgba(5,150,105,0.25)',
                   }}
                 >
                   {downloadingPreviewDocx ? (
@@ -2433,11 +3036,15 @@ const Categories = () => {
                     <>
                       <IconDownload size={16} />
                       <span>
-                        {selectedContributorId === 'all' || !selectedContributorId
-                          ? (previewCategory ? `Download ${previewCategory.name} (.docx)` : 'Download Full Newsletter (.docx)')
-                          : (canViewAll
-                            ? `Download ${contributors.find((c) => c.id === Number(selectedContributorId))?.name || 'Contributor'}'s Entries (.docx)`
-                            : 'Download My Entries (.docx)')}
+                        {isEditor
+                          ? (selectedCenterFilter === 'all' || !selectedCenterFilter
+                            ? (previewCategory ? `Download ${previewCategory.name} (.docx)` : 'Download Full Newsletter (.docx)')
+                            : `Download ${selectedCenterFilter} Centre's Entries (.docx)`)
+                          : (selectedContributorId === 'all' || !selectedContributorId
+                            ? (previewCategory ? `Download ${previewCategory.name} (.docx)` : 'Download Full Newsletter (.docx)')
+                            : (canViewAll
+                              ? `Download ${contributors.find((c) => c.id === Number(selectedContributorId))?.name || 'Contributor'}'s Entries (.docx)`
+                              : 'Download My Entries (.docx)'))}
                       </span>
                     </>
                   )}
