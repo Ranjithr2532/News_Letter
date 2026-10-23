@@ -49,9 +49,18 @@ const Categories = () => {
   const isGhUser = currentRole === 'gh';
 
   const searchParams = new URLSearchParams(location.search);
-  const allPeriodsParam = searchParams.get('all_periods');
-  const queryPeriodId = allPeriodsParam || periodId;
-  const isCombinedMode = Boolean((allPeriodsParam && allPeriodsParam.includes(',')) || isEditor);
+  const isEditionSlug = typeof periodId === 'string' && /^\d{4}-\d{2}-H[12]$/i.test(periodId);
+
+  // Maintain activeAllPeriodIds and activePrimaryPeriodId so slug and query param work interchangeably
+  const [activeAllPeriodIds, setActiveAllPeriodIds] = useState(() => {
+    return location.state?.allPeriodIds || searchParams.get('all_periods') || (!isEditionSlug ? periodId : '');
+  });
+  const [activePrimaryPeriodId, setActivePrimaryPeriodId] = useState(() => {
+    return location.state?.primaryPeriodId || (!isEditionSlug && !isNaN(Number(periodId)) ? Number(periodId) : null);
+  });
+
+  const queryPeriodId = activeAllPeriodIds || activePrimaryPeriodId || periodId;
+  const isCombinedMode = Boolean((activeAllPeriodIds && activeAllPeriodIds.includes(',')) || isEditor || isChUser);
 
   const [period, setPeriod] = useState(null);
   const [categories, setCategories] = useState([]);
@@ -119,15 +128,16 @@ const Categories = () => {
   // Main Page Period Entries & Category Filter Toolbar state
   const [allPeriodEntries, setAllPeriodEntries] = useState([]);
   const [mainPageCenterFilter, setMainPageCenterFilter] = useState('all');
-  const [hideEmptyCategories, setHideEmptyCategories] = useState(() => isEditor);
+  const [mainPageDeptFilter, setMainPageDeptFilter] = useState('all');
+  const [categoryTab, setCategoryTab] = useState(() => (isEditor || isChUser ? 'with_entries' : 'all'));
   const [categorySearchQuery, setCategorySearchQuery] = useState('');
 
-  // Default to showing populated categories for Editor
+  // Default to showing categories with entries for Editor and CH
   useEffect(() => {
-    if (isEditor) {
-      setHideEmptyCategories(true);
+    if (isEditor || isChUser) {
+      setCategoryTab('with_entries');
     }
-  }, [isEditor]);
+  }, [isEditor, isChUser]);
 
   // Group all period entries by Centre for main page filtering
   const mainPageCenters = useMemo(() => {
@@ -141,7 +151,19 @@ const Categories = () => {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [allPeriodEntries]);
 
-  // Count of entries per category on the main page (reacts to mainPageCenterFilter)
+  // Group all period entries by Department for CH filtering
+  const mainPageDepartments = useMemo(() => {
+    const counts = {};
+    allPeriodEntries.forEach((e) => {
+      const dName = (e.group_name || 'General').trim();
+      counts[dName] = (counts[dName] || 0) + 1;
+    });
+    return Object.entries(counts)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [allPeriodEntries]);
+
+  // Count of entries per category on the main page (reacts to mainPageCenterFilter & mainPageDeptFilter)
   const categoryEntryCounts = useMemo(() => {
     const map = {};
     allPeriodEntries.forEach((e) => {
@@ -149,15 +171,19 @@ const Categories = () => {
         const entryCenter = (e.center || '').trim().toLowerCase();
         if (entryCenter !== mainPageCenterFilter.trim().toLowerCase()) return;
       }
+      if (mainPageDeptFilter && mainPageDeptFilter !== 'all') {
+        const entryDept = (e.group_name || '').trim().toLowerCase();
+        if (entryDept !== mainPageDeptFilter.trim().toLowerCase()) return;
+      }
       map[e.category_id] = (map[e.category_id] || 0) + 1;
     });
     return map;
-  }, [allPeriodEntries, mainPageCenterFilter]);
+  }, [allPeriodEntries, mainPageCenterFilter, mainPageDeptFilter]);
 
-  // Auto-expand first populated category for editor on initial load
+  // Auto-expand first populated category for editor or CH on initial load
   const autoExpandedRef = useRef(false);
   useEffect(() => {
-    if (isEditor && !autoExpandedRef.current && categories.length > 0 && allPeriodEntries.length > 0) {
+    if ((isEditor || isChUser) && !autoExpandedRef.current && categories.length > 0 && allPeriodEntries.length > 0) {
       const firstWithEntries = categories.find((c) => (categoryEntryCounts[c.id] || 0) > 0);
       if (firstWithEntries) {
         setExpandedCategoryId(firstWithEntries.id);
@@ -165,21 +191,18 @@ const Categories = () => {
         autoExpandedRef.current = true;
       }
     }
-  }, [isEditor, categories, allPeriodEntries, categoryEntryCounts]);
+  }, [isEditor, isChUser, categories, allPeriodEntries, categoryEntryCounts]);
 
-  // Filtered categories for display based on search & hideEmptyCategories
+  // Filtered categories for display based on search
   const displayedCategories = useMemo(() => {
-    const hasAnyEntries = allPeriodEntries.length > 0;
     return categories.filter((category) => {
-      const count = categoryEntryCounts[category.id] || 0;
-      if (hideEmptyCategories && hasAnyEntries && count === 0) return false;
-
       if (categorySearchQuery.trim()) {
         const q = categorySearchQuery.toLowerCase();
         const matchesName = category.name.toLowerCase().includes(q);
         const hasMatchingEntry = allPeriodEntries.some((e) => {
           if (e.category_id !== category.id) return false;
           if (mainPageCenterFilter !== 'all' && (e.center || '').trim().toLowerCase() !== mainPageCenterFilter.trim().toLowerCase()) return false;
+          if (mainPageDeptFilter !== 'all' && (e.group_name || '').trim().toLowerCase() !== mainPageDeptFilter.trim().toLowerCase()) return false;
           return (
             (e.title && e.title.toLowerCase().includes(q)) ||
             (e.description && e.description.toLowerCase().includes(q)) ||
@@ -192,7 +215,19 @@ const Categories = () => {
       }
       return true;
     });
-  }, [categories, categoryEntryCounts, hideEmptyCategories, categorySearchQuery, allPeriodEntries, mainPageCenterFilter]);
+  }, [categories, categorySearchQuery, allPeriodEntries, mainPageCenterFilter, mainPageDeptFilter]);
+
+  // Separate into categories with entries vs other categories
+  const categoriesWithEntries = useMemo(() => {
+    return displayedCategories.filter((c) => (categoryEntryCounts[c.id] || 0) > 0);
+  }, [displayedCategories, categoryEntryCounts]);
+
+  const categoriesToRender = useMemo(() => {
+    if (categoryTab === 'with_entries') {
+      return categoriesWithEntries;
+    }
+    return displayedCategories;
+  }, [categoryTab, categoriesWithEntries, displayedCategories]);
 
   // Photo Lightbox modal
   const [previewPhoto, setPreviewPhoto] = useState(null);
@@ -245,19 +280,56 @@ const Categories = () => {
   // Deadline Warning Banner state
   const [deadlineWarning, setDeadlineWarning] = useState(false);
 
+  // If periodId is an edition slug (e.g. 2026-10-H1) and IDs not yet passed in state, resolve them from backend
   useEffect(() => {
     if (!user) {
       navigate('/');
       return;
     }
-    fetchPeriod();
-    fetchCategories();
-    fetchAllPeriodEntries();
-  }, [user, periodId, allPeriodsParam, navigate]);
 
-  const fetchPeriod = async () => {
+    if (isEditionSlug && (!activeAllPeriodIds || !activePrimaryPeriodId)) {
+      const parts = periodId.split('-');
+      if (parts.length === 3) {
+        const y = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10);
+        const isH1 = parts[2].toUpperCase() === 'H1';
+        api
+          .get('/periods/', { params: { year: y, month: m } })
+          .then((res) => {
+            const halfPeriods = (res.data || []).filter((p) => {
+              if (!p.start_date) return false;
+              const day = parseInt(p.start_date.split('-')[2], 10);
+              return isH1 ? day <= 15 : day > 15;
+            });
+            if (halfPeriods.length > 0) {
+              const ids = halfPeriods.map((p) => p.id).join(',');
+              setActiveAllPeriodIds(ids);
+              setActivePrimaryPeriodId(halfPeriods[0].id);
+              setPeriod(halfPeriods[0]);
+            }
+          })
+          .catch((err) => console.error('Failed to resolve edition periods:', err));
+      }
+    }
+  }, [user, periodId, isEditionSlug, activeAllPeriodIds, activePrimaryPeriodId, navigate]);
+
+  useEffect(() => {
+    if (!user) return;
+    const effectiveId = activePrimaryPeriodId || (!isEditionSlug && !isNaN(Number(periodId)) ? Number(periodId) : null);
+    if (effectiveId) {
+      fetchPeriod(effectiveId);
+    }
+    if (queryPeriodId) {
+      fetchCategories();
+      fetchAllPeriodEntries();
+    }
+  }, [user, periodId, queryPeriodId, activePrimaryPeriodId]);
+
+  const fetchPeriod = async (targetId) => {
+    const idToFetch = targetId || activePrimaryPeriodId || (!isEditionSlug && !isNaN(Number(periodId)) ? Number(periodId) : null);
+    if (!idToFetch) return;
     try {
-      const res = await api.get(`/periods/${periodId}`);
+      const res = await api.get(`/periods/${idToFetch}`);
       setPeriod(res.data);
       if (res.data && res.data.edit === true && res.data.end_date) {
         const endDateParts = res.data.end_date.split('-');
@@ -356,7 +428,7 @@ const Categories = () => {
     setSubmittingNew(true);
     try {
       const res = await api.post('/entries/', {
-        period_id: Number(periodId),
+        period_id: Number(activePrimaryPeriodId || period?.id || periodId),
         category_id: Number(catId),
         group_name: user?.group || user?.group_name || period?.group_name || 'General',
         title: newTitle.trim(),
@@ -544,7 +616,7 @@ const Categories = () => {
       await api.post('/categories/', {
         name: otherTitle.trim(),
         stage_number: maxStage + 1,
-        period_id: Number(periodId),
+        period_id: Number(activePrimaryPeriodId || period?.id || periodId),
       });
       setOtherTitle('');
       setShowOtherModal(false);
@@ -831,6 +903,15 @@ const Categories = () => {
 
   const getEditorTitle = () => {
     if (passedRangeLabel) return `The Science of Making — ${passedRangeLabel}`;
+    if (isEditionSlug) {
+      const parts = periodId.split('-');
+      if (parts.length === 3) {
+        const monthNames = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const mName = monthNames[parseInt(parts[1], 10)] || parts[1];
+        const days = parts[2].toUpperCase() === 'H1' ? '1–15' : '16–31';
+        return `The Science of Making — ${mName} ${days}, ${parts[0]}`;
+      }
+    }
     if (period?.start_date && period?.end_date) {
       const parts = period.start_date.split('-');
       const eParts = period.end_date.split('-');
@@ -851,7 +932,7 @@ const Categories = () => {
     return period?.title || 'The Science of Making Overview';
   };
 
-  const displayPeriodTitle = isEditor
+  const displayPeriodTitle = (isEditor || isChUser || isEditionSlug)
     ? getEditorTitle()
     : ((isCombinedMode && passedPeriodTitle)
       ? passedPeriodTitle
@@ -862,23 +943,15 @@ const Categories = () => {
       {/* 1. Top Breadcrumb Navigation */}
       <div>
         <button
+          type="button"
           onClick={() => navigate('/periods')}
-          className="btn-link-back"
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            fontSize: '0.86rem',
-            fontWeight: '600',
-            color: '#2563eb',
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            padding: '4px 0',
-          }}
+          className="btn-back-pill"
+          title="Return to Newsletter Overview"
         >
-          <IconArrowLeft size={18} />
-          <span>Back to Newsletter Overview</span>
+          <div className="back-icon-circle">
+            <IconArrowLeft size={16} strokeWidth={2.4} />
+          </div>
+          <span>Back</span>
         </button>
       </div>
 
@@ -1115,127 +1188,171 @@ const Categories = () => {
           <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#0f172a', fontWeight: '800' }}>
             Categories
           </h3>
-          <span className="kanban-count-badge">
-            {displayedCategories.length !== categories.length ? `${displayedCategories.length} / ${categories.length}` : categories.length}
-          </span>
         </div>
 
-        {/* Inline Centre Segmented Filter & Populated Toggle */}
-        {(isEditor || (isCombinedMode && mainPageCenters.length > 1)) && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-            {/* Centre segmented pill buttons */}
-            <div
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                backgroundColor: '#f1f5f9',
-                padding: '3px',
-                borderRadius: '10px',
-                border: '1px solid #e2e8f0',
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => setMainPageCenterFilter('all')}
-                style={{
-                  padding: '4px 11px',
-                  borderRadius: '7px',
-                  fontSize: '0.78rem',
-                  fontWeight: '600',
-                  border: 'none',
-                  backgroundColor: mainPageCenterFilter === 'all' ? '#ffffff' : 'transparent',
-                  color: mainPageCenterFilter === 'all' ? '#1d4ed8' : '#64748b',
-                  boxShadow: mainPageCenterFilter === 'all' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  transition: 'all 0.15s ease',
-                }}
-                title="View categories across all centres"
-              >
-                <span>All Centres</span>
-                <span
-                  style={{
-                    fontSize: '0.7rem',
-                    padding: '1px 5px',
-                    borderRadius: '8px',
-                    backgroundColor: mainPageCenterFilter === 'all' ? '#eff6ff' : '#e2e8f0',
-                    color: mainPageCenterFilter === 'all' ? '#1d4ed8' : '#64748b',
-                    fontWeight: '700',
-                  }}
-                >
-                  {allPeriodEntries.length}
-                </span>
-              </button>
-
-              {mainPageCenters.map((c) => {
-                const isSelected = mainPageCenterFilter.toLowerCase() === c.name.toLowerCase();
-                return (
-                  <button
-                    key={c.name}
-                    type="button"
-                    onClick={() => setMainPageCenterFilter(isSelected ? 'all' : c.name)}
-                    style={{
-                      padding: '4px 11px',
-                      borderRadius: '7px',
-                      fontSize: '0.78rem',
-                      fontWeight: '600',
-                      border: 'none',
-                      backgroundColor: isSelected ? '#ffffff' : 'transparent',
-                      color: isSelected ? '#1d4ed8' : '#64748b',
-                      boxShadow: isSelected ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      transition: 'all 0.15s ease',
-                    }}
-                    title={`Filter categories to ${c.name} (${c.count} entries)`}
-                  >
-                    <span>{c.name}</span>
-                    <span
-                      style={{
-                        fontSize: '0.7rem',
-                        padding: '1px 5px',
-                        borderRadius: '8px',
-                        backgroundColor: isSelected ? '#eff6ff' : '#e2e8f0',
-                        color: isSelected ? '#1d4ed8' : '#64748b',
-                        fontWeight: '700',
-                      }}
-                    >
-                      {c.count}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Compact Hide Empty Toggle */}
+        {/* Right side: Tab Switch + Centre / Department Filter */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          {/* Segmented Tab Switch: All Categories vs With Entries (placed right before Centre/Dept dropdown) */}
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              backgroundColor: '#f1f5f9',
+              borderRadius: '8px',
+              padding: '3px',
+              border: '1px solid #cbd5e1',
+              gap: '2px',
+            }}
+          >
             <button
               type="button"
-              onClick={() => setHideEmptyCategories(!hideEmptyCategories)}
+              onClick={() => setCategoryTab('all')}
               style={{
-                padding: '5px 12px',
-                borderRadius: '8px',
-                fontSize: '0.78rem',
-                fontWeight: '600',
-                border: hideEmptyCategories ? '1px solid #2563eb' : '1px solid #cbd5e1',
-                backgroundColor: hideEmptyCategories ? '#eff6ff' : '#ffffff',
-                color: hideEmptyCategories ? '#1d4ed8' : '#64748b',
+                padding: '4px 12px',
+                borderRadius: '6px',
+                fontSize: '0.8rem',
+                fontWeight: '700',
+                border: 'none',
+                backgroundColor: categoryTab === 'all' ? '#ffffff' : 'transparent',
+                color: categoryTab === 'all' ? '#0f172a' : '#64748b',
+                boxShadow: categoryTab === 'all' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
                 cursor: 'pointer',
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: '5px',
+                gap: '6px',
                 transition: 'all 0.15s ease',
               }}
-              title={hideEmptyCategories ? 'Showing categories with entries only. Click to show all.' : 'Showing all categories. Click to show populated only.'}
+              title="View all categories"
             >
-              <IconFilter size={13} style={{ color: hideEmptyCategories ? '#2563eb' : '#64748b' }} />
-              <span>{hideEmptyCategories ? 'Populated Only' : 'All Categories'}</span>
+              <span>All Categories</span>
+              <span
+                style={{
+                  fontSize: '0.72rem',
+                  padding: '1px 6px',
+                  borderRadius: '10px',
+                  backgroundColor: categoryTab === 'all' ? '#eff6ff' : '#e2e8f0',
+                  color: categoryTab === 'all' ? '#1d4ed8' : '#64748b',
+                  fontWeight: '700',
+                }}
+              >
+                {displayedCategories.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setCategoryTab('with_entries')}
+              style={{
+                padding: '4px 12px',
+                borderRadius: '6px',
+                fontSize: '0.8rem',
+                fontWeight: '700',
+                border: 'none',
+                backgroundColor: categoryTab === 'with_entries' ? '#2563eb' : 'transparent',
+                color: categoryTab === 'with_entries' ? '#ffffff' : '#64748b',
+                boxShadow: categoryTab === 'with_entries' ? '0 1px 4px rgba(37,99,235,0.3)' : 'none',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 0.15s ease',
+              }}
+              title="View only categories with recorded entries"
+            >
+              <span>With Entries</span>
+              <span
+                style={{
+                  fontSize: '0.72rem',
+                  padding: '1px 6px',
+                  borderRadius: '10px',
+                  backgroundColor: categoryTab === 'with_entries' ? 'rgba(255,255,255,0.25)' : '#e2e8f0',
+                  color: categoryTab === 'with_entries' ? '#ffffff' : '#64748b',
+                  fontWeight: '700',
+                }}
+              >
+                {categoriesWithEntries.length}
+              </span>
             </button>
           </div>
-        )}
+
+          {/* Centre Filter Dropdown Capsule (for Editor) */}
+          {isEditor && (
+            <div
+              className={`filter-capsule ${mainPageCenterFilter !== 'all' ? 'active-filter' : ''}`}
+              style={{
+                padding: '4px 10px',
+                borderRadius: '8px',
+                backgroundColor: mainPageCenterFilter !== 'all' ? '#eff6ff' : '#ffffff',
+                border: mainPageCenterFilter !== 'all' ? '1px solid #2563eb' : '1px solid #cbd5e1',
+                boxShadow: 'none',
+              }}
+            >
+              <span className="filter-capsule-label">
+                <IconBuilding size={14} style={{ color: mainPageCenterFilter !== 'all' ? '#2563eb' : '#64748b' }} />
+                Centre
+              </span>
+              <select
+                className="filter-capsule-select"
+                value={mainPageCenterFilter}
+                onChange={(e) => setMainPageCenterFilter(e.target.value)}
+                style={{
+                  minWidth: '130px',
+                  cursor: 'pointer',
+                  fontSize: '0.8rem',
+                  fontWeight: '600',
+                  color: mainPageCenterFilter !== 'all' ? '#1d4ed8' : '#334155',
+                }}
+                title="Filter categories by Centre"
+              >
+                <option value="all">All Centres ({allPeriodEntries.length})</option>
+                {mainPageCenters.map((c) => (
+                  <option key={c.name} value={c.name}>
+                    {c.name} ({c.count})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Department Filter Dropdown Capsule (for CH) */}
+          {isChUser && (
+            <div
+              className={`filter-capsule ${mainPageDeptFilter !== 'all' ? 'active-filter' : ''}`}
+              style={{
+                padding: '4px 10px',
+                borderRadius: '8px',
+                backgroundColor: mainPageDeptFilter !== 'all' ? '#eff6ff' : '#ffffff',
+                border: mainPageDeptFilter !== 'all' ? '1px solid #2563eb' : '1px solid #cbd5e1',
+                boxShadow: 'none',
+              }}
+            >
+              <span className="filter-capsule-label">
+                <IconUsersGroup size={14} style={{ color: mainPageDeptFilter !== 'all' ? '#2563eb' : '#64748b' }} />
+                Dept
+              </span>
+              <select
+                className="filter-capsule-select"
+                value={mainPageDeptFilter}
+                onChange={(e) => setMainPageDeptFilter(e.target.value)}
+                style={{
+                  minWidth: '130px',
+                  cursor: 'pointer',
+                  fontSize: '0.8rem',
+                  fontWeight: '600',
+                  color: mainPageDeptFilter !== 'all' ? '#1d4ed8' : '#334155',
+                }}
+                title="Filter categories by Department"
+              >
+                <option value="all">All Departments ({allPeriodEntries.length})</option>
+                {mainPageDepartments.map((d) => (
+                  <option key={d.name} value={d.name}>
+                    {d.name} ({d.count})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* 5. Main Categories Accordion Stack */}
@@ -1274,15 +1391,16 @@ const Categories = () => {
           <IconFileText size={32} style={{ color: '#94a3b8', margin: '0 auto 8px auto' }} />
           <h4 style={{ margin: 0, color: '#334155' }}>No matching categories</h4>
           <p style={{ margin: '6px 0 14px 0', fontSize: '0.86rem' }}>
-            {hideEmptyCategories
-              ? `No categories have entries matching Centre "${mainPageCenterFilter}".`
-              : `No categories or entries match "${categorySearchQuery}".`}
+            {categorySearchQuery.trim()
+              ? `No categories or entries match "${categorySearchQuery}".`
+              : 'No categories match the selected filter.'}
           </p>
           <button
             type="button"
             onClick={() => {
-              setHideEmptyCategories(false);
+              setCategoryTab('all');
               setMainPageCenterFilter('all');
+              setMainPageDeptFilter('all');
               setCategorySearchQuery('');
             }}
             style={{
@@ -1301,15 +1419,59 @@ const Categories = () => {
         </div>
       ) : (
         <div className="category-accordion-list">
-          {displayedCategories.map((category) => {
-            const isExpanded = expandedCategoryId === category.id;
-            const catEntryCount = categoryEntryCounts[category.id] || 0;
+          {categoriesToRender.length === 0 ? (
+            <div
+              style={{
+                backgroundColor: '#ffffff',
+                borderRadius: '14px',
+                border: '1px dashed #cbd5e1',
+                padding: '36px 20px',
+                textAlign: 'center',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '8px',
+              }}
+            >
+              <IconLayersSubtract size={32} style={{ color: '#94a3b8' }} />
+              <h4 style={{ margin: 0, color: '#1e293b', fontSize: '1rem', fontWeight: '700' }}>
+                {categoryTab === 'with_entries' ? 'No categories have entries yet' : 'No matching categories found'}
+              </h4>
+              <p style={{ margin: 0, color: '#64748b', fontSize: '0.84rem' }}>
+                {categoryTab === 'with_entries'
+                  ? 'Switch to "All Categories" to view or record entries in this period.'
+                  : 'Try resetting your search query or department filter.'}
+              </p>
+              {categoryTab === 'with_entries' && (
+                <button
+                  type="button"
+                  onClick={() => setCategoryTab('all')}
+                  style={{
+                    marginTop: '6px',
+                    padding: '6px 16px',
+                    borderRadius: '8px',
+                    fontSize: '0.82rem',
+                    fontWeight: '700',
+                    backgroundColor: '#eff6ff',
+                    color: '#1d4ed8',
+                    border: '1px solid #bfdbfe',
+                    cursor: 'pointer',
+                  }}
+                >
+                  View All Categories ({displayedCategories.length})
+                </button>
+              )}
+            </div>
+          ) : (
+            categoriesToRender.map((category) => {
+              const isExpanded = expandedCategoryId === category.id;
+              const catEntryCount = categoryEntryCounts[category.id] || 0;
 
-            return (
-              <div
-                key={category.id}
-                className={`category-card ${isExpanded ? 'expanded' : ''}`}
-              >
+              return (
+                <div
+                  key={category.id}
+                  className={`category-card ${isExpanded ? 'expanded' : ''}`}
+                >
                 {/* Accordion Header */}
                 <div
                   className="category-header"
@@ -1478,19 +1640,25 @@ const Categories = () => {
                         </p>
                       </div>
                     ) : (() => {
-                      const activeCatEntries = (mainPageCenterFilter && mainPageCenterFilter !== 'all')
-                        ? categoryEntries.filter((e) => (e.center || '').trim().toLowerCase() === mainPageCenterFilter.trim().toLowerCase())
-                        : categoryEntries;
+                      const activeCatEntries = categoryEntries.filter((e) => {
+                        if (mainPageCenterFilter && mainPageCenterFilter !== 'all') {
+                          if ((e.center || '').trim().toLowerCase() !== mainPageCenterFilter.trim().toLowerCase()) return false;
+                        }
+                        if (mainPageDeptFilter && mainPageDeptFilter !== 'all') {
+                          if ((e.group_name || '').trim().toLowerCase() !== mainPageDeptFilter.trim().toLowerCase()) return false;
+                        }
+                        return true;
+                      });
 
                       const q = categorySearchQuery.trim().toLowerCase();
                       const finalCatEntries = q
                         ? activeCatEntries.filter((e) =>
-                            (e.title && e.title.toLowerCase().includes(q)) ||
-                            (e.description && e.description.toLowerCase().includes(q)) ||
-                            (e.created_by_name && e.created_by_name.toLowerCase().includes(q)) ||
-                            (e.group_name && e.group_name.toLowerCase().includes(q)) ||
-                            (e.center && e.center.toLowerCase().includes(q))
-                          )
+                          (e.title && e.title.toLowerCase().includes(q)) ||
+                          (e.description && e.description.toLowerCase().includes(q)) ||
+                          (e.created_by_name && e.created_by_name.toLowerCase().includes(q)) ||
+                          (e.group_name && e.group_name.toLowerCase().includes(q)) ||
+                          (e.center && e.center.toLowerCase().includes(q))
+                        )
                         : activeCatEntries;
 
                       if (finalCatEntries.length === 0) {
@@ -1567,83 +1735,278 @@ const Categories = () => {
                             </div>
                           )}
                           {finalCatEntries.map((entry) => (
-                          <div key={entry.id} className="entry-card">
-                            {editingEntryId === entry.id ? (
-                              /* Inline Edit Form */
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                <div>
-                                  <label
-                                    style={{
-                                      fontSize: '0.78rem',
-                                      fontWeight: '700',
-                                      color: '#475569',
-                                      marginBottom: '4px',
-                                      display: 'block',
-                                    }}
-                                  >
-                                    Title *
-                                  </label>
-                                  <input
-                                    type="text"
-                                    value={editTitle}
-                                    onChange={(e) => setEditTitle(e.target.value)}
-                                    placeholder="Entry Title..."
-                                    style={{
-                                      width: '100%',
-                                      padding: '10px 12px',
-                                      borderRadius: '8px',
-                                      border: '1px solid #cbd5e1',
-                                      fontSize: '0.9rem',
-                                      fontWeight: '600',
-                                      color: '#0f172a',
-                                      outline: 'none',
-                                    }}
-                                  />
-                                </div>
+                            <div key={entry.id} className="entry-card">
+                              {editingEntryId === entry.id ? (
+                                /* Inline Edit Form */
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                  <div>
+                                    <label
+                                      style={{
+                                        fontSize: '0.78rem',
+                                        fontWeight: '700',
+                                        color: '#475569',
+                                        marginBottom: '4px',
+                                        display: 'block',
+                                      }}
+                                    >
+                                      Title *
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={editTitle}
+                                      onChange={(e) => setEditTitle(e.target.value)}
+                                      placeholder="Entry Title..."
+                                      style={{
+                                        width: '100%',
+                                        padding: '10px 12px',
+                                        borderRadius: '8px',
+                                        border: '1px solid #cbd5e1',
+                                        fontSize: '0.9rem',
+                                        fontWeight: '600',
+                                        color: '#0f172a',
+                                        outline: 'none',
+                                      }}
+                                    />
+                                  </div>
 
-                                <div>
-                                  <label
-                                    style={{
-                                      fontSize: '0.78rem',
-                                      fontWeight: '700',
-                                      color: '#475569',
-                                      marginBottom: '4px',
-                                      display: 'block',
-                                    }}
-                                  >
-                                    Description
-                                  </label>
-                                  <textarea
-                                    value={editDescription}
-                                    onChange={(e) => setEditDescription(e.target.value)}
-                                    placeholder="Entry Description..."
-                                    rows="3"
-                                    style={{
-                                      width: '100%',
-                                      padding: '10px 12px',
-                                      borderRadius: '8px',
-                                      border: '1px solid #cbd5e1',
-                                      fontSize: '0.88rem',
-                                      color: '#0f172a',
-                                      outline: 'none',
-                                      resize: 'vertical',
-                                    }}
-                                  />
-                                </div>
+                                  <div>
+                                    <label
+                                      style={{
+                                        fontSize: '0.78rem',
+                                        fontWeight: '700',
+                                        color: '#475569',
+                                        marginBottom: '4px',
+                                        display: 'block',
+                                      }}
+                                    >
+                                      Description
+                                    </label>
+                                    <textarea
+                                      value={editDescription}
+                                      onChange={(e) => setEditDescription(e.target.value)}
+                                      placeholder="Entry Description..."
+                                      rows="3"
+                                      style={{
+                                        width: '100%',
+                                        padding: '10px 12px',
+                                        borderRadius: '8px',
+                                        border: '1px solid #cbd5e1',
+                                        fontSize: '0.88rem',
+                                        color: '#0f172a',
+                                        outline: 'none',
+                                        resize: 'vertical',
+                                      }}
+                                    />
+                                  </div>
 
-                                {/* Attached Photos Management */}
-                                <div>
-                                  <label
-                                    style={{
-                                      fontSize: '0.78rem',
-                                      fontWeight: '700',
-                                      color: '#475569',
-                                      marginBottom: '6px',
-                                      display: 'block',
-                                    }}
-                                  >
-                                    Photos
-                                  </label>
+                                  {/* Attached Photos Management */}
+                                  <div>
+                                    <label
+                                      style={{
+                                        fontSize: '0.78rem',
+                                        fontWeight: '700',
+                                        color: '#475569',
+                                        marginBottom: '6px',
+                                        display: 'block',
+                                      }}
+                                    >
+                                      Photos
+                                    </label>
+                                    <div className="entry-photos-gallery">
+                                      {entry.photos &&
+                                        entry.photos.map((photo) => {
+                                          const photoUrl = getPhotoUrl(photo);
+                                          return (
+                                            <div
+                                              key={photo.id}
+                                              className="entry-photo-card"
+                                              onClick={() => setPreviewPhoto({ url: photoUrl, name: 'Photo Preview', raw: photo })}
+                                              style={{ cursor: 'pointer' }}
+                                              title="Click to preview image"
+                                            >
+                                              <img
+                                                src={photoUrl}
+                                                alt="Entry photo"
+                                                onError={(e) => handleImgError(e, photo)}
+                                              />
+                                              {!isViewOnly && (
+                                                <button
+                                                  type="button"
+                                                  className="photo-delete-btn"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleDeletePhoto(photo.id, category.id, photo.original_filename);
+                                                  }}
+                                                  title="Delete photo"
+                                                  aria-label="Delete photo"
+                                                >
+                                                  <IconX size={11} strokeWidth={2.5} />
+                                                </button>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
+
+                                      {/* Upload Additional Photo Button */}
+                                      {!isViewOnly && (
+                                        <label className="photo-upload-slot" title="Add photo (JPG, PNG, WebP up to 15 MB)">
+                                          <IconUpload size={16} />
+                                          <span>+ Add Photo</span>
+                                          <input
+                                            type="file"
+                                            accept="image/png,image/jpeg,image/jpg,image/webp,image/bmp"
+                                            multiple
+                                            style={{ display: 'none' }}
+                                            onChange={(e) => {
+                                              if (e.target.files && e.target.files.length > 0) {
+                                                handleAddPhotoToEntry(
+                                                  entry.id,
+                                                  category.id,
+                                                  e.target.files
+                                                );
+                                                e.target.value = '';
+                                              }
+                                            }}
+                                          />
+                                        </label>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSaveEditEntry(entry.id, category.id)}
+                                      disabled={savingEdit}
+                                      className="btn-primary"
+                                      style={{
+                                        padding: '7px 16px',
+                                        fontSize: '0.84rem',
+                                        fontWeight: '600',
+                                        borderRadius: '8px',
+                                      }}
+                                    >
+                                      {savingEdit ? 'Saving...' : 'Save Changes'}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditingEntryId(null)}
+                                      className="btn-secondary"
+                                      style={{
+                                        padding: '7px 14px',
+                                        fontSize: '0.84rem',
+                                        fontWeight: '600',
+                                        borderRadius: '8px',
+                                        backgroundColor: '#f1f5f9',
+                                        color: '#475569',
+                                        border: '1px solid #cbd5e1',
+                                      }}
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                /* Standard Entry View */
+                                <>
+                                  <div className="entry-card-header">
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                      <h5 className="entry-title">{entry.title}</h5>
+                                      {entry.center && (
+                                        <span
+                                          className="entry-center-pill"
+                                          style={{
+                                            fontSize: '0.74rem',
+                                            fontWeight: '700',
+                                            backgroundColor: '#ecfdf5',
+                                            color: '#047857',
+                                            border: '1px solid #a7f3d0',
+                                            padding: '2px 8px',
+                                            borderRadius: '6px',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '4px',
+                                          }}
+                                          title={`Centre: ${entry.center}`}
+                                        >
+                                          🏛️ {entry.center}
+                                        </span>
+                                      )}
+                                      {entry.group_name && (
+                                        <span
+                                          className="entry-group-pill"
+                                          style={{
+                                            fontSize: '0.74rem',
+                                            fontWeight: '700',
+                                            backgroundColor: '#eff6ff',
+                                            color: '#1d4ed8',
+                                            border: '1px solid #bfdbfe',
+                                            padding: '2px 8px',
+                                            borderRadius: '6px',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '4px',
+                                          }}
+                                          title={`Department: ${entry.group_name}`}
+                                        >
+                                          🏢 {entry.group_name}
+                                        </span>
+                                      )}
+                                      {canViewAll && (
+                                        <span
+                                          className="entry-author-pill"
+                                          title={`Added by ${entry.created_by_name || `User #${entry.created_by}`}`}
+                                        >
+                                          👤 {entry.created_by_name || `User #${entry.created_by}`}
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {/* Action Buttons for Author, GH, or CH */}
+                                    {!isViewOnly && (isGhUser || isChUser || entry.created_by === user?.id) && (
+                                      <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleStartEditEntry(entry)}
+                                          className="action-icon-btn"
+                                          style={{
+                                            width: '30px',
+                                            height: '30px',
+                                            color: '#2563eb',
+                                            borderColor: '#bfdbfe',
+                                            backgroundColor: '#eff6ff',
+                                          }}
+                                          title="Edit entry"
+                                          aria-label="Edit entry"
+                                        >
+                                          <IconEdit size={14} />
+                                        </button>
+
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteEntry(entry.id, category.id)}
+                                          className="action-icon-btn"
+                                          style={{
+                                            width: '30px',
+                                            height: '30px',
+                                            color: '#dc2626',
+                                            borderColor: '#fecaca',
+                                            backgroundColor: '#fef2f2',
+                                          }}
+                                          title="Delete entry"
+                                          aria-label="Delete entry"
+                                        >
+                                          <IconTrash size={14} />
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {entry.description && (
+                                    <p className="entry-description-text">{entry.description}</p>
+                                  )}
+
+                                  {/* Entry Photos Gallery */}
                                   <div className="entry-photos-gallery">
                                     {entry.photos &&
                                       entry.photos.map((photo) => {
@@ -1683,7 +2046,7 @@ const Categories = () => {
                                     {!isViewOnly && (
                                       <label className="photo-upload-slot" title="Add photo (JPG, PNG, WebP up to 15 MB)">
                                         <IconUpload size={16} />
-                                        <span>+ Add Photo</span>
+                                        <span>+ Photo</span>
                                         <input
                                           type="file"
                                           accept="image/png,image/jpeg,image/jpg,image/webp,image/bmp"
@@ -1703,240 +2066,45 @@ const Categories = () => {
                                       </label>
                                     )}
                                   </div>
-                                </div>
 
-                                <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSaveEditEntry(entry.id, category.id)}
-                                    disabled={savingEdit}
-                                    className="btn-primary"
-                                    style={{
-                                      padding: '7px 16px',
-                                      fontSize: '0.84rem',
-                                      fontWeight: '600',
-                                      borderRadius: '8px',
-                                    }}
-                                  >
-                                    {savingEdit ? 'Saving...' : 'Save Changes'}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setEditingEntryId(null)}
-                                    className="btn-secondary"
-                                    style={{
-                                      padding: '7px 14px',
-                                      fontSize: '0.84rem',
-                                      fontWeight: '600',
-                                      borderRadius: '8px',
-                                      backgroundColor: '#f1f5f9',
-                                      color: '#475569',
-                                      border: '1px solid #cbd5e1',
-                                    }}
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              /* Standard Entry View */
-                              <>
-                                <div className="entry-card-header">
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                    <h5 className="entry-title">{entry.title}</h5>
-                                    {entry.group_name && (
-                                      <span
-                                        className="entry-group-pill"
-                                        style={{
-                                          fontSize: '0.74rem',
-                                          fontWeight: '700',
-                                          backgroundColor: '#eff6ff',
-                                          color: '#1d4ed8',
-                                          border: '1px solid #bfdbfe',
-                                          padding: '2px 8px',
-                                          borderRadius: '6px',
-                                          display: 'inline-flex',
-                                          alignItems: 'center',
-                                          gap: '4px',
-                                        }}
-                                        title={`Department: ${entry.group_name}`}
-                                      >
-                                        🏢 {entry.group_name}
+                                  {/* Footer Timestamp Metadata */}
+                                  <div className="entry-footer-meta">
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                      <IconClock size={13} />
+                                      <span>
+                                        Added by{' '}
+                                        <strong style={{ color: '#475569' }}>
+                                          {entry.created_by_name || `User #${entry.created_by}`}
+                                        </strong>
+                                        {entry.created_at && (
+                                          <>
+                                            {' '}on{' '}
+                                            {new Date(entry.created_at).toLocaleString('en-US', {
+                                              month: 'short',
+                                              day: 'numeric',
+                                              year: 'numeric',
+                                              hour: 'numeric',
+                                              minute: '2-digit',
+                                              hour12: true,
+                                            })}
+                                          </>
+                                        )}
                                       </span>
-                                    )}
-                                    {entry.center && (
-                                      <span
-                                        className="entry-center-pill"
-                                        style={{
-                                          fontSize: '0.74rem',
-                                          fontWeight: '700',
-                                          backgroundColor: '#ecfdf5',
-                                          color: '#047857',
-                                          border: '1px solid #a7f3d0',
-                                          padding: '2px 8px',
-                                          borderRadius: '6px',
-                                          display: 'inline-flex',
-                                          alignItems: 'center',
-                                          gap: '4px',
-                                        }}
-                                        title={`Centre: ${entry.center}`}
-                                      >
-                                        🏛️ {entry.center}
-                                      </span>
-                                    )}
-                                    {canViewAll && (
-                                      <span
-                                        className="entry-author-pill"
-                                        title={`Added by ${entry.created_by_name || `User #${entry.created_by}`}`}
-                                      >
-                                        👤 {entry.created_by_name || `User #${entry.created_by}`}
-                                      </span>
-                                    )}
-                                  </div>
-
-                                  {/* Action Buttons for Author, GH, or CH */}
-                                  {!isViewOnly && (isGhUser || isChUser || entry.created_by === user?.id) && (
-                                    <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleStartEditEntry(entry)}
-                                        className="action-icon-btn"
-                                        style={{
-                                          width: '30px',
-                                          height: '30px',
-                                          color: '#2563eb',
-                                          borderColor: '#bfdbfe',
-                                          backgroundColor: '#eff6ff',
-                                        }}
-                                        title="Edit entry"
-                                        aria-label="Edit entry"
-                                      >
-                                        <IconEdit size={14} />
-                                      </button>
-
-                                      <button
-                                        type="button"
-                                        onClick={() => handleDeleteEntry(entry.id, category.id)}
-                                        className="action-icon-btn"
-                                        style={{
-                                          width: '30px',
-                                          height: '30px',
-                                          color: '#dc2626',
-                                          borderColor: '#fecaca',
-                                          backgroundColor: '#fef2f2',
-                                        }}
-                                        title="Delete entry"
-                                        aria-label="Delete entry"
-                                      >
-                                        <IconTrash size={14} />
-                                      </button>
                                     </div>
-                                  )}
-                                </div>
 
-                                {entry.description && (
-                                  <p className="entry-description-text">{entry.description}</p>
-                                )}
-
-                                {/* Entry Photos Gallery */}
-                                <div className="entry-photos-gallery">
-                                  {entry.photos &&
-                                    entry.photos.map((photo) => {
-                                      const photoUrl = getPhotoUrl(photo);
-                                      return (
-                                        <div
-                                          key={photo.id}
-                                          className="entry-photo-card"
-                                          onClick={() => setPreviewPhoto({ url: photoUrl, name: 'Photo Preview', raw: photo })}
-                                          style={{ cursor: 'pointer' }}
-                                          title="Click to preview image"
-                                        >
-                                          <img
-                                            src={photoUrl}
-                                            alt="Entry photo"
-                                            onError={(e) => handleImgError(e, photo)}
-                                          />
-                                          {!isViewOnly && (
-                                            <button
-                                              type="button"
-                                              className="photo-delete-btn"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleDeletePhoto(photo.id, category.id, photo.original_filename);
-                                              }}
-                                              title="Delete photo"
-                                              aria-label="Delete photo"
-                                            >
-                                              <IconX size={11} strokeWidth={2.5} />
-                                            </button>
-                                          )}
-                                        </div>
-                                      );
-                                    })}
-
-                                  {/* Upload Additional Photo Button */}
-                                  {!isViewOnly && (
-                                    <label className="photo-upload-slot" title="Add photo (JPG, PNG, WebP up to 15 MB)">
-                                      <IconUpload size={16} />
-                                      <span>+ Photo</span>
-                                      <input
-                                        type="file"
-                                        accept="image/png,image/jpeg,image/jpg,image/webp,image/bmp"
-                                        multiple
-                                        style={{ display: 'none' }}
-                                        onChange={(e) => {
-                                          if (e.target.files && e.target.files.length > 0) {
-                                            handleAddPhotoToEntry(
-                                              entry.id,
-                                              category.id,
-                                              e.target.files
-                                            );
-                                            e.target.value = '';
-                                          }
-                                        }}
-                                      />
-                                    </label>
-                                  )}
-                                </div>
-
-                                {/* Footer Timestamp Metadata */}
-                                <div className="entry-footer-meta">
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                    <IconClock size={13} />
-                                    <span>
-                                      Added by{' '}
-                                      <strong style={{ color: '#475569' }}>
-                                        {entry.created_by_name || `User #${entry.created_by}`}
-                                      </strong>
-                                      {entry.created_at && (
-                                        <>
-                                          {' '}on{' '}
-                                          {new Date(entry.created_at).toLocaleString('en-US', {
-                                            month: 'short',
-                                            day: 'numeric',
-                                            year: 'numeric',
-                                            hour: 'numeric',
-                                            minute: '2-digit',
-                                            hour12: true,
-                                          })}
-                                        </>
-                                      )}
-                                    </span>
+                                    {entry.updated_at && entry.updated_at !== entry.created_at && (
+                                      <span>
+                                        • Edited by {entry.updated_by_name || `User #${entry.updated_by}`}
+                                      </span>
+                                    )}
                                   </div>
-
-                                  {entry.updated_at && entry.updated_at !== entry.created_at && (
-                                    <span>
-                                      • Edited by {entry.updated_by_name || `User #${entry.updated_by}`}
-                                    </span>
-                                  )}
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })()}
+                                </>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
 
                     {/* Add New Entry Mini-Form Box */}
                     {!isViewOnly && (
@@ -2138,9 +2306,10 @@ const Categories = () => {
                     )}
                   </div>
                 )}
-              </div>
-            );
-          })}
+                </div>
+              );
+            })
+          )}
 
           {/* "+ Add Custom Category" Button */}
           {!isViewOnly && (
@@ -2414,8 +2583,8 @@ const Categories = () => {
                   {isEditor
                     ? `${previewCenters.length} centre${previewCenters.length === 1 ? '' : 's'} contributed ${previewCategory ? `in ${previewCategory.name}` : 'to this edition'}`
                     : canViewAll
-                    ? `${contributors.length} member${contributors.length === 1 ? '' : 's'} contributed ${previewCategory ? `in ${previewCategory.name}` : 'to this edition'}`
-                    : `Showing entries for ${user.name || user.email}`}
+                      ? `${contributors.length} member${contributors.length === 1 ? '' : 's'} contributed ${previewCategory ? `in ${previewCategory.name}` : 'to this edition'}`
+                      : `Showing entries for ${user.name || user.email}`}
                 </span>
               </div>
 
@@ -2750,16 +2919,16 @@ const Categories = () => {
                   {(() => {
                     const activeEntries = isEditor
                       ? (selectedCenterFilter && selectedCenterFilter !== 'all'
-                          ? previewEntries.filter(
-                              (e) =>
-                                (e.center || contributors.find((c) => c.id === e.created_by)?.center || 'Main')
-                                  .trim()
-                                  .toLowerCase() === selectedCenterFilter.trim().toLowerCase()
-                            )
-                          : previewEntries)
+                        ? previewEntries.filter(
+                          (e) =>
+                            (e.center || contributors.find((c) => c.id === e.created_by)?.center || 'Main')
+                              .trim()
+                              .toLowerCase() === selectedCenterFilter.trim().toLowerCase()
+                        )
+                        : previewEntries)
                       : ((selectedContributorId && selectedContributorId !== 'all')
-                          ? previewEntries.filter((e) => e.created_by === Number(selectedContributorId))
-                          : previewEntries);
+                        ? previewEntries.filter((e) => e.created_by === Number(selectedContributorId))
+                        : previewEntries);
 
                     if (activeEntries.length === 0) {
                       return (
@@ -2769,8 +2938,8 @@ const Categories = () => {
                           <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem' }}>
                             {isEditor
                               ? (selectedCenterFilter === 'all'
-                                  ? `No entries have been submitted ${previewCategory ? `in ${previewCategory.name}` : 'for this newsletter edition'} yet.`
-                                  : `No entries found for Centre "${selectedCenterFilter}" ${previewCategory ? `in ${previewCategory.name}` : 'for this edition'}.`)
+                                ? `No entries have been submitted ${previewCategory ? `in ${previewCategory.name}` : 'for this newsletter edition'} yet.`
+                                : `No entries found for Centre "${selectedCenterFilter}" ${previewCategory ? `in ${previewCategory.name}` : 'for this edition'}.`)
                               : canViewAll
                                 ? (contributors.length === 0
                                   ? previewCategory
@@ -2840,22 +3009,6 @@ const Categories = () => {
                                     >
                                       {itemNumber}. {entry.title}
                                     </h4>
-                                    {entry.group_name && (
-                                      <span
-                                        style={{
-                                          fontSize: '0.74rem',
-                                          color: '#1d4ed8',
-                                          backgroundColor: '#eff6ff',
-                                          border: '1px solid #bfdbfe',
-                                          padding: '2px 8px',
-                                          borderRadius: '6px',
-                                          fontWeight: '700',
-                                        }}
-                                        title={`Department: ${entry.group_name}`}
-                                      >
-                                        🏢 {entry.group_name}
-                                      </span>
-                                    )}
                                     {entryCenter && (
                                       <span
                                         style={{
@@ -2870,6 +3023,22 @@ const Categories = () => {
                                         title={`Centre: ${entryCenter}`}
                                       >
                                         🏛️ {entryCenter}
+                                      </span>
+                                    )}
+                                    {entry.group_name && (
+                                      <span
+                                        style={{
+                                          fontSize: '0.74rem',
+                                          color: '#1d4ed8',
+                                          backgroundColor: '#eff6ff',
+                                          border: '1px solid #bfdbfe',
+                                          padding: '2px 8px',
+                                          borderRadius: '6px',
+                                          fontWeight: '700',
+                                        }}
+                                        title={`Department: ${entry.group_name}`}
+                                      >
+                                        🏢 {entry.group_name}
                                       </span>
                                     )}
                                     {(isEditor || selectedContributorId === 'all') && (
@@ -2984,10 +3153,10 @@ const Categories = () => {
                     ? `Showing ${previewEntries.length} entries from ${previewCenters.length} centre(s)${previewCategory ? ` in ${previewCategory.name}` : ''}`
                     : `Showing entries for Centre: ${selectedCenterFilter}${previewCategory ? ` in ${previewCategory.name}` : ''}`)
                   : canViewAll
-                  ? (selectedContributorId === 'all' || !selectedContributorId
-                    ? `Showing ${previewEntries.length} entries from ${contributors.length} contributor(s)${previewCategory ? ` in ${previewCategory.name}` : ''}`
-                    : `Showing entries for: ${contributors.find((c) => c.id === Number(selectedContributorId))?.name || 'Contributor'}${previewCategory ? ` in ${previewCategory.name}` : ''}`)
-                  : `Showing your entries${previewCategory ? ` in ${previewCategory.name}` : ''}`}
+                    ? (selectedContributorId === 'all' || !selectedContributorId
+                      ? `Showing ${previewEntries.length} entries from ${contributors.length} contributor(s)${previewCategory ? ` in ${previewCategory.name}` : ''}`
+                      : `Showing entries for: ${contributors.find((c) => c.id === Number(selectedContributorId))?.name || 'Contributor'}${previewCategory ? ` in ${previewCategory.name}` : ''}`)
+                    : `Showing your entries${previewCategory ? ` in ${previewCategory.name}` : ''}`}
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>

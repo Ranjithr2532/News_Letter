@@ -1026,11 +1026,24 @@ const Periods = () => {
   const handleHalfRowClick = (periodsInHalf, rangeLabel) => {
     if (!periodsInHalf || periodsInHalf.length === 0) return;
 
-    // For Editor: directly navigate to Categories page with all departments in this half — NO POPUP!
-    if (isEditor) {
+    // For Editor & CH: directly navigate to Categories page with clean edition slug (e.g. 2026-10-H1) — NO POPUP!
+    if (isEditor || isChUser) {
       const allPeriodIds = periodsInHalf.map((p) => p.id).join(',');
-      navigate(`/categories/${periodsInHalf[0].id}?all_periods=${allPeriodIds}`, {
-        state: { periodTitle: periodsInHalf[0].title, rangeLabel },
+      let editionSlug = periodsInHalf[0].id;
+      if (periodsInHalf[0].start_date) {
+        const [year, month, day] = periodsInHalf[0].start_date.split('-');
+        const halfNum = parseInt(day, 10) <= 15 ? 'H1' : 'H2';
+        editionSlug = `${year}-${month}-${halfNum}`;
+      }
+      navigate(`/categories/${editionSlug}`, {
+        state: {
+          periodTitle: periodsInHalf[0].title,
+          rangeLabel,
+          allPeriodIds,
+          primaryPeriodId: periodsInHalf[0].id,
+          startDate: periodsInHalf[0].start_date,
+          endDate: periodsInHalf[0].end_date,
+        },
       });
       return;
     }
@@ -1115,15 +1128,25 @@ const Periods = () => {
           return [...prev, ...newToAdd];
         });
 
-        const allPeriodIds = isEditor ? ensuredPeriods.map((p) => p.id).join(',') : null;
-        const targetUrl = isEditor
-          ? `/categories/${targetPeriod.id}?all_periods=${allPeriodIds}`
+        const allPeriodIds = (isEditor || isChUser) ? ensuredPeriods.map((p) => p.id).join(',') : null;
+        let editionSlug = targetPeriod.id;
+        if ((isEditor || isChUser) && targetPeriod.start_date) {
+          const [year, month, day] = targetPeriod.start_date.split('-');
+          const halfNum = parseInt(day, 10) <= 15 ? 'H1' : 'H2';
+          editionSlug = `${year}-${month}-${halfNum}`;
+        }
+        const targetUrl = (isEditor || isChUser)
+          ? `/categories/${editionSlug}`
           : `/categories/${targetPeriod.id}`;
 
         navigate(targetUrl, {
           state: {
             periodTitle: targetPeriod.title,
             rangeLabel,
+            allPeriodIds,
+            primaryPeriodId: targetPeriod.id,
+            startDate: targetPeriod.start_date,
+            endDate: targetPeriod.end_date,
           },
         });
       } else {
@@ -1295,8 +1318,8 @@ const Periods = () => {
       const rowTooltip = isEditor
         ? `Period: ${rangeLabel} (${periodsInHalf.length} department${periodsInHalf.length > 1 ? 's' : ''}). Click to view all department categories.`
         : periodsInHalf.length > 1
-        ? `${periodsInHalf.length} departments (${periodsInHalf.map((p) => p.group_name).filter(Boolean).join(', ')}). Click to select department.`
-        : `Period: ${rangeLabel}${periodsInHalf[0]?.group_name ? ` (${periodsInHalf[0].group_name})` : ''}. Click to view categories.`;
+          ? `${periodsInHalf.length} departments (${periodsInHalf.map((p) => p.group_name).filter(Boolean).join(', ')}). Click to select department.`
+          : `Period: ${rangeLabel}${periodsInHalf[0]?.group_name ? ` (${periodsInHalf[0].group_name})` : ''}. Click to view categories.`;
 
       return (
         <div
@@ -1564,7 +1587,7 @@ const Periods = () => {
                   <IconUsersGroup size={13} />
                   {user.group || user.group_name || 'General'}
                 </span>
-                <span>• News-letter publication schedules and archival records</span>
+
               </>
             )}
           </p>

@@ -386,23 +386,15 @@ const Customize = () => {
       {/* 1. Back Navigation Button */}
       <div>
         <button
+          type="button"
           onClick={() => navigate('/periods')}
-          className="btn-link-back"
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            fontSize: '0.86rem',
-            fontWeight: '600',
-            color: '#2563eb',
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            padding: '4px 0',
-          }}
+          className="btn-back-pill"
+          title="Return to Newsletter Overview"
         >
-          <IconArrowLeft size={18} />
-          <span>Back to Newsletter Overview</span>
+          <div className="back-icon-circle">
+            <IconArrowLeft size={16} strokeWidth={2.4} />
+          </div>
+          <span>Back</span>
         </button>
       </div>
 
@@ -415,8 +407,8 @@ const Customize = () => {
               {isAdmin
                 ? 'System Administration & Configuration'
                 : isEditor
-                ? 'Category Configuration & Stages'
-                : 'Department Team Management'}
+                  ? 'Category Management'
+                  : 'Department Team Management'}
             </span>
           </h2>
           <p>
@@ -433,10 +425,9 @@ const Customize = () => {
               <>
                 <span className="role-badge role-editor" style={{ padding: '3px 10px', fontSize: '0.78rem' }}>
                   <IconListNumbers size={14} />
-                  Editor / Compilation Lead
+                  Editor
                 </span>
-                <span style={{ color: '#2563eb', fontWeight: '700' }}>• Category Stages</span>
-                <span>• Manage global category stages and publication ordering</span>
+                <span>• Manage newsletter categories and publication sequence</span>
               </>
             ) : (
               <>
@@ -499,27 +490,25 @@ const Customize = () => {
               </div>
               <div className="stat-pill-info">
                 <span className="stat-pill-count">{categories.length}</span>
-                <span className="stat-pill-label">Global Stages</span>
+                <span className="stat-pill-label">Category Stages</span>
               </div>
             </div>
           )}
         </div>
       </div>
 
-      {/* 3. Section Switcher Tabs */}
-      <div className="admin-tabs-nav">
-        {(isAdmin || isGhUser) && (
+      {/* 3. Section Switcher Tabs (Only needed for Admin who has multiple sections) */}
+      {isAdmin && (
+        <div className="admin-tabs-nav">
           <button
             type="button"
             className={`admin-tab-btn ${activeTab === 'users' ? 'active' : ''}`}
             onClick={() => setActiveTab('users')}
           >
             <IconUserPlus size={18} />
-            <span>{isAdmin ? 'User Management & Roles' : 'Team Members & Accounts'}</span>
+            <span>User Management & Roles</span>
           </button>
-        )}
 
-        {(isAdmin || isEditor) && (
           <button
             type="button"
             className={`admin-tab-btn ${activeTab === 'categories' ? 'active' : ''}`}
@@ -528,9 +517,7 @@ const Customize = () => {
             <IconListNumbers size={18} />
             <span>Category Stages</span>
           </button>
-        )}
 
-        {isAdmin && (
           <button
             type="button"
             className={`admin-tab-btn ${activeTab === 'directory' ? 'active' : ''}`}
@@ -539,8 +526,8 @@ const Customize = () => {
             <IconBuilding size={18} />
             <span>Centers & Leadership Directory</span>
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* 4. Tab 1: User & Account Management (Admin & GH Only) */}
       {(isAdmin || isGhUser) && activeTab === 'users' && (
@@ -985,26 +972,22 @@ const Customize = () => {
       {/* 5. Tab 2: Category Stages Management (Admin & Editor Only) */}
       {(isAdmin || isEditor) && activeTab === 'categories' && (
         <div className="admin-grid-layout">
-          {/* Left Form Card: Add Global Stage */}
+          {/* Left Form Card: Add Category */}
           <div className="admin-card">
             <div className="admin-card-header">
               <h3 className="admin-card-title">
                 <IconFolderPlus size={20} style={{ color: '#2563eb' }} />
-                <span>Add Global Stage</span>
+                <span>Add Category</span>
               </h3>
             </div>
 
-            <p style={{ fontSize: '0.84rem', color: '#64748b', marginBottom: '18px', marginTop: 0, lineHeight: '1.45' }}>
-              Create standard category stages that will automatically appear across newsletter editions.
-            </p>
-
-            <form onSubmit={handleAddCategory} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <form onSubmit={handleAddCategory} style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '4px' }}>
               <div className="admin-form-group">
-                <label className="admin-form-label">Stage Name *</label>
+                <label className="admin-form-label">Category Name *</label>
                 <input
                   type="text"
                   className="admin-input"
-                  placeholder="e.g. Research Highlights, Patents, Workshops"
+                  placeholder="e.g. Research Highlight, Workshops, etc.."
                   value={newCatName}
                   onChange={(e) => setNewCatName(e.target.value)}
                   required
@@ -1012,7 +995,7 @@ const Customize = () => {
               </div>
 
               <div className="admin-form-group">
-                <label className="admin-form-label">Stage Order / Sequence #</label>
+                <label className="admin-form-label">Display Order</label>
                 <input
                   type="number"
                   className="admin-input"
@@ -1043,12 +1026,12 @@ const Customize = () => {
                   {catSubmitting ? (
                     <>
                       <IconLoader2 size={18} className="animate-spin" />
-                      <span>Adding Stage...</span>
+                      <span>Adding...</span>
                     </>
                   ) : (
                     <>
                       <IconPlus size={18} />
-                      <span>Add Category Stage</span>
+                      <span>Add Category</span>
                     </>
                   )}
                 </button>
@@ -1056,25 +1039,25 @@ const Customize = () => {
             </form>
           </div>
 
-          {/* Right Card: Category Stages Table */}
+          {/* Right Card: Categories Table */}
           <div className="admin-card">
             <div className="admin-card-header">
               <h3 className="admin-card-title">
                 <IconListNumbers size={20} style={{ color: '#2563eb' }} />
-                <span>Active Category Stages ({categories.length})</span>
+                <span>Categories ({categories.length})</span>
               </h3>
             </div>
 
             {catLoading ? (
               <div style={{ padding: '36px', textAlign: 'center', color: '#64748b' }}>
                 <IconLoader2 size={24} className="animate-spin text-blue-600" />
-                <p style={{ marginTop: '8px', fontSize: '0.88rem' }}>Loading stages...</p>
+                <p style={{ marginTop: '8px', fontSize: '0.88rem' }}>Loading categories...</p>
               </div>
             ) : catError ? (
               <div className="error-message">{catError}</div>
             ) : categories.length === 0 ? (
               <p className="empty-state" style={{ padding: '24px', textAlign: 'center' }}>
-                No category stages defined.
+                No categories defined.
               </p>
             ) : (
               <div className="admin-table-wrap">
@@ -1082,9 +1065,8 @@ const Customize = () => {
                   <thead>
                     <tr>
                       <th style={{ width: '90px' }}>Order</th>
-                      <th>Stage Name</th>
-                      <th>Type</th>
-                      <th>Actions</th>
+                      <th>Category Name</th>
+                      <th style={{ width: '80px', textAlign: 'center' }}>Edit</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1131,15 +1113,7 @@ const Customize = () => {
                           )}
                         </td>
                         <td>
-                          <span
-                            className={cat.period_id ? 'category-badge-custom' : 'status-badge active'}
-                            style={{ fontSize: '0.7rem' }}
-                          >
-                            {cat.period_id ? 'Custom' : 'Global Standard'}
-                          </span>
-                        </td>
-                        <td>
-                          <div style={{ display: 'flex', gap: '6px' }}>
+                          <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
                             {editingCatId === cat.id ? (
                               <>
                                 <button
@@ -1168,38 +1142,21 @@ const Customize = () => {
                                 </button>
                               </>
                             ) : (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => handleStartEditCategory(cat)}
-                                  className="action-icon-btn"
-                                  style={{
-                                    width: '30px',
-                                    height: '30px',
-                                    color: '#2563eb',
-                                    borderColor: '#bfdbfe',
-                                    backgroundColor: '#eff6ff',
-                                  }}
-                                  title="Edit category stage"
-                                >
-                                  <IconEdit size={14} />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteCategory(cat.id, cat.name)}
-                                  className="action-icon-btn"
-                                  style={{
-                                    width: '30px',
-                                    height: '30px',
-                                    color: '#dc2626',
-                                    borderColor: '#fecaca',
-                                    backgroundColor: '#fef2f2',
-                                  }}
-                                  title="Delete category stage"
-                                >
-                                  <IconTrash size={14} />
-                                </button>
-                              </>
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditCategory(cat)}
+                                className="action-icon-btn"
+                                style={{
+                                  width: '30px',
+                                  height: '30px',
+                                  color: '#2563eb',
+                                  borderColor: '#bfdbfe',
+                                  backgroundColor: '#eff6ff',
+                                }}
+                                title="Edit category stage"
+                              >
+                                <IconEdit size={14} />
+                              </button>
                             )}
                           </div>
                         </td>
