@@ -1647,7 +1647,7 @@ const Periods = () => {
                 className="filter-capsule-select"
                 value={selectedCenter}
                 onChange={(e) => handleSelectCenter(e.target.value)}
-                style={{ minWidth: '100px', maxWidth: '140px' }}
+                style={{ minWidth: '85px', maxWidth: '125px' }}
               >
                 <option value="all">🌐 All Centers ({allCenters.length})</option>
                 {allCenters.map((cName) => (
@@ -1677,7 +1677,7 @@ const Periods = () => {
                   fetchAvailableYears(grp, targetCenter);
                   fetchAvailableCategories(grp, targetCenter);
                 }}
-                style={{ minWidth: '100px', maxWidth: '140px' }}
+                style={{ minWidth: '85px', maxWidth: '125px' }}
               >
                 <option value="all">
                   📁 All Depts {centerGroups.length > 0 ? `(${centerGroups.length})` : ''}
@@ -1809,7 +1809,7 @@ const Periods = () => {
                 setFilterMode('range');
                 fetchPeriods('range', '', selectedFilterMonth, selectedGroup, targetCenter, 'range', String(newFrom), String(newTo));
               }}
-              style={{ minWidth: '60px' }}
+              style={{ minWidth: '48px' }}
               title="From Year"
             >
               {allSelectableYears.map((yr) => (
@@ -1837,7 +1837,7 @@ const Periods = () => {
                 setFilterMode('range');
                 fetchPeriods('range', '', selectedFilterMonth, selectedGroup, targetCenter, 'range', String(newFrom), String(newTo));
               }}
-              style={{ minWidth: '60px' }}
+              style={{ minWidth: '48px' }}
               title="To Year"
             >
               {toYearOptions.map((yr) => (
@@ -1866,7 +1866,7 @@ const Periods = () => {
                 const targetCenter = isEditor ? selectedCenter : user?.center;
                 fetchPeriods('range', '', val, selectedGroup, targetCenter, 'range', selectedFromYear, selectedToYear);
               }}
-              style={{ minWidth: '95px' }}
+              style={{ minWidth: '82px' }}
             >
               <option value="">All Months</option>
               <option value="1">January</option>
@@ -1900,7 +1900,7 @@ const Periods = () => {
               onChange={(e) => {
                 setSelectedFilterHalf(e.target.value);
               }}
-              style={{ minWidth: '95px' }}
+              style={{ minWidth: '82px' }}
               title={!selectedFilterMonth ? 'Select a month first to filter by half' : 'Select specific half period'}
             >
               <option value="">Both Halves</option>
@@ -1911,7 +1911,7 @@ const Periods = () => {
         </div>
 
         {/* Right: Actions (Reset & Download DOCX) */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, marginLeft: 'auto' }}>
+        <div className="unified-filter-actions">
           {/* Reset Filter Button */}
           {(selectedCenter !== (isEditor ? 'all' : user?.center || 'all') || selectedGroup !== 'all' || selectedFilterCategory !== 'all' || selectedFromYear !== currentYearStr || selectedToYear !== currentYearStr || selectedFilterMonth || selectedFilterHalf || filterMode !== 'range') && (
             <button
