@@ -1472,346 +1472,541 @@ const Categories = () => {
                   key={category.id}
                   className={`category-card ${isExpanded ? 'expanded' : ''}`}
                 >
-                {/* Accordion Header */}
-                <div
-                  className="category-header"
-                  onClick={() => handleToggleExpand(category.id)}
-                  title={`Click to ${isExpanded ? 'collapse' : 'expand'} ${category.name}`}
-                >
-                  <div className="category-header-left">
-                    <div className="category-icon-box">
-                      <IconFolder size={20} />
-                    </div>
+                  {/* Accordion Header */}
+                  <div
+                    className="category-header"
+                    onClick={() => handleToggleExpand(category.id)}
+                    title={`Click to ${isExpanded ? 'collapse' : 'expand'} ${category.name}`}
+                  >
+                    <div className="category-header-left">
+                      <div className="category-icon-box">
+                        <IconFolder size={20} />
+                      </div>
 
-                    <div className="category-title-wrap">
-                      <div className="category-name-row" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        <h4 className="category-name-heading">{category.name}</h4>
-                        {category.period_id && (
-                          <span className="category-badge-custom">Custom</span>
-                        )}
-                        {/* Category Entry Count Badge */}
-                        <span
-                          style={{
-                            fontSize: '0.74rem',
-                            fontWeight: '700',
-                            padding: '2px 8px',
-                            borderRadius: '12px',
-                            backgroundColor: catEntryCount > 0 ? '#eff6ff' : '#f1f5f9',
-                            color: catEntryCount > 0 ? '#1d4ed8' : '#94a3b8',
-                            border: catEntryCount > 0 ? '1px solid #bfdbfe' : '1px solid #e2e8f0',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                          }}
-                          title={`${catEntryCount} entries in ${category.name}${mainPageCenterFilter !== 'all' ? ` for ${mainPageCenterFilter}` : ''}`}
-                        >
-                          {catEntryCount > 0 ? `${catEntryCount} ${catEntryCount === 1 ? 'entry' : 'entries'}` : '0 entries'}
-                        </span>
+                      <div className="category-title-wrap">
+                        <div className="category-name-row" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                          <h4 className="category-name-heading">{category.name}</h4>
+                          {category.period_id && (
+                            <span className="category-badge-custom">Custom</span>
+                          )}
+                          {/* Category Entry Count Badge */}
+                          <span
+                            style={{
+                              fontSize: '0.74rem',
+                              fontWeight: '700',
+                              padding: '2px 8px',
+                              borderRadius: '12px',
+                              backgroundColor: catEntryCount > 0 ? '#eff6ff' : '#f1f5f9',
+                              color: catEntryCount > 0 ? '#1d4ed8' : '#94a3b8',
+                              border: catEntryCount > 0 ? '1px solid #bfdbfe' : '1px solid #e2e8f0',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}
+                            title={`${catEntryCount} entries in ${category.name}${mainPageCenterFilter !== 'all' ? ` for ${mainPageCenterFilter}` : ''}`}
+                          >
+                            {catEntryCount > 0 ? `${catEntryCount} ${catEntryCount === 1 ? 'entry' : 'entries'}` : '0 entries'}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  {/* Header Right Actions */}
-                  <div className="category-header-actions">
-                    {/* Delete Custom Category Button (if applicable) */}
-                    {!isViewOnly && category.period_id && (
+                    {/* Header Right Actions */}
+                    <div className="category-header-actions">
+                      {/* Delete Custom Category Button (if applicable) */}
+                      {!isViewOnly && category.period_id && (
+                        <button
+                          type="button"
+                          className="action-icon-btn"
+                          style={{ color: '#dc2626', borderColor: '#fecaca', backgroundColor: '#fef2f2' }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteCustomCategory(e, category.id, category.name);
+                          }}
+                          title="Delete custom category"
+                          aria-label="Delete category"
+                        >
+                          <IconTrash size={15} />
+                        </button>
+                      )}
+
+                      {/* Category Preview Button */}
                       <button
                         type="button"
-                        className="action-icon-btn"
-                        style={{ color: '#dc2626', borderColor: '#fecaca', backgroundColor: '#fef2f2' }}
+                        className="action-icon-btn preview"
+                        style={{ color: '#2563eb', borderColor: '#bfdbfe', backgroundColor: '#eff6ff' }}
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleDeleteCustomCategory(e, category.id, category.name);
+                          handleOpenPreview(category);
                         }}
-                        title="Delete custom category"
-                        aria-label="Delete category"
+                        title={`Preview ${category.name} document layout`}
+                        aria-label={`Preview ${category.name} entries`}
                       >
-                        <IconTrash size={15} />
+                        <IconEye size={15} />
                       </button>
-                    )}
 
-                    {/* Category Preview Button */}
-                    <button
-                      type="button"
-                      className="action-icon-btn preview"
-                      style={{ color: '#2563eb', borderColor: '#bfdbfe', backgroundColor: '#eff6ff' }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleOpenPreview(category);
-                      }}
-                      title={`Preview ${category.name} document layout`}
-                      aria-label={`Preview ${category.name} entries`}
-                    >
-                      <IconEye size={15} />
-                    </button>
+                      {/* Category Download DOCX */}
+                      <button
+                        type="button"
+                        className="action-icon-btn download"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDownloadCategoryDocx(e, category);
+                        }}
+                        title={`Download ${category.name} entries (.docx)`}
+                        disabled={downloadingCategoryId === category.id}
+                        aria-label="Download category document"
+                      >
+                        {downloadingCategoryId === category.id ? (
+                          <IconLoader2 size={15} className="animate-spin text-blue-600" />
+                        ) : (
+                          <IconDownload size={15} />
+                        )}
+                      </button>
 
-                    {/* Category Download DOCX */}
-                    <button
-                      type="button"
-                      className="action-icon-btn download"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDownloadCategoryDocx(e, category);
-                      }}
-                      title={`Download ${category.name} entries (.docx)`}
-                      disabled={downloadingCategoryId === category.id}
-                      aria-label="Download category document"
-                    >
-                      {downloadingCategoryId === category.id ? (
-                        <IconLoader2 size={15} className="animate-spin text-blue-600" />
-                      ) : (
-                        <IconDownload size={15} />
-                      )}
-                    </button>
-
-                    {/* Expand/Collapse Chevron Indicator */}
-                    <div
-                      style={{
-                        width: '32px',
-                        height: '32px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: isExpanded ? '#2563eb' : '#64748b',
-                        cursor: 'pointer',
-                        borderRadius: '6px',
-                        transition: 'all 0.15s ease',
-                      }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleToggleExpand(category.id);
-                      }}
-                      title={isExpanded ? 'Collapse category' : 'Expand category'}
-                      aria-label={isExpanded ? 'Collapse category' : 'Expand category'}
-                    >
-                      {isExpanded ? (
-                        <IconChevronUp size={20} style={{ color: '#2563eb' }} />
-                      ) : (
-                        <IconChevronDown size={20} />
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Expanded Content Section */}
-                {isExpanded && (
-                  <div className="category-content-body">
-                    {/* List of Entries */}
-                    {loadingEntries ? (
+                      {/* Expand/Collapse Chevron Indicator */}
                       <div
                         style={{
-                          padding: '24px',
+                          width: '32px',
+                          height: '32px',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          gap: '10px',
-                          color: '#64748b',
+                          color: isExpanded ? '#2563eb' : '#64748b',
+                          cursor: 'pointer',
+                          borderRadius: '6px',
+                          transition: 'all 0.15s ease',
                         }}
-                      >
-                        <IconLoader2 size={20} className="animate-spin text-blue-600" />
-                        <span style={{ fontSize: '0.88rem', fontWeight: '600' }}>
-                          Loading entries...
-                        </span>
-                      </div>
-                    ) : entriesError ? (
-                      <div className="error-message">{entriesError}</div>
-                    ) : categoryEntries.length === 0 ? (
-                      <div
-                        style={{
-                          backgroundColor: '#f8fafc',
-                          border: '1px dashed #cbd5e1',
-                          borderRadius: '10px',
-                          padding: '24px 20px',
-                          textAlign: 'center',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          gap: '6px',
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleExpand(category.id);
                         }}
+                        title={isExpanded ? 'Collapse category' : 'Expand category'}
+                        aria-label={isExpanded ? 'Collapse category' : 'Expand category'}
                       >
-                        <IconFileText size={28} style={{ color: '#94a3b8' }} />
-                        <h5 style={{ margin: 0, color: '#0f172a', fontSize: '0.92rem' }}>
-                          No entries yet in {category.name}
-                        </h5>
-                        <p style={{ margin: 0, color: '#64748b', fontSize: '0.82rem' }}>
-                          {!isViewOnly
-                            ? 'Use the form below to record your first entry and attach photos.'
-                            : 'No entries were recorded for this category.'}
-                        </p>
+                        {isExpanded ? (
+                          <IconChevronUp size={20} style={{ color: '#2563eb' }} />
+                        ) : (
+                          <IconChevronDown size={20} />
+                        )}
                       </div>
-                    ) : (() => {
-                      const activeCatEntries = categoryEntries.filter((e) => {
-                        if (mainPageCenterFilter && mainPageCenterFilter !== 'all') {
-                          if ((e.center || '').trim().toLowerCase() !== mainPageCenterFilter.trim().toLowerCase()) return false;
-                        }
-                        if (mainPageDeptFilter && mainPageDeptFilter !== 'all') {
-                          if ((e.group_name || '').trim().toLowerCase() !== mainPageDeptFilter.trim().toLowerCase()) return false;
-                        }
-                        return true;
-                      });
+                    </div>
+                  </div>
 
-                      const q = categorySearchQuery.trim().toLowerCase();
-                      const finalCatEntries = q
-                        ? activeCatEntries.filter((e) =>
-                          (e.title && e.title.toLowerCase().includes(q)) ||
-                          (e.description && e.description.toLowerCase().includes(q)) ||
-                          (e.created_by_name && e.created_by_name.toLowerCase().includes(q)) ||
-                          (e.group_name && e.group_name.toLowerCase().includes(q)) ||
-                          (e.center && e.center.toLowerCase().includes(q))
-                        )
-                        : activeCatEntries;
+                  {/* Expanded Content Section */}
+                  {isExpanded && (
+                    <div className="category-content-body">
+                      {/* List of Entries */}
+                      {loadingEntries ? (
+                        <div
+                          style={{
+                            padding: '24px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '10px',
+                            color: '#64748b',
+                          }}
+                        >
+                          <IconLoader2 size={20} className="animate-spin text-blue-600" />
+                          <span style={{ fontSize: '0.88rem', fontWeight: '600' }}>
+                            Loading entries...
+                          </span>
+                        </div>
+                      ) : entriesError ? (
+                        <div className="error-message">{entriesError}</div>
+                      ) : categoryEntries.length === 0 ? (
+                        <div
+                          style={{
+                            backgroundColor: '#f8fafc',
+                            border: '1px dashed #cbd5e1',
+                            borderRadius: '10px',
+                            padding: '24px 20px',
+                            textAlign: 'center',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            gap: '6px',
+                          }}
+                        >
+                          <IconFileText size={28} style={{ color: '#94a3b8' }} />
+                          <h5 style={{ margin: 0, color: '#0f172a', fontSize: '0.92rem' }}>
+                            No entries yet in {category.name}
+                          </h5>
+                          <p style={{ margin: 0, color: '#64748b', fontSize: '0.82rem' }}>
+                            {!isViewOnly
+                              ? 'Use the form below to record your first entry and attach photos.'
+                              : 'No entries were recorded for this category.'}
+                          </p>
+                        </div>
+                      ) : (() => {
+                        const activeCatEntries = categoryEntries.filter((e) => {
+                          if (mainPageCenterFilter && mainPageCenterFilter !== 'all') {
+                            if ((e.center || '').trim().toLowerCase() !== mainPageCenterFilter.trim().toLowerCase()) return false;
+                          }
+                          if (mainPageDeptFilter && mainPageDeptFilter !== 'all') {
+                            if ((e.group_name || '').trim().toLowerCase() !== mainPageDeptFilter.trim().toLowerCase()) return false;
+                          }
+                          return true;
+                        });
 
-                      if (finalCatEntries.length === 0) {
-                        return (
-                          <div
-                            style={{
-                              backgroundColor: '#f8fafc',
-                              border: '1px dashed #cbd5e1',
-                              borderRadius: '10px',
-                              padding: '24px 20px',
-                              textAlign: 'center',
-                            }}
-                          >
-                            <p style={{ margin: 0, color: '#64748b', fontSize: '0.86rem' }}>
-                              No entries in {category.name} match the current filter
-                              {mainPageCenterFilter !== 'all' ? ` for Centre "${mainPageCenterFilter}"` : ''}
-                              {q ? ` with search "${categorySearchQuery}"` : ''}.
-                            </p>
-                            {mainPageCenterFilter !== 'all' && (
-                              <button
-                                type="button"
-                                onClick={() => setMainPageCenterFilter('all')}
-                                style={{
-                                  marginTop: '10px',
-                                  padding: '5px 14px',
-                                  borderRadius: '6px',
-                                  fontSize: '0.8rem',
-                                  fontWeight: '600',
-                                  backgroundColor: '#eff6ff',
-                                  color: '#1d4ed8',
-                                  border: '1px solid #bfdbfe',
-                                  cursor: 'pointer',
-                                }}
-                              >
-                                View entries across all centres ({categoryEntries.length})
-                              </button>
-                            )}
-                          </div>
-                        );
-                      }
+                        const q = categorySearchQuery.trim().toLowerCase();
+                        const finalCatEntries = q
+                          ? activeCatEntries.filter((e) =>
+                            (e.title && e.title.toLowerCase().includes(q)) ||
+                            (e.description && e.description.toLowerCase().includes(q)) ||
+                            (e.created_by_name && e.created_by_name.toLowerCase().includes(q)) ||
+                            (e.group_name && e.group_name.toLowerCase().includes(q)) ||
+                            (e.center && e.center.toLowerCase().includes(q))
+                          )
+                          : activeCatEntries;
 
-                      return (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                          {mainPageCenterFilter !== 'all' && (
+                        if (finalCatEntries.length === 0) {
+                          return (
                             <div
                               style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                backgroundColor: '#f0fdf4',
-                                border: '1px solid #bbf7d0',
-                                padding: '6px 12px',
-                                borderRadius: '6px',
-                                fontSize: '0.78rem',
-                                color: '#166534',
-                                fontWeight: '600',
+                                backgroundColor: '#f8fafc',
+                                border: '1px dashed #cbd5e1',
+                                borderRadius: '10px',
+                                padding: '24px 20px',
+                                textAlign: 'center',
                               }}
                             >
-                              <span>Showing entries for Centre: <strong>{mainPageCenterFilter}</strong> ({finalCatEntries.length} of {categoryEntries.length} entries)</span>
-                              <button
-                                type="button"
-                                onClick={() => setMainPageCenterFilter('all')}
+                              <p style={{ margin: 0, color: '#64748b', fontSize: '0.86rem' }}>
+                                No entries in {category.name} match the current filter
+                                {mainPageCenterFilter !== 'all' ? ` for Centre "${mainPageCenterFilter}"` : ''}
+                                {q ? ` with search "${categorySearchQuery}"` : ''}.
+                              </p>
+                              {mainPageCenterFilter !== 'all' && (
+                                <button
+                                  type="button"
+                                  onClick={() => setMainPageCenterFilter('all')}
+                                  style={{
+                                    marginTop: '10px',
+                                    padding: '5px 14px',
+                                    borderRadius: '6px',
+                                    fontSize: '0.8rem',
+                                    fontWeight: '600',
+                                    backgroundColor: '#eff6ff',
+                                    color: '#1d4ed8',
+                                    border: '1px solid #bfdbfe',
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  View entries across all centres ({categoryEntries.length})
+                                </button>
+                              )}
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                            {mainPageCenterFilter !== 'all' && (
+                              <div
                                 style={{
-                                  background: 'none',
-                                  border: 'none',
-                                  color: '#15803d',
-                                  textDecoration: 'underline',
-                                  cursor: 'pointer',
-                                  fontSize: '0.76rem',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  backgroundColor: '#f0fdf4',
+                                  border: '1px solid #bbf7d0',
+                                  padding: '6px 12px',
+                                  borderRadius: '6px',
+                                  fontSize: '0.78rem',
+                                  color: '#166534',
+                                  fontWeight: '600',
                                 }}
                               >
-                                Show All Centres
-                              </button>
-                            </div>
-                          )}
-                          {finalCatEntries.map((entry) => (
-                            <div key={entry.id} className="entry-card">
-                              {editingEntryId === entry.id ? (
-                                /* Inline Edit Form */
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                  <div>
-                                    <label
-                                      style={{
-                                        fontSize: '0.78rem',
-                                        fontWeight: '700',
-                                        color: '#475569',
-                                        marginBottom: '4px',
-                                        display: 'block',
-                                      }}
-                                    >
-                                      Title *
-                                    </label>
-                                    <input
-                                      type="text"
-                                      value={editTitle}
-                                      onChange={(e) => setEditTitle(e.target.value)}
-                                      placeholder="Entry Title..."
-                                      style={{
-                                        width: '100%',
-                                        padding: '10px 12px',
-                                        borderRadius: '8px',
-                                        border: '1px solid #cbd5e1',
-                                        fontSize: '0.9rem',
-                                        fontWeight: '600',
-                                        color: '#0f172a',
-                                        outline: 'none',
-                                      }}
-                                    />
-                                  </div>
+                                <span>Showing entries for Centre: <strong>{mainPageCenterFilter}</strong> ({finalCatEntries.length} of {categoryEntries.length} entries)</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setMainPageCenterFilter('all')}
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: '#15803d',
+                                    textDecoration: 'underline',
+                                    cursor: 'pointer',
+                                    fontSize: '0.76rem',
+                                  }}
+                                >
+                                  Show All Centres
+                                </button>
+                              </div>
+                            )}
+                            {finalCatEntries.map((entry) => (
+                              <div key={entry.id} className="entry-card">
+                                {editingEntryId === entry.id ? (
+                                  /* Inline Edit Form */
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                    <div>
+                                      <label
+                                        style={{
+                                          fontSize: '0.78rem',
+                                          fontWeight: '700',
+                                          color: '#475569',
+                                          marginBottom: '4px',
+                                          display: 'block',
+                                        }}
+                                      >
+                                        Title *
+                                      </label>
+                                      <input
+                                        type="text"
+                                        value={editTitle}
+                                        onChange={(e) => setEditTitle(e.target.value)}
+                                        placeholder="Entry Title..."
+                                        style={{
+                                          width: '100%',
+                                          padding: '10px 12px',
+                                          borderRadius: '8px',
+                                          border: '1px solid #cbd5e1',
+                                          fontSize: '0.9rem',
+                                          fontWeight: '600',
+                                          color: '#0f172a',
+                                          outline: 'none',
+                                        }}
+                                      />
+                                    </div>
 
-                                  <div>
-                                    <label
-                                      style={{
-                                        fontSize: '0.78rem',
-                                        fontWeight: '700',
-                                        color: '#475569',
-                                        marginBottom: '4px',
-                                        display: 'block',
-                                      }}
-                                    >
-                                      Description
-                                    </label>
-                                    <textarea
-                                      value={editDescription}
-                                      onChange={(e) => setEditDescription(e.target.value)}
-                                      placeholder="Entry Description..."
-                                      rows="3"
-                                      style={{
-                                        width: '100%',
-                                        padding: '10px 12px',
-                                        borderRadius: '8px',
-                                        border: '1px solid #cbd5e1',
-                                        fontSize: '0.88rem',
-                                        color: '#0f172a',
-                                        outline: 'none',
-                                        resize: 'vertical',
-                                      }}
-                                    />
-                                  </div>
+                                    <div>
+                                      <label
+                                        style={{
+                                          fontSize: '0.78rem',
+                                          fontWeight: '700',
+                                          color: '#475569',
+                                          marginBottom: '4px',
+                                          display: 'block',
+                                        }}
+                                      >
+                                        Description
+                                      </label>
+                                      <textarea
+                                        value={editDescription}
+                                        onChange={(e) => setEditDescription(e.target.value)}
+                                        placeholder="Entry Description..."
+                                        rows="3"
+                                        style={{
+                                          width: '100%',
+                                          padding: '10px 12px',
+                                          borderRadius: '8px',
+                                          border: '1px solid #cbd5e1',
+                                          fontSize: '0.88rem',
+                                          color: '#0f172a',
+                                          outline: 'none',
+                                          resize: 'vertical',
+                                        }}
+                                      />
+                                    </div>
 
-                                  {/* Attached Photos Management */}
-                                  <div>
-                                    <label
-                                      style={{
-                                        fontSize: '0.78rem',
-                                        fontWeight: '700',
-                                        color: '#475569',
-                                        marginBottom: '6px',
-                                        display: 'block',
-                                      }}
-                                    >
-                                      Photos
-                                    </label>
+                                    {/* Attached Photos Management */}
+                                    <div>
+                                      <label
+                                        style={{
+                                          fontSize: '0.78rem',
+                                          fontWeight: '700',
+                                          color: '#475569',
+                                          marginBottom: '6px',
+                                          display: 'block',
+                                        }}
+                                      >
+                                        Photos
+                                      </label>
+                                      <div className="entry-photos-gallery">
+                                        {entry.photos &&
+                                          entry.photos.map((photo) => {
+                                            const photoUrl = getPhotoUrl(photo);
+                                            return (
+                                              <div
+                                                key={photo.id}
+                                                className="entry-photo-card"
+                                                onClick={() => setPreviewPhoto({ url: photoUrl, name: 'Photo Preview', raw: photo })}
+                                                style={{ cursor: 'pointer' }}
+                                                title="Click to preview image"
+                                              >
+                                                <img
+                                                  src={photoUrl}
+                                                  alt="Entry photo"
+                                                  onError={(e) => handleImgError(e, photo)}
+                                                />
+                                                {!isViewOnly && (
+                                                  <button
+                                                    type="button"
+                                                    className="photo-delete-btn"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      handleDeletePhoto(photo.id, category.id, photo.original_filename);
+                                                    }}
+                                                    title="Delete photo"
+                                                    aria-label="Delete photo"
+                                                  >
+                                                    <IconX size={11} strokeWidth={2.5} />
+                                                  </button>
+                                                )}
+                                              </div>
+                                            );
+                                          })}
+
+                                        {/* Upload Additional Photo Button */}
+                                        {!isViewOnly && (
+                                          <label className="photo-upload-slot" title="Add photo (JPG, PNG, WebP up to 15 MB)">
+                                            <IconUpload size={16} />
+                                            <span>+ Add Photo</span>
+                                            <input
+                                              type="file"
+                                              accept="image/png,image/jpeg,image/jpg,image/webp,image/bmp"
+                                              multiple
+                                              style={{ display: 'none' }}
+                                              onChange={(e) => {
+                                                if (e.target.files && e.target.files.length > 0) {
+                                                  handleAddPhotoToEntry(
+                                                    entry.id,
+                                                    category.id,
+                                                    e.target.files
+                                                  );
+                                                  e.target.value = '';
+                                                }
+                                              }}
+                                            />
+                                          </label>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSaveEditEntry(entry.id, category.id)}
+                                        disabled={savingEdit}
+                                        className="btn-primary"
+                                        style={{
+                                          padding: '7px 16px',
+                                          fontSize: '0.84rem',
+                                          fontWeight: '600',
+                                          borderRadius: '8px',
+                                        }}
+                                      >
+                                        {savingEdit ? 'Saving...' : 'Save Changes'}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditingEntryId(null)}
+                                        className="btn-secondary"
+                                        style={{
+                                          padding: '7px 14px',
+                                          fontSize: '0.84rem',
+                                          fontWeight: '600',
+                                          borderRadius: '8px',
+                                          backgroundColor: '#f1f5f9',
+                                          color: '#475569',
+                                          border: '1px solid #cbd5e1',
+                                        }}
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  /* Standard Entry View */
+                                  <>
+                                    <div className="entry-card-header">
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                        <h5 className="entry-title">{entry.title}</h5>
+                                        {entry.center && (
+                                          <span
+                                            className="entry-center-pill"
+                                            style={{
+                                              fontSize: '0.74rem',
+                                              fontWeight: '700',
+                                              backgroundColor: '#ecfdf5',
+                                              color: '#047857',
+                                              border: '1px solid #a7f3d0',
+                                              padding: '2px 8px',
+                                              borderRadius: '6px',
+                                              display: 'inline-flex',
+                                              alignItems: 'center',
+                                              gap: '4px',
+                                            }}
+                                            title={`Centre: ${entry.center}`}
+                                          >
+                                            🏛️ {entry.center}
+                                          </span>
+                                        )}
+                                        {entry.group_name && (
+                                          <span
+                                            className="entry-group-pill"
+                                            style={{
+                                              fontSize: '0.74rem',
+                                              fontWeight: '700',
+                                              backgroundColor: '#eff6ff',
+                                              color: '#1d4ed8',
+                                              border: '1px solid #bfdbfe',
+                                              padding: '2px 8px',
+                                              borderRadius: '6px',
+                                              display: 'inline-flex',
+                                              alignItems: 'center',
+                                              gap: '4px',
+                                            }}
+                                            title={`Department: ${entry.group_name}`}
+                                          >
+                                            🏢 {entry.group_name}
+                                          </span>
+                                        )}
+                                        {canViewAll && (
+                                          <span
+                                            className="entry-author-pill"
+                                            title={`Added by ${entry.created_by_name || `User #${entry.created_by}`}`}
+                                          >
+                                            👤 {entry.created_by_name || `User #${entry.created_by}`}
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      {/* Action Buttons for Author, GH, or CH */}
+                                      {!isViewOnly && (isGhUser || isChUser || entry.created_by === user?.id) && (
+                                        <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleStartEditEntry(entry)}
+                                            className="action-icon-btn"
+                                            style={{
+                                              width: '30px',
+                                              height: '30px',
+                                              color: '#2563eb',
+                                              borderColor: '#bfdbfe',
+                                              backgroundColor: '#eff6ff',
+                                            }}
+                                            title="Edit entry"
+                                            aria-label="Edit entry"
+                                          >
+                                            <IconEdit size={14} />
+                                          </button>
+
+                                          <button
+                                            type="button"
+                                            onClick={() => handleDeleteEntry(entry.id, category.id)}
+                                            className="action-icon-btn"
+                                            style={{
+                                              width: '30px',
+                                              height: '30px',
+                                              color: '#dc2626',
+                                              borderColor: '#fecaca',
+                                              backgroundColor: '#fef2f2',
+                                            }}
+                                            title="Delete entry"
+                                            aria-label="Delete entry"
+                                          >
+                                            <IconTrash size={14} />
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {entry.description && (
+                                      <p className="entry-description-text">{entry.description}</p>
+                                    )}
+
+                                    {/* Entry Photos Gallery */}
                                     <div className="entry-photos-gallery">
                                       {entry.photos &&
                                         entry.photos.map((photo) => {
@@ -1851,7 +2046,7 @@ const Categories = () => {
                                       {!isViewOnly && (
                                         <label className="photo-upload-slot" title="Add photo (JPG, PNG, WebP up to 15 MB)">
                                           <IconUpload size={16} />
-                                          <span>+ Add Photo</span>
+                                          <span>+ Photo</span>
                                           <input
                                             type="file"
                                             accept="image/png,image/jpeg,image/jpg,image/webp,image/bmp"
@@ -1871,441 +2066,246 @@ const Categories = () => {
                                         </label>
                                       )}
                                     </div>
-                                  </div>
 
-                                  <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleSaveEditEntry(entry.id, category.id)}
-                                      disabled={savingEdit}
-                                      className="btn-primary"
-                                      style={{
-                                        padding: '7px 16px',
-                                        fontSize: '0.84rem',
-                                        fontWeight: '600',
-                                        borderRadius: '8px',
-                                      }}
-                                    >
-                                      {savingEdit ? 'Saving...' : 'Save Changes'}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => setEditingEntryId(null)}
-                                      className="btn-secondary"
-                                      style={{
-                                        padding: '7px 14px',
-                                        fontSize: '0.84rem',
-                                        fontWeight: '600',
-                                        borderRadius: '8px',
-                                        backgroundColor: '#f1f5f9',
-                                        color: '#475569',
-                                        border: '1px solid #cbd5e1',
-                                      }}
-                                    >
-                                      Cancel
-                                    </button>
-                                  </div>
-                                </div>
-                              ) : (
-                                /* Standard Entry View */
-                                <>
-                                  <div className="entry-card-header">
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                      <h5 className="entry-title">{entry.title}</h5>
-                                      {entry.center && (
-                                        <span
-                                          className="entry-center-pill"
-                                          style={{
-                                            fontSize: '0.74rem',
-                                            fontWeight: '700',
-                                            backgroundColor: '#ecfdf5',
-                                            color: '#047857',
-                                            border: '1px solid #a7f3d0',
-                                            padding: '2px 8px',
-                                            borderRadius: '6px',
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: '4px',
-                                          }}
-                                          title={`Centre: ${entry.center}`}
-                                        >
-                                          🏛️ {entry.center}
+                                    {/* Footer Timestamp Metadata */}
+                                    <div className="entry-footer-meta">
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                        <IconClock size={13} />
+                                        <span>
+                                          Added by{' '}
+                                          <strong style={{ color: '#475569' }}>
+                                            {entry.created_by_name || `User #${entry.created_by}`}
+                                          </strong>
+                                          {entry.created_at && (
+                                            <>
+                                              {' '}on{' '}
+                                              {new Date(entry.created_at).toLocaleString('en-US', {
+                                                month: 'short',
+                                                day: 'numeric',
+                                                year: 'numeric',
+                                                hour: 'numeric',
+                                                minute: '2-digit',
+                                                hour12: true,
+                                              })}
+                                            </>
+                                          )}
                                         </span>
-                                      )}
-                                      {entry.group_name && (
-                                        <span
-                                          className="entry-group-pill"
-                                          style={{
-                                            fontSize: '0.74rem',
-                                            fontWeight: '700',
-                                            backgroundColor: '#eff6ff',
-                                            color: '#1d4ed8',
-                                            border: '1px solid #bfdbfe',
-                                            padding: '2px 8px',
-                                            borderRadius: '6px',
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: '4px',
-                                          }}
-                                          title={`Department: ${entry.group_name}`}
-                                        >
-                                          🏢 {entry.group_name}
-                                        </span>
-                                      )}
-                                      {canViewAll && (
-                                        <span
-                                          className="entry-author-pill"
-                                          title={`Added by ${entry.created_by_name || `User #${entry.created_by}`}`}
-                                        >
-                                          👤 {entry.created_by_name || `User #${entry.created_by}`}
-                                        </span>
-                                      )}
-                                    </div>
-
-                                    {/* Action Buttons for Author, GH, or CH */}
-                                    {!isViewOnly && (isGhUser || isChUser || entry.created_by === user?.id) && (
-                                      <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleStartEditEntry(entry)}
-                                          className="action-icon-btn"
-                                          style={{
-                                            width: '30px',
-                                            height: '30px',
-                                            color: '#2563eb',
-                                            borderColor: '#bfdbfe',
-                                            backgroundColor: '#eff6ff',
-                                          }}
-                                          title="Edit entry"
-                                          aria-label="Edit entry"
-                                        >
-                                          <IconEdit size={14} />
-                                        </button>
-
-                                        <button
-                                          type="button"
-                                          onClick={() => handleDeleteEntry(entry.id, category.id)}
-                                          className="action-icon-btn"
-                                          style={{
-                                            width: '30px',
-                                            height: '30px',
-                                            color: '#dc2626',
-                                            borderColor: '#fecaca',
-                                            backgroundColor: '#fef2f2',
-                                          }}
-                                          title="Delete entry"
-                                          aria-label="Delete entry"
-                                        >
-                                          <IconTrash size={14} />
-                                        </button>
                                       </div>
-                                    )}
-                                  </div>
 
-                                  {entry.description && (
-                                    <p className="entry-description-text">{entry.description}</p>
-                                  )}
-
-                                  {/* Entry Photos Gallery */}
-                                  <div className="entry-photos-gallery">
-                                    {entry.photos &&
-                                      entry.photos.map((photo) => {
-                                        const photoUrl = getPhotoUrl(photo);
-                                        return (
-                                          <div
-                                            key={photo.id}
-                                            className="entry-photo-card"
-                                            onClick={() => setPreviewPhoto({ url: photoUrl, name: 'Photo Preview', raw: photo })}
-                                            style={{ cursor: 'pointer' }}
-                                            title="Click to preview image"
-                                          >
-                                            <img
-                                              src={photoUrl}
-                                              alt="Entry photo"
-                                              onError={(e) => handleImgError(e, photo)}
-                                            />
-                                            {!isViewOnly && (
-                                              <button
-                                                type="button"
-                                                className="photo-delete-btn"
-                                                onClick={(e) => {
-                                                  e.stopPropagation();
-                                                  handleDeletePhoto(photo.id, category.id, photo.original_filename);
-                                                }}
-                                                title="Delete photo"
-                                                aria-label="Delete photo"
-                                              >
-                                                <IconX size={11} strokeWidth={2.5} />
-                                              </button>
-                                            )}
-                                          </div>
-                                        );
-                                      })}
-
-                                    {/* Upload Additional Photo Button */}
-                                    {!isViewOnly && (
-                                      <label className="photo-upload-slot" title="Add photo (JPG, PNG, WebP up to 15 MB)">
-                                        <IconUpload size={16} />
-                                        <span>+ Photo</span>
-                                        <input
-                                          type="file"
-                                          accept="image/png,image/jpeg,image/jpg,image/webp,image/bmp"
-                                          multiple
-                                          style={{ display: 'none' }}
-                                          onChange={(e) => {
-                                            if (e.target.files && e.target.files.length > 0) {
-                                              handleAddPhotoToEntry(
-                                                entry.id,
-                                                category.id,
-                                                e.target.files
-                                              );
-                                              e.target.value = '';
-                                            }
-                                          }}
-                                        />
-                                      </label>
-                                    )}
-                                  </div>
-
-                                  {/* Footer Timestamp Metadata */}
-                                  <div className="entry-footer-meta">
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                      <IconClock size={13} />
-                                      <span>
-                                        Added by{' '}
-                                        <strong style={{ color: '#475569' }}>
-                                          {entry.created_by_name || `User #${entry.created_by}`}
-                                        </strong>
-                                        {entry.created_at && (
-                                          <>
-                                            {' '}on{' '}
-                                            {new Date(entry.created_at).toLocaleString('en-US', {
-                                              month: 'short',
-                                              day: 'numeric',
-                                              year: 'numeric',
-                                              hour: 'numeric',
-                                              minute: '2-digit',
-                                              hour12: true,
-                                            })}
-                                          </>
-                                        )}
-                                      </span>
+                                      {entry.updated_at && entry.updated_at !== entry.created_at && (
+                                        <span>
+                                          • Edited by {entry.updated_by_name || `User #${entry.updated_by}`}
+                                        </span>
+                                      )}
                                     </div>
+                                  </>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
 
-                                    {entry.updated_at && entry.updated_at !== entry.created_at && (
-                                      <span>
-                                        • Edited by {entry.updated_by_name || `User #${entry.updated_by}`}
-                                      </span>
-                                    )}
-                                  </div>
-                                </>
+                      {/* Add New Entry Mini-Form Box */}
+                      {!isViewOnly && (
+                        <div className="add-entry-box">
+                          <h5 className="add-entry-title">
+                            <IconPlus size={16} style={{ color: '#2563eb' }} />
+                            <span>Add New Entry to {category.name}</span>
+                          </h5>
+
+                          {addError && (
+                            <div className="error-message" style={{ fontSize: '0.82rem', margin: 0 }}>
+                              {addError}
+                            </div>
+                          )}
+
+                          <form
+                            onSubmit={(e) => handleAddEntrySubmit(e, category.id)}
+                            style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}
+                          >
+                            <input
+                              type="text"
+                              placeholder="Entry Title *"
+                              value={newTitle}
+                              onChange={(e) => setNewTitle(e.target.value)}
+                              required
+                              style={{
+                                padding: '10px 14px',
+                                borderRadius: '8px',
+                                border: '1px solid #cbd5e1',
+                                fontSize: '0.88rem',
+                                outline: 'none',
+                                backgroundColor: '#ffffff',
+                                color: '#0f172a',
+                              }}
+                            />
+
+                            <textarea
+                              placeholder="Entry Description (optional)..."
+                              value={newDescription}
+                              onChange={(e) => setNewDescription(e.target.value)}
+                              rows="3"
+                              style={{
+                                padding: '10px 14px',
+                                borderRadius: '8px',
+                                border: '1px solid #cbd5e1',
+                                fontSize: '0.88rem',
+                                outline: 'none',
+                                backgroundColor: '#ffffff',
+                                color: '#0f172a',
+                                resize: 'vertical',
+                              }}
+                            />
+
+                            {/* Optional Photo Attachment */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <input
+                                  id={`file-input-new-${category.id}`}
+                                  type="file"
+                                  accept="image/png,image/jpeg,image/jpg,image/webp,image/bmp"
+                                  multiple
+                                  style={{ display: 'none' }}
+                                  onChange={async (e) => {
+                                    if (e.target.files && e.target.files.length > 0) {
+                                      try {
+                                        const processedFiles = await validateAndCompressFiles(e.target.files);
+                                        setNewFiles((prev) => [...prev, ...processedFiles]);
+                                      } catch (err) {
+                                        alert(err.message || 'Failed to process files.');
+                                      }
+                                      e.target.value = '';
+                                    }
+                                  }}
+                                />
+                                <label
+                                  htmlFor={`file-input-new-${category.id}`}
+                                  style={{
+                                    padding: '7px 14px',
+                                    borderRadius: '8px',
+                                    border: '1px solid #cbd5e1',
+                                    backgroundColor: '#ffffff',
+                                    color: '#475569',
+                                    fontSize: '0.82rem',
+                                    fontWeight: '600',
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                                  }}
+                                >
+                                  <IconCamera size={16} style={{ color: '#2563eb' }} />
+                                  <span>
+                                    {newFiles.length > 0
+                                      ? `Attach Photos (${newFiles.length} selected)`
+                                      : 'Attach Photos (Optional)'}
+                                  </span>
+                                </label>
+                              </div>
+
+                              {/* Attached Files List Pills */}
+                              {newFiles.length > 0 && (
+                                <div
+                                  style={{
+                                    display: 'flex',
+                                    flexWrap: 'wrap',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                  }}
+                                >
+                                  {newFiles.map((file, idx) => (
+                                    <span
+                                      key={idx}
+                                      style={{
+                                        fontSize: '0.75rem',
+                                        backgroundColor: '#ffffff',
+                                        color: '#334155',
+                                        padding: '3px 8px',
+                                        borderRadius: '6px',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '6px',
+                                        border: '1px solid #cbd5e1',
+                                        boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+                                      }}
+                                    >
+                                      📷 {file.name}
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setNewFiles((prev) =>
+                                            prev.filter((_, i) => i !== idx)
+                                          )
+                                        }
+                                        style={{
+                                          background: 'none',
+                                          border: 'none',
+                                          color: '#dc2626',
+                                          cursor: 'pointer',
+                                          fontWeight: 'bold',
+                                          fontSize: '0.85rem',
+                                          lineHeight: 1,
+                                          padding: 0,
+                                        }}
+                                      >
+                                        ×
+                                      </button>
+                                    </span>
+                                  ))}
+                                  <button
+                                    type="button"
+                                    onClick={() => setNewFiles([])}
+                                    style={{
+                                      background: 'none',
+                                      border: 'none',
+                                      color: '#dc2626',
+                                      cursor: 'pointer',
+                                      fontSize: '0.78rem',
+                                      fontWeight: '600',
+                                      marginLeft: '4px',
+                                    }}
+                                  >
+                                    Clear all
+                                  </button>
+                                </div>
                               )}
                             </div>
-                          ))}
-                        </div>
-                      );
-                    })()}
 
-                    {/* Add New Entry Mini-Form Box */}
-                    {!isViewOnly && (
-                      <div className="add-entry-box">
-                        <h5 className="add-entry-title">
-                          <IconPlus size={16} style={{ color: '#2563eb' }} />
-                          <span>Add New Entry to {category.name}</span>
-                        </h5>
-
-                        {addError && (
-                          <div className="error-message" style={{ fontSize: '0.82rem', margin: 0 }}>
-                            {addError}
-                          </div>
-                        )}
-
-                        <form
-                          onSubmit={(e) => handleAddEntrySubmit(e, category.id)}
-                          style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}
-                        >
-                          <input
-                            type="text"
-                            placeholder="Entry Title *"
-                            value={newTitle}
-                            onChange={(e) => setNewTitle(e.target.value)}
-                            required
-                            style={{
-                              padding: '10px 14px',
-                              borderRadius: '8px',
-                              border: '1px solid #cbd5e1',
-                              fontSize: '0.88rem',
-                              outline: 'none',
-                              backgroundColor: '#ffffff',
-                              color: '#0f172a',
-                            }}
-                          />
-
-                          <textarea
-                            placeholder="Entry Description (optional)..."
-                            value={newDescription}
-                            onChange={(e) => setNewDescription(e.target.value)}
-                            rows="3"
-                            style={{
-                              padding: '10px 14px',
-                              borderRadius: '8px',
-                              border: '1px solid #cbd5e1',
-                              fontSize: '0.88rem',
-                              outline: 'none',
-                              backgroundColor: '#ffffff',
-                              color: '#0f172a',
-                              resize: 'vertical',
-                            }}
-                          />
-
-                          {/* Optional Photo Attachment */}
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                              <input
-                                id={`file-input-new-${category.id}`}
-                                type="file"
-                                accept="image/png,image/jpeg,image/jpg,image/webp,image/bmp"
-                                multiple
-                                style={{ display: 'none' }}
-                                onChange={async (e) => {
-                                  if (e.target.files && e.target.files.length > 0) {
-                                    try {
-                                      const processedFiles = await validateAndCompressFiles(e.target.files);
-                                      setNewFiles((prev) => [...prev, ...processedFiles]);
-                                    } catch (err) {
-                                      alert(err.message || 'Failed to process files.');
-                                    }
-                                    e.target.value = '';
-                                  }
-                                }}
-                              />
-                              <label
-                                htmlFor={`file-input-new-${category.id}`}
+                            <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                              <button
+                                type="submit"
+                                disabled={submittingNew}
+                                className="btn-primary"
                                 style={{
-                                  padding: '7px 14px',
-                                  borderRadius: '8px',
-                                  border: '1px solid #cbd5e1',
-                                  backgroundColor: '#ffffff',
-                                  color: '#475569',
-                                  fontSize: '0.82rem',
+                                  padding: '8px 18px',
+                                  fontSize: '0.86rem',
                                   fontWeight: '600',
-                                  cursor: 'pointer',
                                   display: 'inline-flex',
                                   alignItems: 'center',
                                   gap: '6px',
-                                  boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                                  borderRadius: '8px',
                                 }}
                               >
-                                <IconCamera size={16} style={{ color: '#2563eb' }} />
-                                <span>
-                                  {newFiles.length > 0
-                                    ? `Attach Photos (${newFiles.length} selected)`
-                                    : 'Attach Photos (Optional)'}
-                                </span>
-                              </label>
+                                {submittingNew ? (
+                                  <>
+                                    <IconLoader2 size={16} className="animate-spin" />
+                                    <span>Saving Entry...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <IconPlus size={16} />
+                                    <span>Save Entry</span>
+                                  </>
+                                )}
+                              </button>
                             </div>
-
-                            {/* Attached Files List Pills */}
-                            {newFiles.length > 0 && (
-                              <div
-                                style={{
-                                  display: 'flex',
-                                  flexWrap: 'wrap',
-                                  alignItems: 'center',
-                                  gap: '6px',
-                                }}
-                              >
-                                {newFiles.map((file, idx) => (
-                                  <span
-                                    key={idx}
-                                    style={{
-                                      fontSize: '0.75rem',
-                                      backgroundColor: '#ffffff',
-                                      color: '#334155',
-                                      padding: '3px 8px',
-                                      borderRadius: '6px',
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: '6px',
-                                      border: '1px solid #cbd5e1',
-                                      boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
-                                    }}
-                                  >
-                                    📷 {file.name}
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        setNewFiles((prev) =>
-                                          prev.filter((_, i) => i !== idx)
-                                        )
-                                      }
-                                      style={{
-                                        background: 'none',
-                                        border: 'none',
-                                        color: '#dc2626',
-                                        cursor: 'pointer',
-                                        fontWeight: 'bold',
-                                        fontSize: '0.85rem',
-                                        lineHeight: 1,
-                                        padding: 0,
-                                      }}
-                                    >
-                                      ×
-                                    </button>
-                                  </span>
-                                ))}
-                                <button
-                                  type="button"
-                                  onClick={() => setNewFiles([])}
-                                  style={{
-                                    background: 'none',
-                                    border: 'none',
-                                    color: '#dc2626',
-                                    cursor: 'pointer',
-                                    fontSize: '0.78rem',
-                                    fontWeight: '600',
-                                    marginLeft: '4px',
-                                  }}
-                                >
-                                  Clear all
-                                </button>
-                              </div>
-                            )}
-                          </div>
-
-                          <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-                            <button
-                              type="submit"
-                              disabled={submittingNew}
-                              className="btn-primary"
-                              style={{
-                                padding: '8px 18px',
-                                fontSize: '0.86rem',
-                                fontWeight: '600',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                                borderRadius: '8px',
-                              }}
-                            >
-                              {submittingNew ? (
-                                <>
-                                  <IconLoader2 size={16} className="animate-spin" />
-                                  <span>Saving Entry...</span>
-                                </>
-                              ) : (
-                                <>
-                                  <IconPlus size={16} />
-                                  <span>Save Entry</span>
-                                </>
-                              )}
-                            </button>
-                          </div>
-                        </form>
-                      </div>
-                    )}
-                  </div>
-                )}
+                          </form>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })
@@ -3213,7 +3213,7 @@ const Categories = () => {
                             ? (previewCategory ? `Download ${previewCategory.name} (.docx)` : 'Download Full Newsletter (.docx)')
                             : (canViewAll
                               ? `Download ${contributors.find((c) => c.id === Number(selectedContributorId))?.name || 'Contributor'}'s Entries (.docx)`
-                              : 'Download My Entries (.docx)'))}
+                              : 'Download (.docx)'))}
                       </span>
                     </>
                   )}

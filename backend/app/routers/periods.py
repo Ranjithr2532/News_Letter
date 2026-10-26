@@ -460,7 +460,7 @@ def generate_center_combined_docx(
 
     periods = query.order_by(models.User.center.asc(), models.NewsletterPeriod.group_name.asc(), models.NewsletterPeriod.start_date.asc()).all()
     if not periods:
-        raise HTTPException(status_code=404, detail="No newsletter periods found for this selection.")
+        raise HTTPException(status_code=404, detail="No data found for this selection.")
 
     period_ids = [p.id for p in periods]
 
