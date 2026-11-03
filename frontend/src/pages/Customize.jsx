@@ -21,6 +21,7 @@ import {
   IconRotateClockwise,
   IconFolderPlus,
   IconAlertTriangle,
+  IconSearch,
 } from '@tabler/icons-react';
 
 const Customize = () => {
@@ -43,16 +44,14 @@ const Customize = () => {
   }, [user, hasAdminAccess, isGhUser, navigate]);
 
   // Active Tab: 'users' | 'categories' | 'directory'
-  const [activeTab, setActiveTab] = useState(isEditor ? 'categories' : 'users');
+  const [activeTab, setActiveTab] = useState('users');
 
-  // Ensure GH cannot stay on categories tab, and Editor defaults to categories tab
+  // Ensure GH cannot stay on categories or directory tabs
   useEffect(() => {
-    if (isGhUser && activeTab === 'categories') {
+    if (isGhUser && activeTab !== 'users') {
       setActiveTab('users');
-    } else if (isEditor && activeTab === 'users') {
-      setActiveTab('categories');
     }
-  }, [isGhUser, isEditor, activeTab]);
+  }, [isGhUser, activeTab]);
 
   // Section A: User Form States
   const [userName, setUserName] = useState('');
@@ -67,15 +66,18 @@ const Customize = () => {
   const [userSuccessMsg, setUserSuccessMsg] = useState('');
   const [userErrorMsg, setUserErrorMsg] = useState('');
 
-  // Admin Oversight: Centers, CHs & Filters
+  // Admin / Editor Oversight: Centers, CHs & Filters
   const [allCenters, setAllCenters] = useState([]);
   const [allChs, setAllChs] = useState([]);
   const [filterCenter, setFilterCenter] = useState('all');
   const [filterRole, setFilterRole] = useState('all');
 
-  // Users List state
+  // Users List & Pagination state
   const [groupUsers, setGroupUsers] = useState([]);
   const [usersLoading, setUsersLoading] = useState(false);
+  const [userSearchQuery, setUserSearchQuery] = useState('');
+  const [userPage, setUserPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   // Section B: Category Stage States
   const [categories, setCategories] = useState([]);
@@ -91,6 +93,19 @@ const Customize = () => {
   const [editingCatId, setEditingCatId] = useState(null);
   const [editCatName, setEditCatName] = useState('');
   const [editCatStage, setEditCatStage] = useState(0);
+
+  // Edit User Modal States
+  const [editingUser, setEditingUser] = useState(null);
+  const [editUserName, setEditUserName] = useState('');
+  const [editUserEmail, setEditUserEmail] = useState('');
+  const [editUserDesignation, setEditUserDesignation] = useState('');
+  const [editUserRoleSelect, setEditUserRoleSelect] = useState('scientist');
+  const [editCustomRoleText, setEditCustomRoleText] = useState('');
+  const [editUserCenter, setEditUserCenter] = useState('');
+  const [editUserGroup, setEditUserGroup] = useState('');
+  const [editUserPassword, setEditUserPassword] = useState('');
+  const [editUserSubmitting, setEditUserSubmitting] = useState(false);
+  const [editUserError, setEditUserError] = useState('');
 
   // React Confirmation Modal state
   const [confirmDialog, setConfirmDialog] = useState({
@@ -121,12 +136,10 @@ const Customize = () => {
     if (user) {
       if (isAdmin || isEditor) {
         fetchCategories();
-      }
-      if (isAdmin || isGhUser) {
-        fetchUsers('all', 'all');
-      }
-      if (isAdmin) {
         fetchAdminMeta();
+        fetchUsers('all', 'all');
+      } else if (isGhUser) {
+        fetchUsers();
       }
     }
   }, [user, isAdmin, isGhUser, isEditor]);
@@ -158,8 +171,9 @@ const Customize = () => {
 
   const fetchUsers = async (center = filterCenter, role = filterRole) => {
     setUsersLoading(true);
+    setUserPage(1);
     try {
-      if (isAdmin) {
+      if (isAdmin || isEditor) {
         let url = '/users/?';
         const params = [];
         if (center && center !== 'all') {
@@ -183,6 +197,98 @@ const Customize = () => {
       setUsersLoading(false);
     }
   };
+
+  // Client-side search & role filtering on current group users
+  const filteredUsers = useMemo(() => {
+    let list = groupUsers;
+
+    if (filterRole && filterRole !== 'all') {
+      const fr = filterRole.toLowerCase().trim();
+      list = list.filter((u) => {
+        const r = (u.role || '').toLowerCase().trim();
+        if (fr === 'joint director' || fr === 'jd') {
+          const des = (u.designation || '').toLowerCase().trim();
+          return (
+            r.includes('joint director') ||
+            r.includes('jd') ||
+            des.includes('joint director') ||
+            des.includes('jd')
+          );
+        }
+        if (fr === 'ch') {
+          return (
+            !r.includes('tech') &&
+            (r.includes('centre head') ||
+              r.includes('center head') ||
+              r === 'ch' ||
+              r.includes('ch,') ||
+              r.includes(', ch') ||
+              r.includes('ch/') ||
+              r.includes('/ ch') ||
+              r.includes('(ch)'))
+          );
+        }
+        if (fr === 'gh') {
+          return (
+            r.includes('group head') ||
+            r === 'gh' ||
+            r.includes('gh,') ||
+            r.includes(', gh') ||
+            r.includes('gh/') ||
+            r.includes('/ gh') ||
+            r.includes('(gh)')
+          );
+        }
+        if (fr === 'edit' || fr === 'editor') {
+          return r.includes('edit');
+        }
+        if (fr === 'scientist') {
+          return r.includes('scientist');
+        }
+        if (fr === 'technical staff' || fr === 'tech') {
+          return r.includes('tech');
+        }
+        if (fr === 'admin') {
+          return r.includes('admin');
+        }
+        return r.includes(fr);
+      });
+    }
+
+    if (!userSearchQuery.trim()) return list;
+    const q = userSearchQuery.trim().toLowerCase();
+    return list.filter((u) => {
+      const name = (u.name || '').toLowerCase();
+      const email = (u.email || '').toLowerCase();
+      const desig = (u.designation || '').toLowerCase();
+      const role = (u.role || '').toLowerCase();
+      const center = (u.center || '').toLowerCase();
+      const group = (u.group || u.group_name || '').toLowerCase();
+      return (
+        name.includes(q) ||
+        email.includes(q) ||
+        desig.includes(q) ||
+        role.includes(q) ||
+        center.includes(q) ||
+        group.includes(q)
+      );
+    });
+  }, [groupUsers, filterRole, userSearchQuery]);
+
+  // Pagination calculation
+  const totalUserCount = filteredUsers.length;
+  const totalUserPages = Math.ceil(totalUserCount / pageSize) || 1;
+
+  useEffect(() => {
+    if (userPage > totalUserPages) {
+      setUserPage(1);
+    }
+  }, [userPage, totalUserPages]);
+
+  const paginatedUsers = useMemo(() => {
+    const start = (userPage - 1) * pageSize;
+    return filteredUsers.slice(start, start + pageSize);
+  }, [filteredUsers, userPage, pageSize]);
 
   const fetchCategories = async () => {
     setCatLoading(true);
@@ -217,11 +323,11 @@ const Customize = () => {
         ? (customRoleText.trim() || 'scientist')
         : userRoleSelect;
 
-    const assignedCenter = isAdmin
+    const assignedCenter = (isAdmin || isEditor)
       ? (adminUserCenter.trim() || user.center || 'Main')
       : user.center;
 
-    const assignedGroup = isAdmin
+    const assignedGroup = (isAdmin || isEditor)
       ? (adminUserGroup.trim() || 'General')
       : (user.group || user.group_name || 'General');
 
@@ -245,11 +351,11 @@ const Customize = () => {
       setUserDesignation('');
       setUserRoleSelect('scientist');
       setCustomRoleText('');
-      if (isAdmin) {
+      if (isAdmin || isEditor) {
         setAdminUserGroup('');
       }
       fetchUsers(filterCenter, filterRole);
-      if (isAdmin) {
+      if (isAdmin || isEditor) {
         fetchAdminMeta();
       }
     } catch (err) {
@@ -260,6 +366,76 @@ const Customize = () => {
       );
     } finally {
       setUserSubmitting(false);
+    }
+  };
+
+  // Open Edit User Modal
+  const handleOpenEditUser = (u) => {
+    setEditingUser(u);
+    setEditUserName(u.name || '');
+    setEditUserEmail(u.email || '');
+    setEditUserDesignation(u.designation || '');
+    const standardRoles = ['scientist', 'technical staff', 'gh', 'ch', 'joint director', 'jd', 'edit', 'editor', 'admin'];
+    const r = (u.role || '').toLowerCase().trim();
+    if (standardRoles.includes(r)) {
+      setEditUserRoleSelect(r === 'editor' ? 'edit' : r);
+      setEditCustomRoleText('');
+    } else {
+      setEditUserRoleSelect('other');
+      setEditCustomRoleText(u.role || '');
+    }
+    setEditUserCenter(u.center || '');
+    setEditUserGroup(u.group || u.group_name || '');
+    setEditUserPassword('');
+    setEditUserError('');
+  };
+
+  const handleCloseEditUser = () => {
+    setEditingUser(null);
+    setEditUserError('');
+  };
+
+  const handleSaveEditUser = async (e) => {
+    e.preventDefault();
+    if (!editingUser) return;
+    if (!editUserName.trim() || !editUserEmail.trim()) {
+      setEditUserError('Full Name and Email are required.');
+      return;
+    }
+
+    const effectiveRole =
+      editUserRoleSelect === 'other'
+        ? (editCustomRoleText.trim() || 'scientist')
+        : editUserRoleSelect;
+
+    setEditUserSubmitting(true);
+    setEditUserError('');
+    try {
+      const payload = {
+        name: editUserName.trim(),
+        email: editUserEmail.trim(),
+        designation: editUserDesignation.trim() || null,
+        role: effectiveRole,
+        center: (isAdmin || isEditor) ? (editUserCenter.trim() || null) : editingUser.center,
+        group: (isAdmin || isEditor) ? (editUserGroup.trim() || null) : (editingUser.group || editingUser.group_name),
+        group_name: (isAdmin || isEditor) ? (editUserGroup.trim() || null) : (editingUser.group || editingUser.group_name),
+      };
+      if (editUserPassword.trim()) {
+        payload.password = editUserPassword.trim();
+      }
+
+      await api.put(`/users/${editingUser.id}`, payload);
+      handleCloseEditUser();
+      fetchUsers(filterCenter, filterRole);
+      if (isAdmin || isEditor) {
+        fetchAdminMeta();
+      }
+    } catch (err) {
+      console.error('Failed to update user:', err);
+      const detail = err.response?.data?.detail;
+      setEditUserError(typeof detail === 'string' ? detail : 'Failed to update user.');
+    } finally {
+      setEditUserSubmitting(false);
     }
   };
 
@@ -277,7 +453,7 @@ const Customize = () => {
         try {
           await api.delete(`/users/${userId}`);
           fetchUsers(filterCenter, filterRole);
-          if (isAdmin) {
+          if (isAdmin || isEditor) {
             fetchAdminMeta();
           }
         } catch (err) {
@@ -362,6 +538,7 @@ const Customize = () => {
     if (!role) return 'Scientist';
     const lower = role.toLowerCase().trim();
     if (lower === 'admin') return 'System Administrator';
+    if (lower === 'joint director' || lower === 'jd') return 'Joint Director';
     if (lower === 'ch') return 'Centre Head (CH)';
     if (lower === 'gh') return 'Group Head (GH)';
     if (lower === 'edit' || lower === 'editor') return 'Editor / Compilation Lead';
@@ -374,6 +551,7 @@ const Customize = () => {
     if (!role) return 'role-scientist';
     const lower = role.toLowerCase().trim();
     if (lower === 'admin') return 'role-admin';
+    if (lower === 'joint director' || lower === 'jd') return 'role-ch';
     if (lower === 'ch') return 'role-ch';
     if (lower === 'gh') return 'role-gh';
     if (lower === 'edit' || lower === 'editor') return 'role-editor';
@@ -398,7 +576,7 @@ const Customize = () => {
         </button>
       </div>
 
-      {/* 2. Admin Hero Banner */}
+      {/* 2. Hero Banner */}
       <div className="admin-hero">
         <div className="admin-hero-title-group">
           <h2>
@@ -407,7 +585,7 @@ const Customize = () => {
               {isAdmin
                 ? 'System Administration & Configuration'
                 : isEditor
-                  ? 'Category Management'
+                  ? 'User & Category Management'
                   : 'Department Team Management'}
             </span>
           </h2>
@@ -419,7 +597,7 @@ const Customize = () => {
                   System Administrator
                 </span>
                 <span style={{ color: '#2563eb', fontWeight: '700' }}>• Institutional Oversight</span>
-                <span>• Managing users, centers, leadership, and global category stages</span>
+                <span>• Managing users, roles, centers, leadership, and global category stages</span>
               </>
             ) : isEditor ? (
               <>
@@ -427,7 +605,7 @@ const Customize = () => {
                   <IconListNumbers size={14} />
                   Editor
                 </span>
-                <span>• Manage newsletter categories and publication sequence</span>
+                <span>• Manage team roles, user accounts, and publication categories</span>
               </>
             ) : (
               <>
@@ -445,9 +623,9 @@ const Customize = () => {
           </p>
         </div>
 
-        {/* Live Counters */}
-        <div className="periods-stats-strip">
-          {isAdmin && (
+        {/* Live Counters - Admin Only */}
+        {isAdmin && (
+          <div className="periods-stats-strip">
             <div className="stat-pill">
               <div className="stat-pill-icon blue" style={{ backgroundColor: '#eff6ff', color: '#2563eb' }}>
                 <IconBuilding size={18} />
@@ -457,9 +635,7 @@ const Customize = () => {
                 <span className="stat-pill-label">Centers</span>
               </div>
             </div>
-          )}
 
-          {isAdmin && (
             <div className="stat-pill">
               <div className="stat-pill-icon amber" style={{ backgroundColor: '#fef3c7', color: '#d97706' }}>
                 <IconShield size={18} />
@@ -469,21 +645,17 @@ const Customize = () => {
                 <span className="stat-pill-label">Centre Heads</span>
               </div>
             </div>
-          )}
 
-          {(isAdmin || isGhUser) && (
             <div className="stat-pill">
               <div className="stat-pill-icon blue">
                 <IconUsers size={18} />
               </div>
               <div className="stat-pill-info">
                 <span className="stat-pill-count">{groupUsers.length}</span>
-                <span className="stat-pill-label">{isAdmin ? 'Total Users' : 'Team Members'}</span>
+                <span className="stat-pill-label">Total Users</span>
               </div>
             </div>
-          )}
 
-          {(isAdmin || isEditor) && (
             <div className="stat-pill">
               <div className="stat-pill-icon emerald">
                 <IconListNumbers size={18} />
@@ -493,12 +665,12 @@ const Customize = () => {
                 <span className="stat-pill-label">Category Stages</span>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
-      {/* 3. Section Switcher Tabs (Only needed for Admin who has multiple sections) */}
-      {isAdmin && (
+      {/* 3. Section Switcher Tabs (For Admin and Editor) */}
+      {(isAdmin || isEditor) && (
         <div className="admin-tabs-nav">
           <button
             type="button"
@@ -518,32 +690,34 @@ const Customize = () => {
             <span>Category Stages</span>
           </button>
 
-          <button
-            type="button"
-            className={`admin-tab-btn ${activeTab === 'directory' ? 'active' : ''}`}
-            onClick={() => setActiveTab('directory')}
-          >
-            <IconBuilding size={18} />
-            <span>Centers & Leadership Directory</span>
-          </button>
+          {isAdmin && (
+            <button
+              type="button"
+              className={`admin-tab-btn ${activeTab === 'directory' ? 'active' : ''}`}
+              onClick={() => setActiveTab('directory')}
+            >
+              <IconBuilding size={18} />
+              <span>Centers & Leadership Directory</span>
+            </button>
+          )}
         </div>
       )}
 
-      {/* 4. Tab 1: User & Account Management (Admin & GH Only) */}
-      {(isAdmin || isGhUser) && activeTab === 'users' && (
+      {/* 4. Tab 1: User & Account Management (Admin, Editor & GH) */}
+      {(isAdmin || isEditor || isGhUser) && activeTab === 'users' && (
         <div className="admin-grid-layout">
           {/* Left Form Card: Create User */}
           <div className="admin-card">
             <div className="admin-card-header">
               <h3 className="admin-card-title">
                 <IconUserPlus size={20} style={{ color: '#2563eb' }} />
-                <span>{isAdmin ? 'Create User Account (Any Role / Center)' : 'Create Team Member'}</span>
+                <span>{(isAdmin || isEditor) ? 'Create User Account (Any Role / Center)' : 'Create Team Member'}</span>
               </h3>
             </div>
 
             <p style={{ fontSize: '0.84rem', color: '#64748b', marginBottom: '18px', marginTop: 0, lineHeight: '1.45' }}>
-              {isAdmin
-                ? 'Create a new user account and assign them to any Center, Department, and institutional Role (Centre Head, Group Head, Scientist, Staff, Admin).'
+              {(isAdmin || isEditor)
+                ? 'Create a new user account and assign them to any Center, Department, and institutional Role (Centre Head, Group Head, Scientist, Staff, Admin, Editor).'
                 : <>Add a new user to your department. Department (<strong>{user.group || user.group_name}</strong>) and Center (<strong>{user.center}</strong>) are automatically assigned.</>}
             </p>
 
@@ -626,6 +800,7 @@ const Customize = () => {
                   <option value="technical staff">Technical Staff</option>
                   <option value="gh">Group Head (GH)</option>
                   {(isAdmin || isEditor) && <option value="ch">Centre Head (CH)</option>}
+                  {(isAdmin || isEditor) && <option value="joint director">Joint Director</option>}
                   {(isAdmin || isEditor) && <option value="edit">Editor / Compilation Lead</option>}
                   {(isAdmin || isEditor) && <option value="admin">Administration Staff</option>}
                   <option value="other">Other / Custom Role (Type below)...</option>
@@ -668,7 +843,12 @@ const Customize = () => {
                   { id: 'scientist', label: 'Scientist' },
                   { id: 'technical staff', label: 'Technical Staff' },
                   { id: 'gh', label: 'Group Head' },
-                  ...(isAdmin ? [{ id: 'ch', label: 'Centre Head (CH)' }, { id: 'admin', label: 'Admin' }] : []),
+                  ...((isAdmin || isEditor) ? [
+                    { id: 'ch', label: 'Centre Head (CH)' },
+                    { id: 'joint director', label: 'Joint Director' },
+                    { id: 'edit', label: 'Editor' },
+                    { id: 'admin', label: 'Admin' },
+                  ] : []),
                   { id: 'other', label: 'Custom...' },
                 ].map((rolePreset) => (
                   <button
@@ -695,7 +875,7 @@ const Customize = () => {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div className="admin-form-group">
                   <label className="admin-form-label">Center *</label>
-                  {isAdmin ? (
+                  {(isAdmin || isEditor) ? (
                     <input
                       type="text"
                       className="admin-input"
@@ -713,7 +893,7 @@ const Customize = () => {
                       disabled
                     />
                   )}
-                  {isAdmin && (
+                  {(isAdmin || isEditor) && (
                     <datalist id="admin-center-datalist">
                       {allCenters.map((c) => (
                         <option key={c} value={c} />
@@ -724,7 +904,7 @@ const Customize = () => {
 
                 <div className="admin-form-group">
                   <label className="admin-form-label">Department *</label>
-                  {isAdmin ? (
+                  {(isAdmin || isEditor) ? (
                     <input
                       type="text"
                       className="admin-input"
@@ -783,20 +963,92 @@ const Customize = () => {
             <div className="admin-card-header" style={{ flexWrap: 'wrap', gap: '10px' }}>
               <h3 className="admin-card-title">
                 <IconUsers size={20} style={{ color: '#2563eb' }} />
-                <span>{isAdmin ? `All Users (${groupUsers.length})` : `Department Members (${groupUsers.length})`}</span>
+                <span>{(isAdmin || isEditor) ? `All Users (${totalUserCount})` : `Department Members (${totalUserCount})`}</span>
               </h3>
 
-              {/* Admin Multi-Center & Role Filter Controls */}
-              {isAdmin && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <IconFilter size={14} style={{ color: '#64748b' }} />
+              {/* Search & Filter Controls */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                {/* Search Bar */}
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                  <IconSearch size={14} style={{ color: '#94a3b8', position: 'absolute', left: '8px', pointerEvents: 'none' }} />
+                  <input
+                    type="text"
+                    placeholder="Search member / email..."
+                    value={userSearchQuery}
+                    onChange={(e) => {
+                      setUserSearchQuery(e.target.value);
+                      setUserPage(1);
+                    }}
+                    style={{
+                      padding: '4px 8px 4px 26px',
+                      fontSize: '0.78rem',
+                      borderRadius: '6px',
+                      border: '1px solid #cbd5e1',
+                      width: '160px',
+                      backgroundColor: '#ffffff',
+                    }}
+                  />
+                  {userSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUserSearchQuery('');
+                        setUserPage(1);
+                      }}
+                      style={{
+                        position: 'absolute',
+                        right: '6px',
+                        border: 'none',
+                        background: 'none',
+                        cursor: 'pointer',
+                        padding: 0,
+                        color: '#94a3b8',
+                      }}
+                    >
+                      <IconX size={12} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Multi-Center & Role Filters for Admin & Editor */}
+                {(isAdmin || isEditor) && (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <IconFilter size={14} style={{ color: '#64748b' }} />
+                      <select
+                        value={filterCenter}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setFilterCenter(val);
+                          setUserPage(1);
+                          fetchUsers(val, filterRole);
+                        }}
+                        style={{
+                          padding: '4px 8px',
+                          fontSize: '0.78rem',
+                          fontWeight: '600',
+                          borderRadius: '6px',
+                          border: '1px solid #cbd5e1',
+                          color: '#1e293b',
+                          backgroundColor: '#ffffff',
+                        }}
+                      >
+                        <option value="all">All Centers ({allCenters.length})</option>
+                        {allCenters.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
                     <select
-                      value={filterCenter}
+                      value={filterRole}
                       onChange={(e) => {
                         const val = e.target.value;
-                        setFilterCenter(val);
-                        fetchUsers(val, filterRole);
+                        setFilterRole(val);
+                        setUserPage(1);
+                        fetchUsers(filterCenter, val);
                       }}
                       style={{
                         padding: '4px 8px',
@@ -808,68 +1060,47 @@ const Customize = () => {
                         backgroundColor: '#ffffff',
                       }}
                     >
-                      <option value="all">All Centers ({allCenters.length})</option>
-                      {allCenters.map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
+                      <option value="all">All Roles</option>
+                      <option value="joint director">Joint Director</option>
+                      <option value="ch">Centre Head (CH)</option>
+                      <option value="gh">Group Head (GH)</option>
+                      <option value="edit">Editor / Compilation Lead</option>
+                      <option value="scientist">Scientist</option>
+                      <option value="technical staff">Technical Staff</option>
+                      <option value="admin">Administrator</option>
                     </select>
-                  </div>
 
-                  <select
-                    value={filterRole}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setFilterRole(val);
-                      fetchUsers(filterCenter, val);
-                    }}
-                    style={{
-                      padding: '4px 8px',
-                      fontSize: '0.78rem',
-                      fontWeight: '600',
-                      borderRadius: '6px',
-                      border: '1px solid #cbd5e1',
-                      color: '#1e293b',
-                      backgroundColor: '#ffffff',
-                    }}
-                  >
-                    <option value="all">All Roles</option>
-                    <option value="ch">Centre Head (CH)</option>
-                    <option value="gh">Group Head (GH)</option>
-                    <option value="scientist">Scientist</option>
-                    <option value="technical staff">Technical Staff</option>
-                    <option value="admin">Administrator</option>
-                  </select>
-
-                  {(filterCenter !== 'all' || filterRole !== 'all') && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setFilterCenter('all');
-                        setFilterRole('all');
-                        fetchUsers('all', 'all');
-                      }}
-                      style={{
-                        padding: '4px 8px',
-                        fontSize: '0.74rem',
-                        fontWeight: '600',
-                        borderRadius: '6px',
-                        border: '1px solid #cbd5e1',
-                        backgroundColor: '#f1f5f9',
-                        color: '#475569',
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                      }}
-                    >
-                      <IconRotateClockwise size={12} />
-                      <span>Reset</span>
-                    </button>
-                  )}
-                </div>
-              )}
+                    {(filterCenter !== 'all' || filterRole !== 'all' || userSearchQuery) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFilterCenter('all');
+                          setFilterRole('all');
+                          setUserSearchQuery('');
+                          setUserPage(1);
+                          fetchUsers('all', 'all');
+                        }}
+                        style={{
+                          padding: '4px 8px',
+                          fontSize: '0.74rem',
+                          fontWeight: '600',
+                          borderRadius: '6px',
+                          border: '1px solid #cbd5e1',
+                          backgroundColor: '#f1f5f9',
+                          color: '#475569',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                        }}
+                      >
+                        <IconRotateClockwise size={12} />
+                        <span>Reset</span>
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
 
             {usersLoading ? (
@@ -877,93 +1108,227 @@ const Customize = () => {
                 <IconLoader2 size={24} className="animate-spin text-blue-600" />
                 <p style={{ marginTop: '8px', fontSize: '0.88rem' }}>Loading users...</p>
               </div>
-            ) : groupUsers.length === 0 ? (
+            ) : paginatedUsers.length === 0 ? (
               <p className="empty-state" style={{ padding: '24px', textAlign: 'center' }}>
-                No users found for this filter selection.
+                {userSearchQuery ? 'No matching members found.' : 'No users found for this filter selection.'}
               </p>
             ) : (
-              <div className="admin-table-wrap">
-                <table className="admin-table">
-                  <thead>
-                    <tr>
-                      <th>Member</th>
-                      <th>Designation</th>
-                      <th>Role</th>
-                      {isAdmin && <th>Center</th>}
-                      {isAdmin && <th>Department</th>}
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {groupUsers.map((u) => {
-                      const isSelf = u.id === user.id;
+              <>
+                <div className="admin-table-wrap">
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>Member</th>
+                        <th>Designation</th>
+                        <th>Role</th>
+                        {(isAdmin || isEditor) && <th>Center</th>}
+                        {(isAdmin || isEditor) && <th>Department</th>}
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedUsers.map((u) => {
+                        const isSelf = u.id === user.id;
 
-                      return (
-                        <tr key={u.id}>
-                          <td>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                              <div className="user-avatar-mini">
-                                {getInitials(u.name)}
-                              </div>
-                              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                <span style={{ fontWeight: '700', color: '#0f172a', fontSize: '0.88rem' }}>
-                                  {u.name} {isSelf && <span style={{ color: '#2563eb', fontSize: '0.75rem' }}>(You)</span>}
-                                </span>
-                                <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                                  {u.email}
-                                </span>
-                              </div>
-                            </div>
-                          </td>
-                          <td>
-                            <span style={{ fontSize: '0.82rem', color: '#475569' }}>
-                              {u.designation || '—'}
-                            </span>
-                          </td>
-                          <td>
-                            <span className={`detail-value role-badge ${getRoleBadgeClass(u.role)}`}>
-                              {formatRole(u.role)}
-                            </span>
-                          </td>
-                          {isAdmin && (
+                        return (
+                          <tr key={u.id}>
                             <td>
-                              <span style={{ fontSize: '0.82rem', fontWeight: '600', color: '#1e293b' }}>
-                                {u.center || '—'}
-                              </span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <div className="user-avatar-mini">
+                                  {getInitials(u.name)}
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                  <span style={{ fontWeight: '700', color: '#0f172a', fontSize: '0.88rem' }}>
+                                    {u.name} {isSelf && <span style={{ color: '#2563eb', fontSize: '0.75rem' }}>(You)</span>}
+                                  </span>
+                                  <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                                    {u.email}
+                                  </span>
+                                </div>
+                              </div>
                             </td>
-                          )}
-                          {isAdmin && (
                             <td>
                               <span style={{ fontSize: '0.82rem', color: '#475569' }}>
-                                {u.group || u.group_name || '—'}
+                                {u.designation || '—'}
                               </span>
                             </td>
-                          )}
-                          <td>
-                            {!isSelf && (
+                            <td>
+                              <span className={`detail-value role-badge ${getRoleBadgeClass(u.role)}`}>
+                                {formatRole(u.role)}
+                              </span>
+                            </td>
+                            {(isAdmin || isEditor) && (
+                              <td>
+                                <span style={{ fontSize: '0.82rem', fontWeight: '600', color: '#1e293b' }}>
+                                  {u.center || '—'}
+                                </span>
+                              </td>
+                            )}
+                            {(isAdmin || isEditor) && (
+                              <td>
+                                <span style={{ fontSize: '0.82rem', color: '#475569' }}>
+                                  {u.group || u.group_name || '—'}
+                                </span>
+                              </td>
+                            )}
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <button
+                                  type="button"
+                                  className="action-icon-btn"
+                                  style={{
+                                    width: '30px',
+                                    height: '30px',
+                                    color: '#2563eb',
+                                    borderColor: '#bfdbfe',
+                                    backgroundColor: '#eff6ff',
+                                  }}
+                                  onClick={() => handleOpenEditUser(u)}
+                                  title={`Edit ${u.name} (Change Role / Details)`}
+                                >
+                                  <IconEdit size={14} />
+                                </button>
+
+                                {!isSelf && (
+                                  <button
+                                    type="button"
+                                    className="action-icon-btn"
+                                    style={{
+                                      width: '30px',
+                                      height: '30px',
+                                      color: '#dc2626',
+                                      borderColor: '#fecaca',
+                                      backgroundColor: '#fef2f2',
+                                    }}
+                                    onClick={() => handleDeleteUser(u.id, u.name)}
+                                    title={`Delete ${u.name}`}
+                                  >
+                                    <IconTrash size={14} />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination Controls */}
+                {totalUserCount > 0 && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '12px',
+                      padding: '12px 14px',
+                      borderTop: '1px solid #e2e8f0',
+                      backgroundColor: '#fafbfc',
+                      borderRadius: '0 0 12px 12px',
+                    }}
+                  >
+                    <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                      Showing <strong>{Math.min((userPage - 1) * pageSize + 1, totalUserCount)}</strong> to{' '}
+                      <strong>{Math.min(userPage * pageSize, totalUserCount)}</strong> of{' '}
+                      <strong>{totalUserCount}</strong> members
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', color: '#64748b' }}>
+                        <span>Rows:</span>
+                        <select
+                          value={pageSize}
+                          onChange={(e) => {
+                            setPageSize(Number(e.target.value));
+                            setUserPage(1);
+                          }}
+                          style={{
+                            padding: '3px 6px',
+                            fontSize: '0.76rem',
+                            borderRadius: '6px',
+                            border: '1px solid #cbd5e1',
+                            backgroundColor: '#fff',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <option value={10}>10</option>
+                          <option value={20}>20</option>
+                          <option value={50}>50</option>
+                        </select>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <button
+                          type="button"
+                          onClick={() => setUserPage((p) => Math.max(1, p - 1))}
+                          disabled={userPage === 1}
+                          style={{
+                            padding: '4px 9px',
+                            borderRadius: '6px',
+                            border: '1px solid #cbd5e1',
+                            backgroundColor: userPage === 1 ? '#f8fafc' : '#ffffff',
+                            color: userPage === 1 ? '#cbd5e1' : '#334155',
+                            cursor: userPage === 1 ? 'not-allowed' : 'pointer',
+                            fontSize: '0.76rem',
+                            fontWeight: '600',
+                          }}
+                        >
+                          Prev
+                        </button>
+
+                        {Array.from({ length: totalUserPages }, (_, i) => i + 1)
+                          .filter((p) => p === 1 || p === totalUserPages || Math.abs(p - userPage) <= 1)
+                          .map((p, idx, arr) => (
+                            <React.Fragment key={p}>
+                              {idx > 0 && arr[idx - 1] !== p - 1 && (
+                                <span style={{ padding: '0 3px', color: '#94a3b8', fontSize: '0.78rem' }}>…</span>
+                              )}
                               <button
                                 type="button"
-                                className="action-icon-btn"
+                                onClick={() => setUserPage(p)}
                                 style={{
-                                  width: '30px',
-                                  height: '30px',
-                                  color: '#dc2626',
-                                  borderColor: '#fecaca',
-                                  backgroundColor: '#fef2f2',
+                                  minWidth: '28px',
+                                  height: '28px',
+                                  padding: '0 6px',
+                                  borderRadius: '6px',
+                                  border: userPage === p ? '1px solid #2563eb' : '1px solid #cbd5e1',
+                                  backgroundColor: userPage === p ? '#2563eb' : '#ffffff',
+                                  color: userPage === p ? '#ffffff' : '#334155',
+                                  cursor: 'pointer',
+                                  fontSize: '0.76rem',
+                                  fontWeight: userPage === p ? '700' : '600',
                                 }}
-                                onClick={() => handleDeleteUser(u.id, u.name)}
-                                title={`Delete ${u.name}`}
                               >
-                                <IconTrash size={14} />
+                                {p}
                               </button>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                            </React.Fragment>
+                          ))}
+
+                        <button
+                          type="button"
+                          onClick={() => setUserPage((p) => Math.min(totalUserPages, p + 1))}
+                          disabled={userPage === totalUserPages}
+                          style={{
+                            padding: '4px 9px',
+                            borderRadius: '6px',
+                            border: '1px solid #cbd5e1',
+                            backgroundColor: userPage === totalUserPages ? '#f8fafc' : '#ffffff',
+                            color: userPage === totalUserPages ? '#cbd5e1' : '#334155',
+                            cursor: userPage === totalUserPages ? 'not-allowed' : 'pointer',
+                            fontSize: '0.76rem',
+                            fontWeight: '600',
+                          }}
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -1350,6 +1715,282 @@ const Customize = () => {
                 );
               })}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit User & Role Modal */}
+      {editingUser && (
+        <div
+          className="modal-backdrop"
+          onClick={handleCloseEditUser}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(5px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10000,
+            padding: '16px',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: 'relative',
+              width: '100%',
+              maxWidth: '540px',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              backgroundColor: '#ffffff',
+              padding: '24px',
+              borderRadius: '18px',
+              border: '1px solid #e2e8f0',
+              boxShadow: '0 20px 40px -8px rgba(0, 0, 0, 0.22)',
+              boxSizing: 'border-box',
+              animation: 'profilePopIn 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div
+                  style={{
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '10px',
+                    backgroundColor: '#eff6ff',
+                    color: '#2563eb',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <IconEdit size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#0f172a', fontWeight: '700' }}>
+                    Edit User & Role
+                  </h3>
+                  <p style={{ margin: 0, fontSize: '0.78rem', color: '#64748b' }}>
+                    Updating profile for {editingUser.name}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleCloseEditUser}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#94a3b8',
+                  cursor: 'pointer',
+                  padding: '4px',
+                  borderRadius: '6px',
+                }}
+              >
+                <IconX size={20} />
+              </button>
+            </div>
+
+            {editUserError && (
+              <div className="error-message" style={{ marginBottom: '14px', fontSize: '0.84rem' }}>
+                {editUserError}
+              </div>
+            )}
+
+            <form onSubmit={handleSaveEditUser} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div className="admin-form-group">
+                <label className="admin-form-label">Full Name *</label>
+                <input
+                  type="text"
+                  className="admin-input"
+                  value={editUserName}
+                  onChange={(e) => setEditUserName(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="admin-form-group">
+                <label className="admin-form-label">Email Address *</label>
+                <input
+                  type="email"
+                  className="admin-input"
+                  value={editUserEmail}
+                  onChange={(e) => setEditUserEmail(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="admin-form-group">
+                <label className="admin-form-label">Designation</label>
+                <input
+                  type="text"
+                  className="admin-input"
+                  placeholder="e.g. Scientist C, Centre Head, Project Associate"
+                  value={editUserDesignation}
+                  onChange={(e) => setEditUserDesignation(e.target.value)}
+                />
+              </div>
+
+              {/* Role Selection */}
+              <div className="admin-form-group">
+                <label className="admin-form-label">
+                  <span>Account Role *</span>
+                  {editUserRoleSelect === 'other' && (
+                    <span style={{ fontSize: '0.74rem', color: '#2563eb', fontWeight: '600' }}>
+                      (Custom Type)
+                    </span>
+                  )}
+                </label>
+                <select
+                  className="admin-input"
+                  value={editUserRoleSelect}
+                  onChange={(e) => setEditUserRoleSelect(e.target.value)}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <option value="scientist">Scientist</option>
+                  <option value="technical staff">Technical Staff</option>
+                  <option value="gh">Group Head (GH)</option>
+                  {(isAdmin || isEditor) && <option value="ch">Centre Head (CH)</option>}
+                  {(isAdmin || isEditor) && <option value="joint director">Joint Director</option>}
+                  {(isAdmin || isEditor) && <option value="edit">Editor / Compilation Lead</option>}
+                  {(isAdmin || isEditor) && <option value="admin">Administration Staff</option>}
+                  <option value="other">Other / Custom Role...</option>
+                </select>
+              </div>
+
+              {editUserRoleSelect === 'other' && (
+                <div
+                  className="admin-form-group"
+                  style={{
+                    background: '#f8fafc',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid #cbd5e1',
+                  }}
+                >
+                  <label className="admin-form-label" style={{ color: '#1e40af' }}>
+                    Specify Custom Role Name *
+                  </label>
+                  <input
+                    type="text"
+                    className="admin-input"
+                    value={editCustomRoleText}
+                    onChange={(e) => setEditCustomRoleText(e.target.value)}
+                    required
+                  />
+                </div>
+              )}
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div className="admin-form-group">
+                  <label className="admin-form-label">Center</label>
+                  {(isAdmin || isEditor) ? (
+                    <input
+                      type="text"
+                      className="admin-input"
+                      list="edit-user-center-datalist"
+                      value={editUserCenter}
+                      onChange={(e) => setEditUserCenter(e.target.value)}
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      className="admin-input"
+                      value={editUserCenter}
+                      disabled
+                    />
+                  )}
+                  {(isAdmin || isEditor) && (
+                    <datalist id="edit-user-center-datalist">
+                      {allCenters.map((c) => (
+                        <option key={c} value={c} />
+                      ))}
+                    </datalist>
+                  )}
+                </div>
+
+                <div className="admin-form-group">
+                  <label className="admin-form-label">Department</label>
+                  {(isAdmin || isEditor) ? (
+                    <input
+                      type="text"
+                      className="admin-input"
+                      value={editUserGroup}
+                      onChange={(e) => setEditUserGroup(e.target.value)}
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      className="admin-input"
+                      value={editUserGroup}
+                      disabled
+                    />
+                  )}
+                </div>
+              </div>
+
+              <div className="admin-form-group">
+                <label className="admin-form-label">
+                  <span>Reset Password (Optional)</span>
+                </label>
+                <input
+                  type="password"
+                  className="admin-input"
+                  placeholder="Leave empty to keep current password"
+                  value={editUserPassword}
+                  onChange={(e) => setEditUserPassword(e.target.value)}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                <button
+                  type="button"
+                  onClick={handleCloseEditUser}
+                  style={{
+                    flex: 1,
+                    padding: '10px',
+                    borderRadius: '8px',
+                    border: '1.5px solid #cbd5e1',
+                    backgroundColor: '#f8fafc',
+                    color: '#334155',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  disabled={editUserSubmitting}
+                  style={{
+                    flex: 2,
+                    padding: '10px',
+                    borderRadius: '8px',
+                    fontWeight: '600',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                  }}
+                >
+                  {editUserSubmitting ? (
+                    <>
+                      <IconLoader2 size={18} className="animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <>
+                      <IconCheck size={18} />
+                      <span>Save Changes</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

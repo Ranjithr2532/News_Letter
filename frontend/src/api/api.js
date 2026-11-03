@@ -9,7 +9,7 @@ const isLocalhost =
 const baseURL =
   import.meta.env.VITE_API_BASE_URL ||
   (isLocalhost
-    ? 'http://172.18.100.55:8000'
+    ? 'http://localhost:8000'
     : `http://${window.location.hostname}:8000`);
 
 const api = axios.create({
@@ -19,4 +19,5 @@ const api = axios.create({
   },
 });
 
+export { baseURL };
 export default api;

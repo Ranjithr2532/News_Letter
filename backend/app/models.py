@@ -212,4 +212,18 @@ class NewsletterUpload(Base):
         return self.uploader.name if self.uploader else f"User #{self.uploaded_by}"
 
 
+class EmailNotificationLog(Base):
+    __tablename__ = "email_notification_logs"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    period_label = Column(String(150), nullable=False, index=True)
+    recipient_email = Column(String(255), nullable=False, index=True)
+    recipient_name = Column(String(255), nullable=True)
+    recipient_role = Column(String(50), nullable=True)
+    status = Column(String(20), nullable=False)  # "SENT" or "FAILED"
+    error_message = Column(Text, nullable=True)
+    sent_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+
 
