@@ -8,7 +8,7 @@ from email.mime.text import MIMEText
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import and_
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 import bcrypt
 
@@ -87,10 +87,69 @@ def list_users(
     target_group = group or group_name
     if target_group is not None:
         query = query.filter(models.User.group == target_group)
-    if role is not None:
-        query = query.filter(models.User.role == role)
-    if center is not None:
-        query = query.filter(models.User.center == center)
+    if role is not None and role.strip() and role.strip().lower() not in ("all", "all roles"):
+        r = role.strip().lower()
+        if r in ("ch", "centre head", "center head"):
+            query = query.filter(
+                and_(
+                    ~models.User.role.ilike("%tech%"),
+                    or_(
+                        models.User.role.ilike("%centre head%"),
+                        models.User.role.ilike("%center head%"),
+                        models.User.role.ilike("ch"),
+                        models.User.role.ilike("ch,%"),
+                        models.User.role.ilike("ch %"),
+                        models.User.role.ilike("ch/%"),
+                        models.User.role.ilike("ch /%"),
+                        models.User.role.ilike("%, ch%"),
+                        models.User.role.ilike("%,ch%"),
+                        models.User.role.ilike("%/ ch%"),
+                        models.User.role.ilike("%/ch%"),
+                        models.User.role.ilike("%(ch)%"),
+                    ),
+                )
+            )
+        elif r in ("gh", "group head"):
+            query = query.filter(
+                or_(
+                    models.User.role.ilike("%group head%"),
+                    models.User.role.ilike("gh"),
+                    models.User.role.ilike("gh,%"),
+                    models.User.role.ilike("gh %"),
+                    models.User.role.ilike("gh/%"),
+                    models.User.role.ilike("gh /%"),
+                    models.User.role.ilike("%, gh%"),
+                    models.User.role.ilike("%,gh%"),
+                    models.User.role.ilike("%/ gh%"),
+                    models.User.role.ilike("%/gh%"),
+                    models.User.role.ilike("%(gh)%"),
+                )
+            )
+
+        elif r in ("joint director", "jd"):
+            query = query.filter(
+                or_(
+                    models.User.role.ilike("%joint director%"),
+                    models.User.designation.ilike("%joint director%"),
+                    models.User.role.ilike("%jd%"),
+                )
+            )
+        elif r in ("edit", "editor"):
+            query = query.filter(models.User.role.ilike("%edit%"))
+        elif r in ("scientist",):
+            query = query.filter(models.User.role.ilike("%scientist%"))
+        elif r in ("technical staff", "tech"):
+            query = query.filter(models.User.role.ilike("%tech%"))
+        elif r in ("admin", "administrator"):
+            query = query.filter(models.User.role.ilike("%admin%"))
+        else:
+            query = query.filter(models.User.role.ilike(f"%{r}%"))
+
+
+    if center is not None and center.strip() and center.strip().lower() not in ("all", "all centers"):
+        query = query.filter(models.User.center.ilike(center.strip()))
+
+
     if type is not None:
         query = query.filter(models.User.type == type)
 
@@ -169,6 +228,11 @@ def update_user(user_id: int, payload: schemas.UserUpdate, db: Session = Depends
             raise HTTPException(status_code=400, detail="Email already in use by another account")
 
     # Handle group_name alias if provided
+    if "password" in update_data:
+        if update_data["password"] and str(update_data["password"]).strip():
+            update_data["password"] = get_password_hash(str(update_data["password"]).strip())
+        else:
+            del update_data["password"]
     if "group_name" in update_data:
         if "group" not in update_data or not update_data["group"]:
             update_data["group"] = update_data.pop("group_name")

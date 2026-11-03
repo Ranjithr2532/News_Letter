@@ -369,10 +369,10 @@ const Periods = () => {
   // 1. Top 3 quick buttons: Current Year + 2 previous years (Total 3 years: e.g. 2026, 2025, 2024)
   const topThreeYears = useMemo(() => [curYr, curYr - 1, curYr - 2], [curYr]);
 
-  // 2. More Years List (from curYr - 3 down to 2019)
+  // 2. More Years List (from curYr - 3 down to 2023)
   const moreYearsList = useMemo(() => {
     const list = [];
-    for (let y = curYr - 3; y >= 2019; y--) {
+    for (let y = curYr - 3; y >= 2023; y--) {
       list.push(y);
     }
     availableYears.forEach((y) => {
@@ -384,10 +384,10 @@ const Periods = () => {
     return list;
   }, [curYr, topThreeYears, availableYears]);
 
-  // 3. Selectable Years in Dropdowns: Up to Current Year, going back to 2019
+  // 3. Selectable Years in Dropdowns: Up to Current Year, going back to 2023
   const allSelectableYears = useMemo(() => {
     const list = [];
-    for (let y = curYr; y >= 2019; y--) {
+    for (let y = curYr; y >= 2023; y--) {
       list.push(y);
     }
     const combined = Array.from(new Set([...list, ...availableYears])).sort((a, b) => b - a);
@@ -1358,8 +1358,8 @@ const Periods = () => {
               </button>
             )}
 
-            {/* Status Badge: Open / Finalized */}
-            {allFinalized ? (
+              {/* Status Badge: Finalized (Only shown when locked) */ }
+            {allFinalized && (
               <span
                 className="status-badge-finalized"
                 title="Finalized (View-only for all users). Click to view categories."
@@ -1372,19 +1372,6 @@ const Periods = () => {
                 <IconLock size={12} />
                 <span>Finalized</span>
               </span>
-            ) : (
-              <span
-                className="status-badge-open"
-                title={isEditor ? "Open for submissions. Click to review categories." : "Open for editing & submissions. Click to view categories."}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleHalfRowClick(periodsInHalf, rangeLabel);
-                }}
-                style={{ cursor: 'pointer' }}
-              >
-                <IconCircleCheck size={12} />
-                <span>Open</span>
-              </span>
             )}
 
             {/* GH Finalize Action Button (Group Head only) */}
@@ -1396,7 +1383,7 @@ const Periods = () => {
                   e.stopPropagation();
                   setFinalizeModalPeriod(myGhPeriod);
                 }}
-                title="Finalize newsletter (Group Head only)"
+                title="Finalize newsletter"
                 aria-label="Finalize newsletter"
               >
                 <IconCheck size={15} strokeWidth={2.5} />
@@ -1429,7 +1416,7 @@ const Periods = () => {
               type="button"
               className="action-icon-btn download"
               onClick={(e) => handleHalfDownloadClick(e, periodsInHalf, rangeLabel, monthData, halfNum)}
-              title={periodsInHalf.length > 1 ? 'Choose department to download (.docx)' : 'Download newsletter (.docx)'}
+              title="Download"
               disabled={isAnyDownloading}
               aria-label="Download newsletter docx"
             >
@@ -1494,26 +1481,12 @@ const Periods = () => {
               </button>
             )}
 
-            {/* Status Badge: Open */}
-            <span
-              className="status-badge-open"
-              title={isEditor ? "Open. Click to inspect categories." : "Open for entries. Click to open."}
-              onClick={(e) => {
-                e.stopPropagation();
-                handleEmptyHalfClick(monthData, halfNum, rangeLabel);
-              }}
-              style={{ cursor: 'pointer' }}
-            >
-              <IconCircleCheck size={12} />
-              <span>Open</span>
-            </span>
-
             {/* Download DOCX Button */}
             <button
               type="button"
               className="action-icon-btn download"
               onClick={(e) => handleEmptyHalfDownloadClick(e, monthData, halfNum, rangeLabel)}
-              title="Download newsletter (.docx)"
+              title="Download"
               disabled={isDownloading || isCreating}
               aria-label="Download newsletter docx"
             >

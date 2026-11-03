@@ -12,7 +12,9 @@ import {
   IconBuilding,
   IconUsersGroup,
   IconShield,
+  IconBook,
 } from '@tabler/icons-react';
+import { baseURL } from '../api/api';
 
 const Layout = () => {
   const { user, logout } = useUser();
@@ -23,6 +25,20 @@ const Layout = () => {
   const handleLogout = () => {
     logout();
     navigate('/');
+  };
+
+  const handleOpenManual = () => {
+    const roleStr = (user?.activeRole || user?.role || '').toLowerCase().trim();
+    let manualType = 'user';
+    if (roleStr.includes('edit') || roleStr.includes('admin')) {
+      manualType = 'editor';
+    } else if (roleStr.includes('ch')) {
+      manualType = 'ch';
+    } else if (roleStr.includes('gh')) {
+      manualType = 'gh';
+    }
+    const manualUrl = `${baseURL}/manuals/${manualType}`;
+    window.open(manualUrl, '_blank', 'noopener,noreferrer');
   };
 
   // Close dropdown on click outside
@@ -108,6 +124,18 @@ const Layout = () => {
               <IconCalendar size={18} />
               <span>Newsletters</span>
             </NavLink>
+
+            {/* Role-Specific User Manual Button */}
+            <button
+              type="button"
+              onClick={handleOpenManual}
+              className="topbar-link topbar-manual-btn"
+              title={`Open ${formatRole(user?.activeRole || user?.role)} Manual (PDF)`}
+              aria-label="Open User Manual"
+            >
+              <IconBook size={18} />
+              <span>Manual</span>
+            </button>
           </nav>
         </div>
 
@@ -222,6 +250,18 @@ const Layout = () => {
                 </div>
 
                 <div className="profile-card-footer">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProfileOpen(false);
+                      handleOpenManual();
+                    }}
+                    className="profile-manual-btn"
+                    title={`Open ${formatRole(user?.activeRole || user?.role)} Manual (PDF)`}
+                  >
+                    <IconBook size={15} />
+                    <span>User Manual</span>
+                  </button>
                   <button
                     type="button"
                     onClick={handleLogout}

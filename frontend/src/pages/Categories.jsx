@@ -2296,7 +2296,7 @@ const Categories = () => {
                                 ) : (
                                   <>
                                     <IconPlus size={16} />
-                                    <span>Save Entry</span>
+                                    <span>Save</span>
                                   </>
                                 )}
                               </button>
