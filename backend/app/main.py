@@ -38,26 +38,21 @@ def serve_upload(file_path: str):
 
 @app.get("/manuals/{manual_type}")
 def serve_manual(manual_type: str):
-    mapping = {
-        "user": "User_Manual.pdf",
-        "user_manual.pdf": "User_Manual.pdf",
-        "gh": "Group_Head_Manual.pdf",
-        "group_head": "Group_Head_Manual.pdf",
-        "group_head_manual.pdf": "Group_Head_Manual.pdf",
-        "ch": "Centre_Head_Manual.pdf",
-        "centre_head": "Centre_Head_Manual.pdf",
-        "centre_head_manual.pdf": "Centre_Head_Manual.pdf",
-        "editor": "Editor_Manual.pdf",
-        "editor_manual.pdf": "Editor_Manual.pdf",
-        "admin": "Editor_Manual.pdf",
-    }
     clean_key = manual_type.lower().strip()
-    filename = mapping.get(clean_key)
-    if not filename:
-        raise HTTPException(status_code=404, detail="Manual not found")
+    if clean_key in ("editor", "editor_manual.pdf", "edit"):
+        filename = "Editor_Manual.pdf"
+    elif clean_key in ("gh", "group_head", "group_head_manual.pdf"):
+        filename = "Group_Head_Manual.pdf"
+    elif clean_key in ("ch", "centre_head", "centre_head_manual.pdf", "center_head"):
+        filename = "Centre_Head_Manual.pdf"
+    else:
+        filename = "User_Manual.pdf"
 
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    file_path = os.path.join(base_dir, "docs", filename)
+    frontend_public = os.path.join(os.path.dirname(base_dir), "frontend", "public")
+    file_path = os.path.join(frontend_public, filename)
+    if not os.path.exists(file_path):
+        file_path = os.path.join(base_dir, "docs", filename)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail=f"Manual file {filename} not found on server")
 
@@ -93,31 +88,28 @@ app.include_router(newsletter_upload.router, prefix="/newsletter-upload", tags=[
 
 
 
-# @app.on_event("startup")
-# def startup_scheduler():
-#     if not scheduler.running:
-#         # Automatically wakes up on 1st and 16th of each month at 10:00 AM
-#         scheduler.add_job(
-#             automated_scheduled_reminder,
-#             trigger="cron",
-#             day="1,16",
-#             hour=10,
-#             minute=0,
-#             id="automated_newsletter_reminder",
-#             replace_existing=True
-#         )
-#         scheduler.start()
+@app.on_event("startup")
+def startup_scheduler():
+    if not scheduler.running:
+        # Schedule reminder emails on the 1st and 16th of every month at 10:00 AM
+        scheduler.add_job(
+            automated_scheduled_reminder,
+            trigger="cron",
+            day="1,16",
+            hour=10,
+            minute=0,
+            id="automated_newsletter_reminder",
+            replace_existing=True
+        )
+        scheduler.start()
 
-#     # Same-Day Catch-up Logic:
-#     # If today IS the 1st or 16th, and the server was OFF at 10:00 AM,
-#     # trigger immediately whenever the server is powered back on today.
-#     # (If already sent earlier today, email_scheduler safely skips duplicates)
-#     today = date.today()
-#     if today.day in (1, 16):
-#         import logging
-#         logger = logging.getLogger("startup_catchup")
-#         logger.info(f"📅 Today is the {today.day}th! Checking same-day reminder catch-up...")
-#         automated_scheduled_reminder()
+    # Same-Day Catch-up: Trigger if backend starts/restarts on the 1st or 16th
+    today = date.today()
+    if today.day in (1, 16):
+        import logging
+        logger = logging.getLogger("startup_catchup")
+        logger.info(f"📅 Today is the {today.day}th! Checking same-day reminder catch-up...")
+        automated_scheduled_reminder()
 
 
 @app.on_event("shutdown")

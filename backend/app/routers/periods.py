@@ -9,7 +9,7 @@ from typing import List, Optional, Tuple
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import Response
 
-from sqlalchemy import extract, func
+from sqlalchemy import extract, func, or_
 from sqlalchemy.orm import Session
 from PIL import Image
 from docx import Document
@@ -178,8 +178,18 @@ def finalize_period(period_id: int, user_id: Optional[int] = None, db: Session =
 
     if user_id:
         user = db.query(models.User).filter(models.User.id == user_id).first()
-        if user and user.role.lower() not in ("admin", "edit", "editor", "gh", "ch"):
-            raise HTTPException(status_code=403, detail="Only Group Heads and Editors have permission to finalize newsletter periods.")
+        if user:
+            role_lower = (user.role or "").lower()
+            is_allowed = (
+                any(r in role_lower for r in ("admin", "edit", "editor"))
+                or "gh" in role_lower
+                or "ch" in role_lower
+                or "group head" in role_lower
+                or "centre head" in role_lower
+                or "center head" in role_lower
+            )
+            if not is_allowed:
+                raise HTTPException(status_code=403, detail="Only Group Heads, Centre Heads, and Editors have permission to finalize newsletter periods.")
 
     period.edit = False
     db.commit()
@@ -195,8 +205,18 @@ def reopen_period(period_id: int, user_id: Optional[int] = None, db: Session = D
 
     if user_id:
         user = db.query(models.User).filter(models.User.id == user_id).first()
-        if user and user.role.lower() not in ("admin", "edit", "editor", "gh", "ch"):
-            raise HTTPException(status_code=403, detail="Only Group Heads and Editors have permission to re-open newsletter periods.")
+        if user:
+            role_lower = (user.role or "").lower()
+            is_allowed = (
+                any(r in role_lower for r in ("admin", "edit", "editor"))
+                or "gh" in role_lower
+                or "ch" in role_lower
+                or "group head" in role_lower
+                or "centre head" in role_lower
+                or "center head" in role_lower
+            )
+            if not is_allowed:
+                raise HTTPException(status_code=403, detail="Only Group Heads, Centre Heads, and Editors have permission to re-open newsletter periods.")
 
     period.edit = True
     db.commit()
@@ -991,7 +1011,10 @@ def ensure_current_periods_for_center(center: str, created_by: int, db: Session 
             .filter(
                 models.User.center == center,
                 models.User.group == group_name,
-                models.User.role.ilike("gh")
+                or_(
+                    models.User.role.ilike("%gh%"),
+                    models.User.role.ilike("%group head%")
+                )
             )
             .first()
         )
@@ -1073,7 +1096,10 @@ def ensure_specific_half_center(
             .filter(
                 models.User.center == center,
                 models.User.group == g_name,
-                models.User.role.ilike("gh")
+                or_(
+                    models.User.role.ilike("%gh%"),
+                    models.User.role.ilike("%group head%")
+                )
             )
             .first()
         )

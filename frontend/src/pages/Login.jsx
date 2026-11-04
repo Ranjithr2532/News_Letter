@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/api';
 import { useUser, isDualRoleUser } from '../context/UserContext';
@@ -152,68 +152,111 @@ const Login = () => {
   };
 
   return (
-    <div className="login-container">
-      <div className="login-card">
-        <h2>The Science of Making</h2>
-        <h3>Login</h3>
-        {error && <div className="error-message">{error}</div>}
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label htmlFor="email">Email Address</label>
-            <input
-              id="email"
-              type="email"
-              placeholder="Enter your email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-          </div>
-          <div className="form-group">
-            <label htmlFor="password">Password</label>
-            <input
-              id="password"
-              type={showPassword ? 'text' : 'password'}
-              placeholder="Enter your password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
+    <div className="login-screen-split">
+      {/* Left 55% Visual Hero Panel */}
+      <div className="login-panel-visual">
+        <div className="login-visual-container">
+          {/* Top Institutional Header */}
+          <div className="login-masthead">
+            <h1 className="masthead-title">
+              Central Manufacturing Technology Institute
+            </h1>
+            <p className="masthead-sub">
+              An Autonomous R&D Institute under Ministry of Heavy Industries, Govt. of India
+            </p>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px', marginTop: '6px' }}>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.84rem', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>
-              <input
-                type="checkbox"
-                checked={showPassword}
-                onChange={(e) => setShowPassword(e.target.checked)}
-                style={{ width: '15px', height: '15px', cursor: 'pointer', accentColor: '#2563eb' }}
+          {/* Center Image Frame with Ambient Glow */}
+          <div className="login-image-glow-wrapper">
+            <div className="login-image-frame">
+              <img
+                src="/science making.png"
+                alt="The Science of Making - CMTI"
+                className="login-hero-img"
               />
-              <span>Show Password</span>
-            </label>
+            </div>
+          </div>
+        </div>
+      </div>
 
-            <button
-              type="button"
-              onClick={handleOpenForgotModal}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: '#2563eb',
-                fontSize: '0.84rem',
-                fontWeight: '600',
-                cursor: 'pointer',
-                padding: '0',
-                textDecoration: 'underline',
-              }}
-            >
-              Forgot Password?
-            </button>
+      {/* Right 45% Login Form Panel */}
+      <div className="login-panel-form">
+        <div className="login-form-inner">
+          <div className="login-form-header">
+            <div className="login-logo-wrapper">
+              <img
+                src="/cmti.png"
+                alt="CMTI Logo"
+                className="login-cmti-logo"
+              />
+            </div>
+            <h2>Login</h2>
           </div>
 
-          <button type="submit" className="login-btn" disabled={loading}>
-            {loading ? 'Logging in...' : 'Login'}
-          </button>
-        </form>
+          {error && <div className="error-message">{error}</div>}
+
+          <form onSubmit={handleSubmit}>
+            <div className="form-group">
+              <label htmlFor="email">Email Address</label>
+              <input
+                id="email"
+                type="email"
+                placeholder="Enter your email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="password">Password</label>
+              <input
+                id="password"
+                type={showPassword ? 'text' : 'password'}
+                placeholder="Enter your password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', marginTop: '8px' }}>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.84rem', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>
+                <input
+                  type="checkbox"
+                  checked={showPassword}
+                  onChange={(e) => setShowPassword(e.target.checked)}
+                  style={{ width: '15px', height: '15px', cursor: 'pointer', accentColor: '#2563eb' }}
+                />
+                <span>Show Password</span>
+              </label>
+
+              <button
+                type="button"
+                onClick={handleOpenForgotModal}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#2563eb',
+                  fontSize: '0.84rem',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  padding: '0',
+                  textDecoration: 'underline',
+                }}
+              >
+                Forgot Password?
+              </button>
+            </div>
+
+            <button type="submit" className="login-btn" disabled={loading}>
+              {loading ? 'Logging in...' : 'Login'}
+            </button>
+          </form>
+
+          <div className="login-footer-institutional">
+            © CMTI Bengaluru • All Rights Reserved
+          </div>
+        </div>
       </div>
 
       {/* Dual Role Selection Modal (CH or GH) */}

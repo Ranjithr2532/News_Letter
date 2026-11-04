@@ -22,6 +22,8 @@ logger = logging.getLogger("email_scheduler")
 # ==============================================================================
 DEFAULT_TARGET_ROLES = ["GH", "CH"]
 
+# Target recipients: All GH, CH, and dual role (GH & CH) users across all centers/departments.
+
 # Global Background Scheduler
 scheduler = BackgroundScheduler()
 
@@ -74,10 +76,9 @@ def build_email_template(
     period_label: str,
     start_date_str: str,
     end_date_str: str,
-    default_password: str = "123456",
+    default_password: str = "Your Password / 123456",
     portal_url: str = "http://172.18.7.91:3055"
 ) -> str:
-    """Official reminder email template formatted with department submission instructions."""
     return f"""
     <div style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #1e293b; max-width: 600px; padding: 16px;">
         <p style="margin-top: 0;">Dear Sir/Madam,</p>
@@ -151,7 +152,7 @@ def send_timeline_reminder_emails() -> Dict[str, Any]:
             ).count()
 
         # 3. Query target users: supports 'GH', 'CH', and dual roles like 'CH, GH' / 'GH / CH'
-        users = db.query(User).filter(
+        target_filters = [
             or_(
                 User.role.ilike("%gh%"),
                 User.role.ilike("%ch%"),
@@ -161,7 +162,10 @@ def send_timeline_reminder_emails() -> Dict[str, Any]:
             ),
             ~User.role.ilike("%tech%"),  # Exclude technical staff
             User.email.isnot(None)
-        ).all()
+        ]
+
+
+        users = db.query(User).filter(*target_filters).all()
 
         dispatch_results = []
         sent_emails = set()

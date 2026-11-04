@@ -25,3 +25,4 @@ python-dotenv
 bcrypt
 pypdfium2
 minio>=7.2.0
+apscheduler

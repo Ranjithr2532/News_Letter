@@ -34,6 +34,13 @@ const Customize = () => {
   const isGhUser = currentRole === 'gh';
   const hasAdminAccess = isAdmin || isEditor;
 
+  // When editor logs in, default role select to GH if previously scientist
+  useEffect(() => {
+    if (isEditor && (userRoleSelect === 'scientist' || userRoleSelect === 'technical staff')) {
+      setUserRoleSelect('gh');
+    }
+  }, [isEditor]);
+
   // Role Guard: Redirect non-GH and non-Admin/Editor users immediately
   useEffect(() => {
     if (!user) {
@@ -58,10 +65,14 @@ const Customize = () => {
   const [userEmail, setUserEmail] = useState('');
   const [userPassword, setUserPassword] = useState('');
   const [userDesignation, setUserDesignation] = useState('');
-  const [userRoleSelect, setUserRoleSelect] = useState('scientist');
+  const [userRoleSelect, setUserRoleSelect] = useState(() => (isEditor ? 'gh' : 'scientist'));
   const [customRoleText, setCustomRoleText] = useState('');
   const [adminUserCenter, setAdminUserCenter] = useState('');
+  const [isCustomCenter, setIsCustomCenter] = useState(false);
   const [adminUserGroup, setAdminUserGroup] = useState('');
+  const [isCustomGroup, setIsCustomGroup] = useState(false);
+  const [availableCenterGroups, setAvailableCenterGroups] = useState([]);
+  const [loadingGroups, setLoadingGroups] = useState(false);
   const [userSubmitting, setUserSubmitting] = useState(false);
   const [userSuccessMsg, setUserSuccessMsg] = useState('');
   const [userErrorMsg, setUserErrorMsg] = useState('');
@@ -102,7 +113,11 @@ const Customize = () => {
   const [editUserRoleSelect, setEditUserRoleSelect] = useState('scientist');
   const [editCustomRoleText, setEditCustomRoleText] = useState('');
   const [editUserCenter, setEditUserCenter] = useState('');
+  const [editIsCustomCenter, setEditIsCustomCenter] = useState(false);
   const [editUserGroup, setEditUserGroup] = useState('');
+  const [editIsCustomGroup, setEditIsCustomGroup] = useState(false);
+  const [editAvailableGroups, setEditAvailableGroups] = useState([]);
+  const [editLoadingGroups, setEditLoadingGroups] = useState(false);
   const [editUserPassword, setEditUserPassword] = useState('');
   const [editUserSubmitting, setEditUserSubmitting] = useState(false);
   const [editUserError, setEditUserError] = useState('');
@@ -155,9 +170,89 @@ const Customize = () => {
       setAllChs(chRes.data || []);
       if (centers.length > 0 && !adminUserCenter) {
         setAdminUserCenter(centers[0]);
+        setLoadingGroups(true);
+        api
+          .get(`/users/groups/list?center=${encodeURIComponent(centers[0])}`)
+          .then((gRes) => {
+            const grps = gRes.data || [];
+            setAvailableCenterGroups(grps);
+            if (grps.length > 0 && !adminUserGroup) {
+              setAdminUserGroup(grps[0]);
+            }
+          })
+          .catch(() => setAvailableCenterGroups([]))
+          .finally(() => setLoadingGroups(false));
       }
     } catch (err) {
       console.error('Failed to fetch admin metadata:', err);
+    }
+  };
+
+
+  const handleCenterChange = (cVal) => {
+    if (cVal === '__other__') {
+      setIsCustomCenter(true);
+      setAdminUserCenter('');
+      setAvailableCenterGroups([]);
+      setIsCustomGroup(true);
+      setAdminUserGroup('');
+    } else {
+      setIsCustomCenter(false);
+      setAdminUserCenter(cVal);
+      setIsCustomGroup(false);
+      if (cVal) {
+        setLoadingGroups(true);
+        api
+          .get(`/users/groups/list?center=${encodeURIComponent(cVal)}`)
+          .then((res) => {
+            const grps = res.data || [];
+            setAvailableCenterGroups(grps);
+            if (grps.length > 0) {
+              setAdminUserGroup(grps[0]);
+            } else {
+              setAdminUserGroup('');
+              setIsCustomGroup(true);
+            }
+          })
+          .catch(() => {
+            setAvailableCenterGroups([]);
+            setIsCustomGroup(true);
+          })
+          .finally(() => setLoadingGroups(false));
+      } else {
+        setAvailableCenterGroups([]);
+        setAdminUserGroup('');
+      }
+    }
+  };
+
+  const handleEditCenterChange = (cVal) => {
+    if (cVal === '__other__') {
+      setEditIsCustomCenter(true);
+      setEditUserCenter('');
+      setEditAvailableGroups([]);
+      setEditIsCustomGroup(true);
+      setEditUserGroup('');
+    } else {
+      setEditIsCustomCenter(false);
+      setEditUserCenter(cVal);
+      setEditIsCustomGroup(false);
+      if (cVal) {
+        setEditLoadingGroups(true);
+        api
+          .get(`/users/groups/list?center=${encodeURIComponent(cVal)}`)
+          .then((res) => {
+            const grps = res.data || [];
+            setEditAvailableGroups(grps);
+            if (grps.length > 0 && !grps.includes(editUserGroup)) {
+              setEditUserGroup(grps[0]);
+            }
+          })
+          .catch(() => setEditAvailableGroups([]))
+          .finally(() => setEditLoadingGroups(false));
+      } else {
+        setEditAvailableGroups([]);
+      }
     }
   };
 
@@ -349,10 +444,25 @@ const Customize = () => {
       setUserEmail('');
       setUserPassword('');
       setUserDesignation('');
-      setUserRoleSelect('scientist');
+      setUserRoleSelect(isEditor ? 'gh' : 'scientist');
       setCustomRoleText('');
+      setIsCustomCenter(false);
+      setIsCustomGroup(false);
       if (isAdmin || isEditor) {
-        setAdminUserGroup('');
+        if (allCenters.length > 0) {
+          setAdminUserCenter(allCenters[0]);
+          api
+            .get(`/users/groups/list?center=${encodeURIComponent(allCenters[0])}`)
+            .then((res) => {
+              const grps = res.data || [];
+              setAvailableCenterGroups(grps);
+              if (grps.length > 0) setAdminUserGroup(grps[0]);
+            })
+            .catch(() => {});
+        } else {
+          setAdminUserCenter('');
+          setAdminUserGroup('');
+        }
       }
       fetchUsers(filterCenter, filterRole);
       if (isAdmin || isEditor) {
@@ -384,10 +494,26 @@ const Customize = () => {
       setEditUserRoleSelect('other');
       setEditCustomRoleText(u.role || '');
     }
-    setEditUserCenter(u.center || '');
-    setEditUserGroup(u.group || u.group_name || '');
+    const c = u.center || '';
+    setEditUserCenter(c);
+    setEditIsCustomCenter(false);
+    const g = u.group || u.group_name || '';
+    setEditUserGroup(g);
+    setEditIsCustomGroup(false);
     setEditUserPassword('');
     setEditUserError('');
+    if (c) {
+      setEditLoadingGroups(true);
+      api
+        .get(`/users/groups/list?center=${encodeURIComponent(c)}`)
+        .then((res) => {
+          setEditAvailableGroups(res.data || []);
+        })
+        .catch(() => setEditAvailableGroups([]))
+        .finally(() => setEditLoadingGroups(false));
+    } else {
+      setEditAvailableGroups([]);
+    }
   };
 
   const handleCloseEditUser = () => {
@@ -794,16 +920,27 @@ const Customize = () => {
                   className="admin-input"
                   value={userRoleSelect}
                   onChange={(e) => setUserRoleSelect(e.target.value)}
-                  style={{ cursor: 'pointer' }}
+                  style={{ cursor: 'pointer', backgroundColor: '#ffffff', color: '#0f172a' }}
                 >
-                  <option value="scientist">Scientist</option>
-                  <option value="technical staff">Technical Staff</option>
-                  <option value="gh">Group Head (GH)</option>
-                  {(isAdmin || isEditor) && <option value="ch">Centre Head (CH)</option>}
-                  {(isAdmin || isEditor) && <option value="joint director">Joint Director</option>}
-                  {(isAdmin || isEditor) && <option value="edit">Editor / Compilation Lead</option>}
-                  {(isAdmin || isEditor) && <option value="admin">Administration Staff</option>}
-                  <option value="other">Other / Custom Role (Type below)...</option>
+                  {isEditor ? (
+                    <>
+                      <option value="gh">Group Head (GH)</option>
+                      <option value="ch">Centre Head (CH)</option>
+                      <option value="joint director">Joint Director</option>
+                      <option value="other">Other (Enter details below)...</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="scientist">Scientist</option>
+                      <option value="technical staff">Technical Staff</option>
+                      <option value="gh">Group Head (GH)</option>
+                      {isAdmin && <option value="ch">Centre Head (CH)</option>}
+                      {isAdmin && <option value="joint director">Joint Director</option>}
+                      {isAdmin && <option value="edit">Editor / Compilation Lead</option>}
+                      {isAdmin && <option value="admin">Administration Staff</option>}
+                      <option value="other">Other / Custom Role (Type below)...</option>
+                    </>
+                  )}
                 </select>
               </div>
 
@@ -820,12 +957,12 @@ const Customize = () => {
                   }}
                 >
                   <label className="admin-form-label" style={{ color: '#1e40af' }}>
-                    Specify Custom Role Name *
+                    Enter Role Details *
                   </label>
                   <input
                     type="text"
                     className="admin-input"
-                    placeholder="e.g. Project Associate, Research Scholar, Lab Assistant"
+                    placeholder="e.g. Project Associate, Research Scholar, Director"
                     value={customRoleText}
                     onChange={(e) => setCustomRoleText(e.target.value)}
                     required={userRoleSelect === 'other'}
@@ -839,18 +976,23 @@ const Customize = () => {
                 <span style={{ fontSize: '0.74rem', color: '#64748b', fontWeight: '600' }}>
                   Quick Select:
                 </span>
-                {[
+                {(isEditor ? [
+                  { id: 'gh', label: 'Group Head (GH)' },
+                  { id: 'ch', label: 'Centre Head (CH)' },
+                  { id: 'joint director', label: 'Joint Director' },
+                  { id: 'other', label: 'Other...' },
+                ] : [
                   { id: 'scientist', label: 'Scientist' },
                   { id: 'technical staff', label: 'Technical Staff' },
                   { id: 'gh', label: 'Group Head' },
-                  ...((isAdmin || isEditor) ? [
+                  ...(isAdmin ? [
                     { id: 'ch', label: 'Centre Head (CH)' },
                     { id: 'joint director', label: 'Joint Director' },
                     { id: 'edit', label: 'Editor' },
                     { id: 'admin', label: 'Admin' },
                   ] : []),
                   { id: 'other', label: 'Custom...' },
-                ].map((rolePreset) => (
+                ]).map((rolePreset) => (
                   <button
                     key={rolePreset.id}
                     type="button"
@@ -876,15 +1018,36 @@ const Customize = () => {
                 <div className="admin-form-group">
                   <label className="admin-form-label">Center *</label>
                   {(isAdmin || isEditor) ? (
-                    <input
-                      type="text"
-                      className="admin-input"
-                      list="admin-center-datalist"
-                      placeholder="e.g. Main, Manufacturing, Automation"
-                      value={adminUserCenter}
-                      onChange={(e) => setAdminUserCenter(e.target.value)}
-                      required
-                    />
+                    <div>
+                      <select
+                        className="admin-input"
+                        value={isCustomCenter ? '__other__' : adminUserCenter}
+                        onChange={(e) => handleCenterChange(e.target.value)}
+                        style={{ cursor: 'pointer', backgroundColor: '#ffffff', color: '#0f172a', width: '100%' }}
+                        required={!isCustomCenter}
+                      >
+                        <option value="">Select Center...</option>
+                        {allCenters.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                        <option value="__other__">+ Enter Other Center...</option>
+                      </select>
+                      {isCustomCenter && (
+                        <div style={{ marginTop: '6px' }}>
+                          <input
+                            type="text"
+                            className="admin-input"
+                            placeholder="Type center name..."
+                            value={adminUserCenter}
+                            onChange={(e) => setAdminUserCenter(e.target.value)}
+                            required
+                            autoFocus
+                          />
+                        </div>
+                      )}
+                    </div>
                   ) : (
                     <input
                       type="text"
@@ -893,26 +1056,70 @@ const Customize = () => {
                       disabled
                     />
                   )}
-                  {(isAdmin || isEditor) && (
-                    <datalist id="admin-center-datalist">
-                      {allCenters.map((c) => (
-                        <option key={c} value={c} />
-                      ))}
-                    </datalist>
-                  )}
                 </div>
 
                 <div className="admin-form-group">
-                  <label className="admin-form-label">Department *</label>
+                  <label className="admin-form-label">
+                    <span>Department *</span>
+                    {loadingGroups && (
+                      <span style={{ fontSize: '0.72rem', color: '#2563eb', fontWeight: '500', marginLeft: '6px' }}>
+                        Loading...
+                      </span>
+                    )}
+                  </label>
                   {(isAdmin || isEditor) ? (
-                    <input
-                      type="text"
-                      className="admin-input"
-                      placeholder="e.g. Design, Electronics, Materials"
-                      value={adminUserGroup}
-                      onChange={(e) => setAdminUserGroup(e.target.value)}
-                      required
-                    />
+                    <div>
+                      <select
+                        className="admin-input"
+                        value={isCustomGroup ? '__other__' : adminUserGroup}
+                        onChange={(e) => {
+                          if (e.target.value === '__other__') {
+                            setIsCustomGroup(true);
+                            setAdminUserGroup('');
+                          } else {
+                            setIsCustomGroup(false);
+                            setAdminUserGroup(e.target.value);
+                          }
+                        }}
+                        disabled={!adminUserCenter || loadingGroups}
+                        style={{
+                          cursor: !adminUserCenter ? 'not-allowed' : 'pointer',
+                          backgroundColor: '#ffffff',
+                          color: '#0f172a',
+                          width: '100%',
+                        }}
+                        required={!isCustomGroup}
+                      >
+                        <option value="">
+                          {!adminUserCenter
+                            ? 'Select Center first'
+                            : loadingGroups
+                            ? 'Loading departments...'
+                            : availableCenterGroups.length === 0
+                            ? 'No departments found'
+                            : 'Select Department...'}
+                        </option>
+                        {availableCenterGroups.map((g) => (
+                          <option key={g} value={g}>
+                            {g}
+                          </option>
+                        ))}
+                        <option value="__other__">+ Enter Other Department...</option>
+                      </select>
+                      {(isCustomGroup || (adminUserCenter && !loadingGroups && availableCenterGroups.length === 0)) && (
+                        <div style={{ marginTop: '6px' }}>
+                          <input
+                            type="text"
+                            className="admin-input"
+                            placeholder="Type department name..."
+                            value={adminUserGroup}
+                            onChange={(e) => setAdminUserGroup(e.target.value)}
+                            required
+                            autoFocus
+                          />
+                        </div>
+                      )}
+                    </div>
                   ) : (
                     <input
                       type="text"
@@ -1848,16 +2055,32 @@ const Customize = () => {
                   className="admin-input"
                   value={editUserRoleSelect}
                   onChange={(e) => setEditUserRoleSelect(e.target.value)}
-                  style={{ cursor: 'pointer' }}
+                  style={{ cursor: 'pointer', backgroundColor: '#ffffff', color: '#0f172a' }}
                 >
-                  <option value="scientist">Scientist</option>
-                  <option value="technical staff">Technical Staff</option>
-                  <option value="gh">Group Head (GH)</option>
-                  {(isAdmin || isEditor) && <option value="ch">Centre Head (CH)</option>}
-                  {(isAdmin || isEditor) && <option value="joint director">Joint Director</option>}
-                  {(isAdmin || isEditor) && <option value="edit">Editor / Compilation Lead</option>}
-                  {(isAdmin || isEditor) && <option value="admin">Administration Staff</option>}
-                  <option value="other">Other / Custom Role...</option>
+                  {isEditor ? (
+                    <>
+                      <option value="gh">Group Head (GH)</option>
+                      <option value="ch">Centre Head (CH)</option>
+                      <option value="joint director">Joint Director</option>
+                      {!['gh', 'ch', 'joint director', 'other'].includes(editUserRoleSelect) && (
+                        <option value={editUserRoleSelect}>
+                          {formatRole(editUserRoleSelect)} (Current)
+                        </option>
+                      )}
+                      <option value="other">Other (Enter details below)...</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="scientist">Scientist</option>
+                      <option value="technical staff">Technical Staff</option>
+                      <option value="gh">Group Head (GH)</option>
+                      {isAdmin && <option value="ch">Centre Head (CH)</option>}
+                      {isAdmin && <option value="joint director">Joint Director</option>}
+                      {isAdmin && <option value="edit">Editor / Compilation Lead</option>}
+                      {isAdmin && <option value="admin">Administration Staff</option>}
+                      <option value="other">Other / Custom Role...</option>
+                    </>
+                  )}
                 </select>
               </div>
 
@@ -1872,11 +2095,12 @@ const Customize = () => {
                   }}
                 >
                   <label className="admin-form-label" style={{ color: '#1e40af' }}>
-                    Specify Custom Role Name *
+                    Enter Role Details *
                   </label>
                   <input
                     type="text"
                     className="admin-input"
+                    placeholder="e.g. Project Associate, Research Scholar, Director"
                     value={editCustomRoleText}
                     onChange={(e) => setEditCustomRoleText(e.target.value)}
                     required
@@ -1886,15 +2110,38 @@ const Customize = () => {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div className="admin-form-group">
-                  <label className="admin-form-label">Center</label>
+                  <label className="admin-form-label">Center *</label>
                   {(isAdmin || isEditor) ? (
-                    <input
-                      type="text"
-                      className="admin-input"
-                      list="edit-user-center-datalist"
-                      value={editUserCenter}
-                      onChange={(e) => setEditUserCenter(e.target.value)}
-                    />
+                    <div>
+                      <select
+                        className="admin-input"
+                        value={editIsCustomCenter ? '__other__' : editUserCenter}
+                        onChange={(e) => handleEditCenterChange(e.target.value)}
+                        style={{ cursor: 'pointer', backgroundColor: '#ffffff', color: '#0f172a', width: '100%' }}
+                        required={!editIsCustomCenter}
+                      >
+                        <option value="">Select Center...</option>
+                        {allCenters.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                        <option value="__other__">+ Enter Other Center...</option>
+                      </select>
+                      {editIsCustomCenter && (
+                        <div style={{ marginTop: '6px' }}>
+                          <input
+                            type="text"
+                            className="admin-input"
+                            placeholder="Type center name..."
+                            value={editUserCenter}
+                            onChange={(e) => setEditUserCenter(e.target.value)}
+                            required
+                            autoFocus
+                          />
+                        </div>
+                      )}
+                    </div>
                   ) : (
                     <input
                       type="text"
@@ -1903,24 +2150,70 @@ const Customize = () => {
                       disabled
                     />
                   )}
-                  {(isAdmin || isEditor) && (
-                    <datalist id="edit-user-center-datalist">
-                      {allCenters.map((c) => (
-                        <option key={c} value={c} />
-                      ))}
-                    </datalist>
-                  )}
                 </div>
 
                 <div className="admin-form-group">
-                  <label className="admin-form-label">Department</label>
+                  <label className="admin-form-label">
+                    <span>Department *</span>
+                    {editLoadingGroups && (
+                      <span style={{ fontSize: '0.72rem', color: '#2563eb', fontWeight: '500', marginLeft: '6px' }}>
+                        Loading...
+                      </span>
+                    )}
+                  </label>
                   {(isAdmin || isEditor) ? (
-                    <input
-                      type="text"
-                      className="admin-input"
-                      value={editUserGroup}
-                      onChange={(e) => setEditUserGroup(e.target.value)}
-                    />
+                    <div>
+                      <select
+                        className="admin-input"
+                        value={editIsCustomGroup ? '__other__' : editUserGroup}
+                        onChange={(e) => {
+                          if (e.target.value === '__other__') {
+                            setEditIsCustomGroup(true);
+                            setEditUserGroup('');
+                          } else {
+                            setEditIsCustomGroup(false);
+                            setEditUserGroup(e.target.value);
+                          }
+                        }}
+                        disabled={!editUserCenter || editLoadingGroups}
+                        style={{
+                          cursor: !editUserCenter ? 'not-allowed' : 'pointer',
+                          backgroundColor: '#ffffff',
+                          color: '#0f172a',
+                          width: '100%',
+                        }}
+                        required={!editIsCustomGroup}
+                      >
+                        <option value="">
+                          {!editUserCenter
+                            ? 'Select Center first'
+                            : editLoadingGroups
+                            ? 'Loading departments...'
+                            : editAvailableGroups.length === 0
+                            ? 'No departments found'
+                            : 'Select Department...'}
+                        </option>
+                        {editAvailableGroups.map((g) => (
+                          <option key={g} value={g}>
+                            {g}
+                          </option>
+                        ))}
+                        <option value="__other__">+ Enter Other Department...</option>
+                      </select>
+                      {(editIsCustomGroup || (editUserCenter && !editLoadingGroups && editAvailableGroups.length === 0)) && (
+                        <div style={{ marginTop: '6px' }}>
+                          <input
+                            type="text"
+                            className="admin-input"
+                            placeholder="Type department name..."
+                            value={editUserGroup}
+                            onChange={(e) => setEditUserGroup(e.target.value)}
+                            required
+                            autoFocus
+                          />
+                        </div>
+                      )}
+                    </div>
                   ) : (
                     <input
                       type="text"

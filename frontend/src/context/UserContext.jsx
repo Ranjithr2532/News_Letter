@@ -57,6 +57,11 @@ export const UserProvider = ({ children }) => {
   const logout = () => {
     setUser(null);
     localStorage.removeItem('newsletter_user');
+    try {
+      sessionStorage.clear();
+    } catch (e) {
+      // ignore
+    }
   };
 
   return (

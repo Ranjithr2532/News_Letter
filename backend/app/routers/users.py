@@ -197,13 +197,53 @@ def list_centers(db: Session = Depends(get_db)):
 
 @router.get("/chs/list", response_model=List[schemas.UserRead])
 def list_centre_heads(db: Session = Depends(get_db)):
-    chs = db.query(models.User).filter(models.User.role.ilike("ch")).order_by(models.User.center.asc(), models.User.name.asc()).all()
+    chs = (
+        db.query(models.User)
+        .filter(
+            ~models.User.role.ilike("%tech%"),
+            or_(
+                models.User.role.ilike("%centre head%"),
+                models.User.role.ilike("%center head%"),
+                models.User.role.ilike("ch"),
+                models.User.role.ilike("ch,%"),
+                models.User.role.ilike("ch %"),
+                models.User.role.ilike("ch/%"),
+                models.User.role.ilike("ch /%"),
+                models.User.role.ilike("%, ch%"),
+                models.User.role.ilike("%,ch%"),
+                models.User.role.ilike("%/ ch%"),
+                models.User.role.ilike("%/ch%"),
+                models.User.role.ilike("%(ch)%"),
+            )
+        )
+        .order_by(models.User.center.asc(), models.User.name.asc())
+        .all()
+    )
     return chs
 
 
 @router.get("/ghs/list", response_model=List[schemas.UserRead])
 def list_group_heads(db: Session = Depends(get_db)):
-    ghs = db.query(models.User).filter(models.User.role.ilike("gh")).order_by(models.User.center.asc(), models.User.group.asc(), models.User.name.asc()).all()
+    ghs = (
+        db.query(models.User)
+        .filter(
+            or_(
+                models.User.role.ilike("%group head%"),
+                models.User.role.ilike("gh"),
+                models.User.role.ilike("gh,%"),
+                models.User.role.ilike("gh %"),
+                models.User.role.ilike("gh/%"),
+                models.User.role.ilike("gh /%"),
+                models.User.role.ilike("%, gh%"),
+                models.User.role.ilike("%,gh%"),
+                models.User.role.ilike("%/ gh%"),
+                models.User.role.ilike("%/gh%"),
+                models.User.role.ilike("%(gh)%"),
+            )
+        )
+        .order_by(models.User.center.asc(), models.User.group.asc(), models.User.name.asc())
+        .all()
+    )
     return ghs
 
 

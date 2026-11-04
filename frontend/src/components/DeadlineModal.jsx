@@ -15,12 +15,20 @@ const DeadlineModal = () => {
 
   useEffect(() => {
     if (user?.id && !isAdmin && !isChUser) {
+      const sessionKey = `deadline_modal_dismissed_${user.id}`;
+      // Do not re-check or pop up if user already dismissed/closed in this session
+      if (sessionStorage.getItem(sessionKey)) {
+        return;
+      }
       checkUnreadNotifications();
     }
   }, [user?.id, isAdmin, isChUser]);
 
   const checkUnreadNotifications = async () => {
-    if (isAdmin || isChUser) return;
+    if (isAdmin || isChUser || !user?.id) return;
+    const sessionKey = `deadline_modal_dismissed_${user.id}`;
+    if (sessionStorage.getItem(sessionKey)) return;
+
     try {
       const res = await api.get(`/notifications/?user_id=${user.id}&unread_only=true`);
       const unreadList = res.data || [];
@@ -32,12 +40,10 @@ const DeadlineModal = () => {
 
         const activePopup = unreadList.find((notif) => {
           if (notif.notification_type === 'GH_FINALIZE') {
-            // Group Head gets popup when finalization is needed
             return true;
           }
 
           if (notif.notification_type === 'USER_MIDPOINT') {
-            // Stage 1: Only pop up during 16th–20th. After 20th, do NOT pop up (stays silent in bell)
             if (!notif.period_start_date) return false;
             const start = new Date(notif.period_start_date);
             const deadline20 = new Date(start.getFullYear(), start.getMonth(), 20).getTime();
@@ -45,7 +51,6 @@ const DeadlineModal = () => {
           }
 
           if (notif.notification_type === 'USER_FINAL') {
-            // Stage 2: Only pop up during 1st–5th. After 5th, do NOT pop up (stays silent in bell)
             if (!notif.period_end_date) return false;
             const end = new Date(notif.period_end_date);
             const deadline5 = new Date(end.getFullYear(), end.getMonth(), end.getDate() + 5).getTime();
@@ -65,17 +70,27 @@ const DeadlineModal = () => {
     }
   };
 
-  // Just close the modal - does NOT mark as read, will show again next login
+  // Close the modal: suppress for the current browser session so it doesn't pop up again while browsing
   const handleClose = () => {
+    if (user?.id) {
+      sessionStorage.setItem(`deadline_modal_dismissed_${user.id}`, 'true');
+    }
     setShowModal(false);
   };
 
-  // Mark as read in backend so it is NEVER shown again on future logins
+  // Mark as read in backend and suppress in session so it NEVER shows again
   const handleDismiss = async () => {
+    if (user?.id) {
+      sessionStorage.setItem(`deadline_modal_dismissed_${user.id}`, 'true');
+    }
     if (!activeNotif) return;
     setMarkingRead(true);
     try {
       await api.put(`/notifications/${activeNotif.id}/read`);
+      if (user?.id) {
+        // Also mark all unread notifications read so another one doesn't immediately queue up
+        await api.put(`/notifications/read-all?user_id=${user.id}`);
+      }
       setShowModal(false);
     } catch (err) {
       console.error('Failed to mark notification as read:', err);
@@ -104,8 +119,10 @@ const DeadlineModal = () => {
         padding: '20px',
         animation: 'fadeIn 0.2s ease-out',
       }}
+      onClick={handleClose}
     >
       <div
+        onClick={(e) => e.stopPropagation()}
         style={{
           width: '100%',
           maxWidth: '500px',

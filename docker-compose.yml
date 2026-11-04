@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   # ==========================================
-  # FastAPI Backend Service
+  # FastAPI Backend Service (Port 8005)
   # ==========================================
   backend:
     build:
@@ -20,7 +20,7 @@ services:
       - newsletter-network
 
   # ==========================================
-  # React + Vite Frontend (Served via Nginx)
+  # React + Vite Frontend via Nginx (Port 3055)
   # ==========================================
   frontend:
     build:
@@ -29,7 +29,7 @@ services:
     container_name: newsletter-frontend
     restart: unless-stopped
     ports:
-      - "3000:80"
+      - "3055:80"
     depends_on:
       - backend
     networks:

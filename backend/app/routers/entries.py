@@ -65,10 +65,12 @@ def update_entry(entry_id: int, payload: schemas.EntryUpdate, db: Session = Depe
     if payload.updated_by:
         user = db.query(models.User).filter(models.User.id == payload.updated_by).first()
         if user:
+            role_lower = (user.role or "").lower()
             is_author = (entry.created_by == user.id)
-            is_admin_or_editor = (user.role.lower() in ("admin", "edit", "editor"))
-            is_dept_gh = (user.role.lower() == "gh" and (user.group == entry.group_name or getattr(user, 'group_name', None) == entry.group_name))
-            is_ch = (user.role.lower() == "ch")
+            is_admin_or_editor = any(r in role_lower for r in ("admin", "edit", "editor"))
+            is_gh_role = "gh" in role_lower or "group head" in role_lower
+            is_dept_gh = (is_gh_role and (user.group == entry.group_name or getattr(user, 'group_name', None) == entry.group_name))
+            is_ch = "ch" in role_lower or "centre head" in role_lower or "center head" in role_lower
             if not (is_author or is_admin_or_editor or is_dept_gh or is_ch):
                 raise HTTPException(status_code=403, detail="You do not have permission to edit this entry.")
 
@@ -104,10 +106,12 @@ def delete_entry(entry_id: int, user_id: Optional[int] = None, db: Session = Dep
     if user_id:
         user = db.query(models.User).filter(models.User.id == user_id).first()
         if user:
+            role_lower = (user.role or "").lower()
             is_author = (entry.created_by == user.id)
-            is_admin_or_editor = (user.role.lower() in ("admin", "edit", "editor"))
-            is_dept_gh = (user.role.lower() == "gh" and (user.group == entry.group_name or getattr(user, 'group_name', None) == entry.group_name))
-            is_ch = (user.role.lower() == "ch")
+            is_admin_or_editor = any(r in role_lower for r in ("admin", "edit", "editor"))
+            is_gh_role = "gh" in role_lower or "group head" in role_lower
+            is_dept_gh = (is_gh_role and (user.group == entry.group_name or getattr(user, 'group_name', None) == entry.group_name))
+            is_ch = "ch" in role_lower or "centre head" in role_lower or "center head" in role_lower
             if not (is_author or is_admin_or_editor or is_dept_gh or is_ch):
                 raise HTTPException(status_code=403, detail="You do not have permission to delete this entry.")
 

@@ -14,10 +14,9 @@ import {
   IconShield,
   IconBook,
 } from '@tabler/icons-react';
-import { baseURL } from '../api/api';
 
 const Layout = () => {
-  const { user, logout } = useUser();
+  const { user, logout, switchActiveRole } = useUser();
   const navigate = useNavigate();
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef(null);
@@ -29,15 +28,16 @@ const Layout = () => {
 
   const handleOpenManual = () => {
     const roleStr = (user?.activeRole || user?.role || '').toLowerCase().trim();
-    let manualType = 'user';
-    if (roleStr.includes('edit') || roleStr.includes('admin')) {
-      manualType = 'editor';
-    } else if (roleStr.includes('ch')) {
-      manualType = 'ch';
-    } else if (roleStr.includes('gh')) {
-      manualType = 'gh';
+    let manualFile = 'User_Manual.pdf';
+    if (roleStr.includes('edit')) {
+      manualFile = 'Editor_Manual.pdf';
+    } else if (roleStr.includes('ch') || roleStr.includes('centre head') || roleStr.includes('center head')) {
+      manualFile = 'Centre_Head_Manual.pdf';
+    } else if (roleStr.includes('gh') || roleStr.includes('group head')) {
+      manualFile = 'Group_Head_Manual.pdf';
     }
-    const manualUrl = `${baseURL}/manuals/${manualType}`;
+    const baseUrl = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '');
+    const manualUrl = baseUrl + '/' + manualFile;
     window.open(manualUrl, '_blank', 'noopener,noreferrer');
   };
 
@@ -213,6 +213,52 @@ const Layout = () => {
                       >
                         {formatRole(user.activeRole || user.role)}
                       </span>
+                    </div>
+                  )}
+
+                  {user.isDualRole && (
+                    <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #f1f5f9' }}>
+                      <span style={{ display: 'block', fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', marginBottom: '6px' }}>
+                        Active Role View
+                      </span>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button
+                          type="button"
+                          onClick={() => switchActiveRole('CH')}
+                          style={{
+                            flex: 1,
+                            padding: '6px 8px',
+                            borderRadius: '6px',
+                            border: (user.activeRole || '').toUpperCase() === 'CH' ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                            backgroundColor: (user.activeRole || '').toUpperCase() === 'CH' ? '#eff6ff' : '#ffffff',
+                            color: (user.activeRole || '').toUpperCase() === 'CH' ? '#1e40af' : '#475569',
+                            fontWeight: '700',
+                            fontSize: '0.78rem',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          CH View
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => switchActiveRole('GH')}
+                          style={{
+                            flex: 1,
+                            padding: '6px 8px',
+                            borderRadius: '6px',
+                            border: (user.activeRole || '').toUpperCase() === 'GH' ? '2px solid #10b981' : '1px solid #cbd5e1',
+                            backgroundColor: (user.activeRole || '').toUpperCase() === 'GH' ? '#f0fdf4' : '#ffffff',
+                            color: (user.activeRole || '').toUpperCase() === 'GH' ? '#065f46' : '#475569',
+                            fontWeight: '700',
+                            fontSize: '0.78rem',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          GH View
+                        </button>
+                      </div>
                     </div>
                   )}
 

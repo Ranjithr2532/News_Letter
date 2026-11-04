@@ -1,9 +1,13 @@
-@tailwind base;
+﻿@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 /* Global CSS Theme Variables */
 :root {
+  --sidebar-bg: #0f172a;
+  --sidebar-active-bg: #2563eb;
+  --sidebar-active-text: #ffffff;
+  --sidebar-text: #cbd5e1;
   --page-bg: #f8fafc;
   --card-bg: #ffffff;
   --primary-btn: #1e40af;
@@ -333,7 +337,6 @@ body {
     opacity: 0;
     transform: translateY(-6px) scale(0.98);
   }
-
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
@@ -461,47 +464,6 @@ body {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-button.topbar-link {
-  background: transparent;
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 0.88rem;
-  outline: none;
-}
-
-.profile-card-footer {
-  padding-top: 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.profile-manual-btn {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 9px 14px;
-  background-color: rgba(37, 99, 235, 0.12);
-  color: #60a5fa;
-  border: 1px solid rgba(37, 99, 235, 0.28);
-  border-radius: 8px;
-  font-size: 0.84rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.18s ease;
-}
-
-.profile-manual-btn:hover {
-  background-color: #2563eb;
-  color: #ffffff;
-  border-color: #2563eb;
-  box-shadow: 0 2px 10px rgba(37, 99, 235, 0.35);
-  transform: translateY(-1px);
-}
-
 .profile-logout-btn {
   width: 100%;
   display: flex;
@@ -613,6 +575,45 @@ button.topbar-link {
   background-color: #e2e8f0;
 }
 
+.btn-ghost-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: transparent;
+  color: var(--primary-btn);
+  border: 1px solid var(--primary-btn);
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-ghost-primary:hover {
+  background-color: var(--primary-btn);
+  color: #ffffff;
+}
+
+.btn-ghost-danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: transparent;
+  color: var(--danger-btn);
+  border: 1px solid var(--danger-btn);
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-ghost-danger:hover {
+  background-color: var(--danger-btn);
+  color: #ffffff;
+}
 
 .btn-link-back {
   display: inline-flex;
@@ -631,55 +632,6 @@ button.topbar-link {
 
 .btn-link-back:hover {
   color: var(--primary-btn);
-}
-
-/* Modern Pill Back Button */
-.btn-back-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  background-color: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 9999px;
-  color: #334155;
-  font-weight: 600;
-  font-size: 0.84rem;
-  cursor: pointer;
-  padding: 5px 14px 5px 6px;
-  margin-bottom: 16px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  user-select: none;
-}
-
-.btn-back-pill .back-icon-circle {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background-color: #f1f5f9;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #475569;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
-}
-
-.btn-back-pill:hover {
-  background-color: #ffffff;
-  border-color: #93c5fd;
-  color: #2563eb;
-  transform: translateX(-3px);
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.12);
-}
-
-.btn-back-pill:hover .back-icon-circle {
-  background-color: #eff6ff;
-  color: #2563eb;
-}
-
-.btn-back-pill:active {
-  transform: translateX(-1px) scale(0.98);
 }
 
 /* Horizontal Period Cards */
@@ -1003,25 +955,293 @@ button.topbar-link {
   font-weight: 600;
 }
 
-/* Login Page Styling (Full screen, light theme background) */
-.login-container {
+/* Full-Screen Edge-to-Edge Split Layout (55% Visual / 45% Form) - Balanced & Rich */
+.login-screen-split {
+  display: flex;
+  width: 100vw;
+  height: 100vh;
+  max-height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: #ffffff;
+}
+
+/* Left 55% Hero Panel - High-End Institutional Masthead & Balanced Artwork */
+.login-panel-visual {
+  flex: 0 0 55%;
+  width: 55%;
+  height: 100vh;
+  max-height: 100vh;
+  background: linear-gradient(165deg, #254470 0%, #1a3a6b 40%, #0f2245 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 36px 48px;
+  position: relative;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.login-panel-visual::before {
+  content: '';
+  position: absolute;
+  top: -100px;
+  left: -100px;
+  width: 450px;
+  height: 450px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.07) 0%, transparent 65%);
+  pointer-events: none;
+}
+
+.login-panel-visual::after {
+  content: '';
+  position: absolute;
+  bottom: -80px;
+  right: -80px;
+  width: 350px;
+  height: 350px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(37, 99, 235, 0.18) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.login-visual-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 26px;
+  width: 100%;
+  max-width: 700px;
+  height: 100%;
+  max-height: 92vh;
+  z-index: 1;
+  animation: fadeIn 0.4s ease-out;
+  text-align: center;
+}
+
+/* --- Top Institutional Header --- */
+.login-masthead {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  max-width: 620px;
+}
+
+.masthead-title {
+  font-size: 1.48rem;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.015em;
+  line-height: 1.3;
+  margin: 0;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+.masthead-sub {
+  font-size: 0.84rem;
+  color: #cbd5e1;
+  margin: 0;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+/* --- Glowing Outer Wrapper for Hero Photo --- */
+.login-image-glow-wrapper {
+  position: relative;
+  width: 100%;
+  max-width: 660px;
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: 100vh;
-  padding: 20px;
-  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
 }
 
-.login-card {
-  background: #ffffff;
-  padding: 40px 36px;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+/* Ambient Blue / Cyan Luminous Halo Behind Image */
+.login-image-glow-wrapper::before {
+  content: '';
+  position: absolute;
+  inset: -14px;
+  border-radius: 28px;
+  background: radial-gradient(ellipse at center, rgba(56, 189, 248, 0.35) 0%, rgba(37, 99, 235, 0.28) 45%, transparent 75%);
+  filter: blur(22px);
+  z-index: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease, filter 0.3s ease;
+}
+
+.login-image-glow-wrapper:hover::before {
+  filter: blur(28px);
+  background: radial-gradient(ellipse at center, rgba(56, 189, 248, 0.45) 0%, rgba(37, 99, 235, 0.35) 45%, transparent 75%);
+}
+
+/* --- Larger Hero Image Frame with Deep Glow Shadow --- */
+.login-image-frame {
+  position: relative;
+  z-index: 1;
   width: 100%;
-  max-width: 400px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 
+    0 0 35px rgba(56, 189, 248, 0.2),
+    0 24px 60px -10px rgba(5, 15, 35, 0.7),
+    0 0 0 1.5px rgba(255, 255, 255, 0.26);
+  background-color: #1a3869;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.login-image-frame:hover {
+  transform: translateY(-3px);
+  box-shadow: 
+    0 0 50px rgba(56, 189, 248, 0.35),
+    0 32px 75px -8px rgba(5, 15, 35, 0.8),
+    0 0 0 1.5px rgba(255, 255, 255, 0.4);
+}
+
+.login-hero-img {
+  width: 100%;
+  height: auto;
+  max-height: clamp(280px, 58vh, 480px);
+  object-fit: contain;
+  display: block;
+}
+
+/* Right 45% Form Panel */
+.login-panel-form {
+  flex: 0 0 45%;
+  width: 45%;
+  height: 100vh;
+  max-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 40px;
+  background-color: #ffffff;
+  box-sizing: border-box;
+  position: relative;
+  overflow-y: auto;
+  box-shadow: -12px 0 32px rgba(15, 23, 42, 0.05);
+}
+
+.login-form-inner {
+  width: 100%;
+  max-width: 380px;
+  display: flex;
+  flex-direction: column;
+  animation: fadeIn 0.4s ease-out;
+}
+
+.login-form-header {
   text-align: center;
+  margin-bottom: 20px;
+}
+
+.login-logo-wrapper {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+.login-cmti-logo {
+  height: 48px;
+  width: auto;
+  object-fit: contain;
+  display: block;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.06));
+}
+
+.login-form-header h2 {
+  font-size: 1.48rem;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 4px 0;
+  letter-spacing: -0.01em;
+}
+
+.login-subtitle {
+  font-size: 0.84rem;
+  color: #64748b;
+  margin: 0;
+  font-weight: 500;
+}
+
+.login-panel-form .form-group {
+  margin-bottom: 14px;
+}
+
+.login-btn {
+  width: 100%;
+  padding: 12px 18px;
+  background: linear-gradient(135deg, #1e40af 0%, #1d4ed8 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.98rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  margin-top: 4px;
+  box-shadow: 0 4px 14px rgba(30, 64, 175, 0.28);
+}
+
+.login-btn:hover {
+  background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(30, 64, 175, 0.38);
+}
+
+.login-btn:active {
+  transform: translateY(0);
+}
+
+.login-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.login-footer-institutional {
+  margin-top: 22px;
+  text-align: center;
+  font-size: 0.78rem;
+  color: #94a3b8;
+  border-top: 1px solid #f1f5f9;
+  padding-top: 12px;
+}
+
+/* Responsive handling for tablets & mobile */
+@media (max-width: 960px) {
+  .login-screen-split {
+    flex-direction: column;
+    height: auto;
+    max-height: none;
+    overflow-y: auto;
+  }
+  .login-panel-visual {
+    flex: 0 0 auto;
+    width: 100%;
+    height: auto;
+    max-height: none;
+    padding: 32px 20px;
+  }
+  .login-image-frame {
+    max-width: 400px;
+  }
+  .login-panel-form {
+    flex: 0 0 auto;
+    width: 100%;
+    height: auto;
+    max-height: none;
+    padding: 32px 20px;
+    box-shadow: none;
+  }
 }
 
 /* Kanban Board Layout */
@@ -1293,7 +1513,7 @@ button.topbar-link {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 8px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
   margin-bottom: 16px;
@@ -1301,8 +1521,6 @@ button.topbar-link {
   overflow: visible !important;
   position: relative;
   z-index: 40;
-  min-height: 52px;
-  box-sizing: border-box;
 }
 
 .unified-filter-card:hover {
@@ -1313,18 +1531,10 @@ button.topbar-link {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex-wrap: nowrap;
-  flex: 0 1 auto;
+  flex-wrap: wrap;
+  flex: 1 1 auto;
   min-width: 0;
   overflow: visible !important;
-}
-
-.unified-filter-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-  margin-left: auto;
 }
 
 /* Styled Filter Capsule */
@@ -1334,10 +1544,7 @@ button.topbar-link {
   background: #f8fafc;
   border: 1.5px solid #e2e8f0;
   border-radius: 8px;
-  padding: 0 8px;
-  height: 36px;
-  min-height: 36px;
-  box-sizing: border-box;
+  padding: 2px 6px;
   transition: all 0.16s ease;
   flex-shrink: 0;
 }
@@ -1358,7 +1565,7 @@ button.topbar-link {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: 0.71rem;
+  font-size: 0.70rem;
   font-weight: 700;
   color: #64748b;
   text-transform: uppercase;
@@ -1375,7 +1582,7 @@ button.topbar-link {
 .filter-capsule-select {
   border: none;
   background: transparent;
-  font-size: 0.80rem;
+  font-size: 0.76rem;
   font-weight: 600;
   color: #0f172a;
   cursor: pointer;
@@ -1417,23 +1624,23 @@ button.topbar-link {
 .filter-capsule-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   background: transparent;
   border: none;
-  font-size: 0.80rem;
+  font-size: 0.76rem;
   font-weight: 600;
   color: #0f172a;
   cursor: pointer;
   outline: none;
-  padding: 2px 1px;
-  max-width: 150px;
+  padding: 2px 2px;
+  max-width: 180px;
 }
 
 .filter-trigger-text {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 125px;
+  max-width: 155px;
 }
 
 .chevron-indicator {
@@ -1469,7 +1676,6 @@ button.topbar-link {
     opacity: 0;
     transform: translateY(-4px) scale(0.98);
   }
-
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
@@ -1599,15 +1805,12 @@ button.topbar-link {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 0 12px;
-  height: 36px;
-  min-height: 36px;
-  box-sizing: border-box;
+  padding: 5px 12px;
   border-radius: 8px;
   background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
   color: #ffffff;
   border: none;
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   font-weight: 700;
   cursor: pointer;
   box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
@@ -1636,15 +1839,12 @@ button.topbar-link {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  padding: 0 9px;
-  height: 36px;
-  min-height: 36px;
-  box-sizing: border-box;
-  border-radius: 8px;
+  padding: 5px 9px;
+  border-radius: 7px;
   border: 1px solid #cbd5e1;
   background: #f8fafc;
   color: #475569;
-  font-size: 0.76rem;
+  font-size: 0.74rem;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -1823,7 +2023,7 @@ button.topbar-link {
 
 /* 4-Month Period Block Color Coding (Refined Corporate Palette) */
 
-/* Group 1: Jan – Apr (Months 1–4) -> Corporate Navy & Royal Blue */
+/* Group 1: Jan ΓÇô Apr (Months 1ΓÇô4) -> Corporate Navy & Royal Blue */
 .month-card.month-block-1 {
   border-color: #e2e8f0;
   border-top: 3.5px solid #2563eb;
@@ -1855,7 +2055,7 @@ button.topbar-link {
   box-shadow: 0 10px 24px -4px rgba(37, 99, 235, 0.12), 0 2px 6px rgba(0, 0, 0, 0.03);
 }
 
-/* Group 2: May – Aug (Months 5–8) -> Deep Steel & Indigo */
+/* Group 2: May ΓÇô Aug (Months 5ΓÇô8) -> Deep Steel & Indigo */
 .month-card.month-block-2 {
   border-color: #e2e8f0;
   border-top: 3.5px solid #4f46e5;
@@ -1887,7 +2087,7 @@ button.topbar-link {
   box-shadow: 0 10px 24px -4px rgba(79, 70, 229, 0.12), 0 2px 6px rgba(0, 0, 0, 0.03);
 }
 
-/* Group 3: Sep – Dec (Months 9–12) -> Slate Teal & Ocean Slate */
+/* Group 3: Sep ΓÇô Dec (Months 9ΓÇô12) -> Slate Teal & Ocean Slate */
 .month-card.month-block-3 {
   border-color: #e2e8f0;
   border-top: 3.5px solid #0d9488;
@@ -2151,7 +2351,6 @@ button.topbar-link {
     flex-direction: column;
     max-height: none;
   }
-
   .calendar-split-left {
     max-width: 100%;
     flex: 1;
@@ -2763,7 +2962,7 @@ button.topbar-link {
   border-radius: 8px;
   overflow: hidden;
   border: 1px solid #cbd5e1;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
   flex-shrink: 0;
   background: #f8fafc;
   display: flex;
@@ -3018,6 +3217,17 @@ button.topbar-link {
   justify-content: space-between;
 }
 
+select.admin-input {
+  background-color: #ffffff;
+  color: #0f172a;
+  cursor: pointer;
+}
+
+select.admin-input option {
+  background-color: #ffffff;
+  color: #0f172a;
+}
+
 .admin-input {
   padding: 10px 14px;
   border-radius: 8px;
@@ -3151,3 +3361,6 @@ button.topbar-link {
   color: #2563eb;
   border-color: #bfdbfe;
 }
+
+
+
