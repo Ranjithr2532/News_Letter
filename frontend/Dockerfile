@@ -45,3 +45,5 @@ EXPOSE 80
 
 # Start Nginx server in foreground
 CMD ["nginx", "-g", "daemon off;"]
+
+# docker run -d --name newsletter-frontend -p 3055:80 --restart always ranjith2352/newsletter-frontend

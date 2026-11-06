@@ -88,28 +88,28 @@ app.include_router(newsletter_upload.router, prefix="/newsletter-upload", tags=[
 
 
 
-@app.on_event("startup")
-def startup_scheduler():
-    if not scheduler.running:
-        # Schedule reminder emails on the 1st and 16th of every month at 10:00 AM
-        scheduler.add_job(
-            automated_scheduled_reminder,
-            trigger="cron",
-            day="1,16",
-            hour=10,
-            minute=0,
-            id="automated_newsletter_reminder",
-            replace_existing=True
-        )
-        scheduler.start()
+# @app.on_event("startup")
+# def startup_scheduler():
+#     if not scheduler.running:
+#         # Schedule reminder emails on the 1st and 16th of every month at 10:00 AM
+#         scheduler.add_job(
+#             automated_scheduled_reminder,
+#             trigger="cron",
+#             day="1,16",
+#             hour=10,
+#             minute=0,
+#             id="automated_newsletter_reminder",
+#             replace_existing=True
+#         )
+#         scheduler.start()
 
-    # Same-Day Catch-up: Trigger if backend starts/restarts on the 1st or 16th
-    today = date.today()
-    if today.day in (1, 16):
-        import logging
-        logger = logging.getLogger("startup_catchup")
-        logger.info(f"📅 Today is the {today.day}th! Checking same-day reminder catch-up...")
-        automated_scheduled_reminder()
+#     # Same-Day Catch-up: Trigger if backend starts/restarts on the 1st or 16th
+#     today = date.today()
+#     if today.day in (1, 16):
+#         import logging
+#         logger = logging.getLogger("startup_catchup")
+#         logger.info(f"📅 Today is the {today.day}th! Checking same-day reminder catch-up...")
+#         automated_scheduled_reminder()
 
 
 @app.on_event("shutdown")

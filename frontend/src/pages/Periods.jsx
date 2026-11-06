@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import api from '../api/api';
+import api, { baseURL } from '../api/api';
 import { useUser } from '../context/UserContext';
 import DeadlineModal from '../components/DeadlineModal';
 import {
   IconChevronRight,
   IconDownload,
+  IconEye,
+  IconUser,
+  IconPhoto,
   IconCalendarEvent,
   IconCalendar,
   IconCheck,
@@ -88,6 +91,17 @@ const Periods = () => {
 
   // Finalize popup state (for GH role)
   const [finalizeModalPeriod, setFinalizeModalPeriod] = useState(null);
+
+  // Period Data Preview Modal State (Option A: View data preview from Periods card)
+  const [showPeriodPreviewModal, setShowPeriodPreviewModal] = useState(false);
+  const [previewPeriodMeta, setPreviewPeriodMeta] = useState(null);
+  const [previewEntries, setPreviewEntries] = useState([]);
+  const [previewCategories, setPreviewCategories] = useState([]);
+  const [previewContributors, setPreviewContributors] = useState([]);
+  const [loadingPreviewData, setLoadingPreviewData] = useState(false);
+  const [selectedCenterFilter, setSelectedCenterFilter] = useState('all');
+  const [selectedContributorId, setSelectedContributorId] = useState('all');
+  const [previewPhoto, setPreviewPhoto] = useState(null);
   const [submittingFinalize, setSubmittingFinalize] = useState(false);
 
   // Re-open / Unlock popup state (for GH & Admin roles)
@@ -1186,6 +1200,149 @@ const Periods = () => {
     }
   };
 
+  // Compute centres list for preview modal filtering
+  const previewCenters = useMemo(() => {
+    const counts = {};
+    previewEntries.forEach((e) => {
+      const cName = (
+        e.center ||
+        previewContributors.find((c) => c.id === e.created_by)?.center ||
+        'Main'
+      ).trim();
+      counts[cName] = (counts[cName] || 0) + 1;
+    });
+    return Object.entries(counts).map(([name, count]) => ({ name, count }));
+  }, [previewEntries, previewContributors]);
+
+  const getPhotoUrl = (photo) => {
+    if (!photo) return '';
+    const photoPath = (photo.file_path || photo.url || '').replace(/\\/g, '/');
+    if (photoPath.startsWith('http://') || photoPath.startsWith('https://')) {
+      return photoPath;
+    }
+    return `${baseURL}/${photoPath.replace(/^\/+/, '')}`;
+  };
+
+  const handleImgError = (e, photo) => {
+    if (!photo) return;
+    const rawPath = (photo.file_path || photo.url || '').replace(/\\/g, '/');
+    const filename = rawPath.split('/').pop();
+    if (!filename) return;
+    const fallbackUrl = `${baseURL}/uploads/${filename}`;
+    if (e.target.src !== fallbackUrl) {
+      e.target.src = fallbackUrl;
+    }
+  };
+
+  // Open Preview Modal from Period Half Row
+  const handleHalfPreviewClick = async (e, periodsInHalf, rangeLabel, monthData, halfNum) => {
+    if (e) e.stopPropagation();
+
+    const yr = monthData.year;
+    const mo = monthData.monthIndex + 1;
+    const padMo = String(mo).padStart(2, '0');
+    const lastDay = monthData.lastDayOfMonth;
+    const sDate = halfNum === 1 ? `${yr}-${padMo}-01` : `${yr}-${padMo}-16`;
+    const eDate = halfNum === 1 ? `${yr}-${padMo}-15` : `${yr}-${padMo}-${String(lastDay).padStart(2, '0')}`;
+
+    const hasPeriods = periodsInHalf && periodsInHalf.length > 0;
+    let targetPeriodIds = [];
+
+    const userGrp = (user?.group || user?.group_name || '').trim().toUpperCase();
+
+    if (hasPeriods) {
+      if (isEditor || isChUser || isAdmin) {
+        targetPeriodIds = periodsInHalf.map((p) => p.id);
+      } else {
+        const myPeriod = periodsInHalf.find(
+          (p) => (p.group_name || '').trim().toUpperCase() === userGrp
+        );
+        if (myPeriod) {
+          targetPeriodIds = [myPeriod.id];
+        } else {
+          targetPeriodIds = periodsInHalf.map((p) => p.id);
+        }
+      }
+    }
+
+    setPreviewPeriodMeta({
+      rangeLabel,
+      title: hasPeriods && periodsInHalf[0]?.title ? periodsInHalf[0].title : `Newsletter Edition: ${rangeLabel}`,
+      periodIds: targetPeriodIds,
+      sDate,
+      eDate,
+      monthData,
+      halfNum,
+      periodsInHalf: periodsInHalf || [],
+    });
+
+    setShowPeriodPreviewModal(true);
+    setSelectedCenterFilter('all');
+    setSelectedContributorId('all');
+    setLoadingPreviewData(true);
+
+    if (targetPeriodIds.length === 0) {
+      setPreviewEntries([]);
+      setPreviewCategories([]);
+      setPreviewContributors([]);
+      setLoadingPreviewData(false);
+      return;
+    }
+
+    try {
+      const periodIdParam = targetPeriodIds.join(',');
+      const canViewAll = isEditor || isChUser || isGhUser || isAdmin;
+
+      let entriesUrl = `/entries/?period_id=${periodIdParam}`;
+      if (!canViewAll && user?.id) {
+        entriesUrl += `&created_by=${user.id}`;
+      }
+
+      const [catsRes, entriesRes, contribsRes] = await Promise.all([
+        api.get(`/categories/?period_id=${periodIdParam}`),
+        api.get(entriesUrl),
+        api.get(`/periods/${periodIdParam}/contributors`).catch(() => ({ data: [] })),
+      ]);
+
+      const allCats = catsRes.data || [];
+      const allEntries = entriesRes.data || [];
+      let allContribs = contribsRes.data || [];
+
+      if (!canViewAll && user?.id) {
+        allContribs = allContribs.filter((c) => c.id === user.id);
+        if (allContribs.length === 0) {
+          allContribs = [
+            {
+              id: user.id,
+              name: user.name || user.email || 'You',
+              role: user.role,
+              designation: user.designation,
+              entry_count: allEntries.length,
+            },
+          ];
+        }
+        setSelectedContributorId(user.id);
+      } else {
+        setSelectedContributorId('all');
+      }
+
+      setPreviewCategories(allCats);
+      setPreviewEntries(allEntries);
+      setPreviewContributors(allContribs);
+    } catch (err) {
+      console.error('Failed to load period preview:', err);
+      setPreviewEntries([]);
+      setPreviewCategories([]);
+      setPreviewContributors([]);
+    } finally {
+      setLoadingPreviewData(false);
+    }
+  };
+
+  const handleEmptyHalfPreviewClick = (e, monthData, halfNum, rangeLabel) => {
+    handleHalfPreviewClick(e, [], rangeLabel, monthData, halfNum);
+  };
+
   // Open Department Selection Modal to Download
   const handleHalfDownloadClick = (e, periodsInHalf, rangeLabel, monthData, halfNum) => {
     if (e) e.stopPropagation();
@@ -1411,6 +1568,17 @@ const Periods = () => {
               </button>
             )}
 
+            {/* Preview Eye Button */}
+            <button
+              type="button"
+              className="action-icon-btn preview"
+              onClick={(e) => handleHalfPreviewClick(e, periodsInHalf, rangeLabel, monthData, halfNum)}
+              title={`Preview entries for ${rangeLabel}`}
+              aria-label="Preview newsletter entries"
+            >
+              <IconEye size={15} />
+            </button>
+
             {/* Download DOCX Button */}
             <button
               type="button"
@@ -1480,6 +1648,17 @@ const Periods = () => {
                 <IconFileText size={15} strokeWidth={2.2} />
               </button>
             )}
+
+            {/* Preview Eye Button */}
+            <button
+              type="button"
+              className="action-icon-btn preview"
+              onClick={(e) => handleEmptyHalfPreviewClick(e, monthData, halfNum, rangeLabel)}
+              title={`Preview entries for ${rangeLabel}`}
+              aria-label="Preview newsletter entries"
+            >
+              <IconEye size={15} />
+            </button>
 
             {/* Download DOCX Button */}
             <button
@@ -4126,6 +4305,691 @@ const Periods = () => {
                 )}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Period Newsletter Data Preview Modal (Option A) */}
+      {showPeriodPreviewModal && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setShowPeriodPreviewModal(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.75)',
+            backdropFilter: 'blur(5px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '20px',
+          }}
+        >
+          <div
+            className="modal-card"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: '920px',
+              maxHeight: '90vh',
+              backgroundColor: '#f8fafc',
+              borderRadius: '16px',
+              border: '1px solid #cbd5e1',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              padding: 0,
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
+            }}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                padding: '18px 24px',
+                backgroundColor: '#ffffff',
+                borderBottom: '1px solid #e2e8f0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '12px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div
+                  style={{
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '10px',
+                    backgroundColor: '#eff6ff',
+                    color: '#2563eb',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: '1px solid #bfdbfe',
+                  }}
+                >
+                  <IconEye size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '800', color: '#0f172a' }}>
+                    Newsletter Preview — {previewPeriodMeta?.rangeLabel}
+                  </h3>
+                  <div style={{ margin: '2px 0 0 0', fontSize: '0.8rem', color: '#64748b' }}>
+                    {isEditor
+                      ? 'Review formatted submissions across all centres before publishing or download'
+                      : (isChUser || isGhUser)
+                        ? 'Review all submitted department entries for this edition'
+                        : 'Review all submitted entries for this newsletter period'}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                {/* Download DOCX shortcut button */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    if (previewPeriodMeta) {
+                      if (previewPeriodMeta.periodsInHalf.length > 0) {
+                        handleHalfDownloadClick(
+                          e,
+                          previewPeriodMeta.periodsInHalf,
+                          previewPeriodMeta.rangeLabel,
+                          previewPeriodMeta.monthData,
+                          previewPeriodMeta.halfNum
+                        );
+                      } else {
+                        handleEmptyHalfDownloadClick(
+                          e,
+                          previewPeriodMeta.monthData,
+                          previewPeriodMeta.halfNum,
+                          previewPeriodMeta.rangeLabel
+                        );
+                      }
+                    }
+                  }}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 14px',
+                    borderRadius: '8px',
+                    backgroundColor: '#059669',
+                    color: '#ffffff',
+                    border: 'none',
+                    fontSize: '0.82rem',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 4px rgba(5,150,105,0.2)',
+                  }}
+                  title="Download newsletter document (.docx)"
+                >
+                  <IconDownload size={15} />
+                  <span>Download DOCX</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowPeriodPreviewModal(false)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#94a3b8',
+                    cursor: 'pointer',
+                    padding: '6px',
+                    borderRadius: '6px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                  title="Close preview"
+                >
+                  <IconX size={20} />
+                </button>
+              </div>
+            </div>
+
+            {/* Filter Bar (Only shown when multiple centres or contributors exist) */}
+            <div
+              style={{
+                padding: '12px 24px',
+                backgroundColor: '#ffffff',
+                borderBottom: '1px solid #e2e8f0',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span
+                  style={{
+                    fontSize: '0.78rem',
+                    fontWeight: '700',
+                    color: '#475569',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <IconFilter size={14} style={{ color: '#2563eb' }} />
+                  <span>{isEditor ? 'Filter by Centre:' : ((isChUser || isGhUser || isAdmin) ? 'Filter by Contributor:' : 'Submissions:')}</span>
+                </span>
+                <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                  {isEditor
+                    ? `${previewCenters.length} centre${previewCenters.length === 1 ? '' : 's'} contributed to this edition`
+                    : (isChUser || isGhUser || isAdmin)
+                      ? `${previewContributors.length} contributor${previewContributors.length === 1 ? '' : 's'}`
+                      : `${previewEntries.length} entries for ${previewPeriodMeta?.rangeLabel}`}
+                </span>
+              </div>
+
+              {isEditor ? (
+                /* Editor Centre Pills */
+                loadingPreviewData ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', color: '#64748b', fontSize: '0.84rem' }}>
+                    <IconLoader2 size={16} className="animate-spin text-blue-600" />
+                    <span>Loading centres...</span>
+                  </div>
+                ) : previewCenters.length === 0 ? (
+                  <div style={{ fontSize: '0.84rem', color: '#64748b', padding: '4px 0' }}>
+                    No centres have contributed entries yet for this period.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', maxHeight: '80px', overflowY: 'auto', padding: '2px 0' }}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCenterFilter('all')}
+                      style={{
+                        padding: '5px 12px',
+                        borderRadius: '20px',
+                        fontSize: '0.8rem',
+                        fontWeight: '600',
+                        border: selectedCenterFilter === 'all' || !selectedCenterFilter ? '1.5px solid #2563eb' : '1px solid #cbd5e1',
+                        backgroundColor: selectedCenterFilter === 'all' || !selectedCenterFilter ? '#eff6ff' : '#ffffff',
+                        color: selectedCenterFilter === 'all' || !selectedCenterFilter ? '#1d4ed8' : '#334155',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                      }}
+                    >
+                      <IconBuilding size={14} />
+                      <span>All Centres</span>
+                      <span style={{ padding: '1px 6px', borderRadius: '10px', backgroundColor: '#bfdbfe', color: '#1e40af', fontSize: '0.72rem', fontWeight: '700' }}>
+                        {previewEntries.length}
+                      </span>
+                    </button>
+                    {previewCenters.map(({ name, count }) => {
+                      const isSel = selectedCenterFilter.trim().toLowerCase() === name.trim().toLowerCase();
+                      return (
+                        <button
+                          key={name}
+                          type="button"
+                          onClick={() => setSelectedCenterFilter(name)}
+                          style={{
+                            padding: '5px 12px',
+                            borderRadius: '20px',
+                            fontSize: '0.8rem',
+                            fontWeight: '600',
+                            border: isSel ? '1.5px solid #2563eb' : '1px solid #cbd5e1',
+                            backgroundColor: isSel ? '#eff6ff' : '#ffffff',
+                            color: isSel ? '#1d4ed8' : '#334155',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                          }}
+                        >
+                          <span>{name}</span>
+                          <span style={{ padding: '1px 6px', borderRadius: '10px', backgroundColor: isSel ? '#bfdbfe' : '#f1f5f9', color: isSel ? '#1e40af' : '#64748b', fontSize: '0.72rem', fontWeight: '700' }}>
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )
+              ) : (
+                /* Contributor Pills for GH / CH / Admin */
+                (isChUser || isGhUser || isAdmin) && (
+                  loadingPreviewData ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', color: '#64748b', fontSize: '0.84rem' }}>
+                      <IconLoader2 size={16} className="animate-spin text-blue-600" />
+                      <span>Loading contributors...</span>
+                    </div>
+                  ) : previewContributors.length === 0 ? (
+                    <div style={{ fontSize: '0.84rem', color: '#64748b', padding: '4px 0' }}>
+                      No members have contributed entries yet for this period.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', maxHeight: '80px', overflowY: 'auto', padding: '2px 0' }}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedContributorId('all')}
+                        style={{
+                          padding: '5px 12px',
+                          borderRadius: '20px',
+                          fontSize: '0.8rem',
+                          fontWeight: '600',
+                          border: selectedContributorId === 'all' || !selectedContributorId ? '1.5px solid #2563eb' : '1px solid #cbd5e1',
+                          backgroundColor: selectedContributorId === 'all' || !selectedContributorId ? '#eff6ff' : '#ffffff',
+                          color: selectedContributorId === 'all' || !selectedContributorId ? '#1d4ed8' : '#334155',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                        }}
+                      >
+                        <IconUsersGroup size={14} />
+                        <span>All Contributions</span>
+                        <span style={{ padding: '1px 6px', borderRadius: '10px', backgroundColor: '#bfdbfe', color: '#1e40af', fontSize: '0.72rem', fontWeight: '700' }}>
+                          {previewEntries.length}
+                        </span>
+                      </button>
+                      {previewContributors.map((c) => {
+                        const isSel = String(selectedContributorId) === String(c.id);
+                        const isUserGh = (c.role || '').toLowerCase().includes('gh');
+                        return (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => setSelectedContributorId(c.id)}
+                            style={{
+                              padding: '5px 12px',
+                              borderRadius: '20px',
+                              fontSize: '0.8rem',
+                              fontWeight: '600',
+                              border: isSel ? '1.5px solid #2563eb' : '1px solid #cbd5e1',
+                              backgroundColor: isSel ? '#eff6ff' : '#ffffff',
+                              color: isSel ? '#1d4ed8' : '#334155',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                            }}
+                          >
+                            <IconUser size={14} />
+                            <span>{c.name}</span>
+                            {isUserGh && (
+                              <span style={{ padding: '1px 5px', borderRadius: '4px', backgroundColor: '#fef3c7', color: '#92400e', fontSize: '0.68rem', fontWeight: '800', border: '1px solid #fde68a' }}>
+                                GH
+                              </span>
+                            )}
+                            <span style={{ padding: '1px 6px', borderRadius: '10px', backgroundColor: isSel ? '#bfdbfe' : '#f1f5f9', color: isSel ? '#1e40af' : '#64748b', fontSize: '0.72rem', fontWeight: '700' }}>
+                              {c.entry_count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )
+                )
+              )}
+            </div>
+
+            {/* Document Paper Body */}
+            <div
+              style={{
+                flex: 1,
+                overflowY: 'auto',
+                backgroundColor: '#cbd5e1',
+                padding: '24px 16px',
+              }}
+            >
+              {loadingPreviewData ? (
+                <div
+                  style={{
+                    backgroundColor: '#ffffff',
+                    borderRadius: '8px',
+                    padding: '60px 24px',
+                    textAlign: 'center',
+                    maxWidth: '780px',
+                    margin: '0 auto',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '12px',
+                    color: '#64748b',
+                  }}
+                >
+                  <IconLoader2 size={32} className="animate-spin text-blue-600" />
+                  <span style={{ fontSize: '0.9rem', fontWeight: '600' }}>Loading newsletter preview...</span>
+                </div>
+              ) : (
+                <div
+                  style={{
+                    backgroundColor: '#ffffff',
+                    maxWidth: '780px',
+                    margin: '0 auto',
+                    borderRadius: '6px',
+                    boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+                    padding: '36px 44px',
+                    fontFamily: 'Calibri, Inter, sans-serif',
+                    minHeight: '400px',
+                  }}
+                >
+                  {/* Document Header */}
+                  <div
+                    style={{
+                      borderBottom: '2px solid #0f172a',
+                      paddingBottom: '12px',
+                      marginBottom: '24px',
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '8px',
+                    }}
+                  >
+                    <div>
+                      <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '800', color: '#0f172a', lineHeight: '1.3' }}>
+                        CMTI Newsletter & Publication Entries
+                      </h2>
+                      <div style={{ fontSize: '0.82rem', color: '#475569', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <span>Period: <strong>{previewPeriodMeta?.rangeLabel}</strong></span>
+                        <span>•</span>
+                        <span>Year: <strong>{previewPeriodMeta?.monthData?.year || currentYearStr}</strong></span>
+                      </div>
+                    </div>
+
+                    <div style={{ textAlign: 'right' }}>
+                      <span
+                        style={{
+                          fontSize: '0.76rem',
+                          fontWeight: '700',
+                          padding: '3px 8px',
+                          borderRadius: '6px',
+                          backgroundColor: '#eff6ff',
+                          color: '#1d4ed8',
+                          border: '1px solid #bfdbfe',
+                        }}
+                      >
+                        {isEditor
+                          ? `Centre: ${selectedCenterFilter === 'all' || !selectedCenterFilter ? 'All Centres' : selectedCenterFilter}`
+                          : `Filter: ${selectedContributorId === 'all' || !selectedContributorId ? 'All Entries' : (previewContributors.find((c) => String(c.id) === String(selectedContributorId))?.name || 'Contributor')}`}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Render Entries Grouped by Category */}
+                  {(() => {
+                    const activeEntries = isEditor
+                      ? (selectedCenterFilter && selectedCenterFilter !== 'all'
+                        ? previewEntries.filter(
+                          (e) =>
+                            (e.center || previewContributors.find((c) => c.id === e.created_by)?.center || 'Main')
+                              .trim()
+                              .toLowerCase() === selectedCenterFilter.trim().toLowerCase()
+                        )
+                        : previewEntries)
+                      : ((selectedContributorId && selectedContributorId !== 'all')
+                        ? previewEntries.filter((e) => String(e.created_by) === String(selectedContributorId))
+                        : previewEntries);
+
+                    if (activeEntries.length === 0) {
+                      return (
+                        <div style={{ textAlign: 'center', padding: '40px 0', color: '#64748b' }}>
+                          <IconFileText size={36} style={{ color: '#94a3b8', margin: '0 auto 10px auto' }} />
+                          <h4 style={{ margin: 0, color: '#334155' }}>No entries found</h4>
+                          <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem' }}>
+                            No entries have been submitted for {previewPeriodMeta?.rangeLabel} yet.
+                          </p>
+                        </div>
+                      );
+                    }
+
+                    // Collect distinct category IDs present in activeEntries
+                    const categoryMap = new Map();
+                    previewCategories.forEach((cat) => {
+                      categoryMap.set(cat.id, cat);
+                    });
+
+                    // Ensure every category ID in activeEntries is represented
+                    activeEntries.forEach((entry) => {
+                      if (!categoryMap.has(entry.category_id)) {
+                        categoryMap.set(entry.category_id, {
+                          id: entry.category_id,
+                          name: `Category ${entry.category_id}`,
+                        });
+                      }
+                    });
+
+                    let globalEntryIndex = 1;
+                    return Array.from(categoryMap.values()).map((cat) => {
+                      const catEntries = activeEntries.filter((e) => e.category_id === cat.id);
+                      if (catEntries.length === 0) return null;
+
+                      return (
+                        <div key={cat.id} style={{ marginBottom: '28px' }}>
+                          {/* Category Header Bar */}
+                          <div
+                            style={{
+                              backgroundColor: '#f8fafc',
+                              borderLeft: '4px solid #2563eb',
+                              padding: '6px 12px',
+                              marginBottom: '16px',
+                              borderRadius: '0 6px 6px 0',
+                            }}
+                          >
+                            <h3 style={{ margin: 0, fontSize: '1.02rem', fontWeight: '700', color: '#1e293b' }}>
+                              {cat.name}
+                            </h3>
+                          </div>
+
+                          {/* Entries in Category */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                            {catEntries.map((entry) => {
+                              const itemNumber = globalEntryIndex++;
+                              const entryCenter = (
+                                entry.center ||
+                                previewContributors.find((c) => c.id === entry.created_by)?.center ||
+                                ''
+                              ).trim();
+                              return (
+                                <div key={entry.id} style={{ paddingLeft: '8px' }}>
+                                  {/* Title & Metadata Badges */}
+                                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
+                                    <h4 style={{ margin: 0, fontSize: '0.98rem', fontWeight: '700', color: '#0f172a' }}>
+                                      {itemNumber}. {entry.title}
+                                    </h4>
+                                    {entryCenter && (
+                                      <span
+                                        style={{
+                                          fontSize: '0.74rem',
+                                          color: '#047857',
+                                          backgroundColor: '#ecfdf5',
+                                          border: '1px solid #a7f3d0',
+                                          padding: '2px 8px',
+                                          borderRadius: '6px',
+                                          fontWeight: '700',
+                                        }}
+                                      >
+                                        🏛️ {entryCenter}
+                                      </span>
+                                    )}
+                                    {entry.group_name && (
+                                      <span
+                                        style={{
+                                          fontSize: '0.74rem',
+                                          color: '#1d4ed8',
+                                          backgroundColor: '#eff6ff',
+                                          border: '1px solid #bfdbfe',
+                                          padding: '2px 8px',
+                                          borderRadius: '6px',
+                                          fontWeight: '700',
+                                        }}
+                                      >
+                                        🏢 {entry.group_name}
+                                      </span>
+                                    )}
+                                    <span
+                                      style={{
+                                        fontSize: '0.74rem',
+                                        color: '#2563eb',
+                                        backgroundColor: '#eff6ff',
+                                        padding: '2px 8px',
+                                        borderRadius: '6px',
+                                        fontWeight: '600',
+                                      }}
+                                    >
+                                      👤 {entry.created_by_name || previewContributors.find((c) => c.id === entry.created_by)?.name || 'Contributor'}
+                                    </span>
+                                  </div>
+
+                                  {/* Description */}
+                                  {entry.description && (
+                                    <p
+                                      style={{
+                                        margin: '10px 0 0 0',
+                                        fontSize: '0.9rem',
+                                        lineHeight: '1.6',
+                                        color: '#334155',
+                                        whiteSpace: 'pre-wrap',
+                                        fontFamily: 'inherit',
+                                      }}
+                                    >
+                                      {entry.description}
+                                    </p>
+                                  )}
+
+                                  {/* Photos Grid */}
+                                  {entry.photos && entry.photos.length > 0 && (
+                                    <div
+                                      style={{
+                                        display: 'grid',
+                                        gridTemplateColumns:
+                                          entry.photos.length === 1
+                                            ? '1fr'
+                                            : entry.photos.length === 2
+                                              ? 'repeat(2, 1fr)'
+                                              : 'repeat(auto-fit, minmax(220px, 1fr))',
+                                        gap: '12px',
+                                        marginTop: '14px',
+                                      }}
+                                    >
+                                      {entry.photos.map((photo, pIdx) => {
+                                        const photoUrl = getPhotoUrl(photo);
+                                        return (
+                                          <div
+                                            key={photo.id || pIdx}
+                                            style={{
+                                              cursor: 'pointer',
+                                              borderRadius: '8px',
+                                              overflow: 'hidden',
+                                              border: '1px solid #cbd5e1',
+                                              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                                              backgroundColor: '#ffffff',
+                                              padding: '8px',
+                                              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+                                            }}
+                                            onClick={() => setPreviewPhoto({ url: photoUrl, name: photo.file_name || 'Photo Preview', raw: photo })}
+                                            title="Click to view full size on big screen"
+                                          >
+                                            <img
+                                              src={photoUrl}
+                                              alt="Entry Photo"
+                                              onError={(e) => handleImgError(e, photo)}
+                                              style={{
+                                                maxWidth: '100%',
+                                                maxHeight: '380px',
+                                                objectFit: 'contain',
+                                                borderRadius: '4px',
+                                                display: 'block',
+                                                margin: '0 auto',
+                                              }}
+                                            />
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Full-Screen Photo Lightbox Modal */}
+      {previewPhoto && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setPreviewPhoto(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.88)',
+            zIndex: 10000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: 'relative',
+              maxWidth: '92vw',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+            }}
+          >
+            <div
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                color: '#ffffff',
+                marginBottom: '10px',
+              }}
+            >
+              <span style={{ fontSize: '0.9rem', fontWeight: '600' }}>
+                {previewPhoto.name || 'Photo Preview'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPreviewPhoto(null)}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.2)',
+                  border: 'none',
+                  color: '#ffffff',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontWeight: '700',
+                }}
+              >
+                ✕ Close
+              </button>
+            </div>
+            <img
+              src={previewPhoto.url}
+              alt="Photo Full View"
+              onError={(e) => handleImgError(e, previewPhoto.raw || { file_path: previewPhoto.url })}
+              style={{
+                maxWidth: '90vw',
+                maxHeight: '82vh',
+                objectFit: 'contain',
+                borderRadius: '8px',
+                boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
+              }}
+            />
           </div>
         </div>
       )}

@@ -2273,6 +2273,19 @@ body {
   border-color: #bfdbfe;
 }
 
+.action-icon-btn.preview {
+  color: #2563eb;
+  border-color: #bfdbfe;
+  background-color: #eff6ff;
+}
+
+.action-icon-btn.preview:hover {
+  background-color: #2563eb;
+  color: #ffffff;
+  border-color: #2563eb;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
+}
+
 .action-icon-btn.pdf-btn {
   width: 28px;
   height: 28px;

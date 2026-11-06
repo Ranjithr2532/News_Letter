@@ -32,3 +32,6 @@ EXPOSE 8005
 
 # Run FastAPI app with Uvicorn
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8005"]
+
+#docker build -t ranjith2352/newsletter-backend .
+#docker push ranjith2352/newsletter-backend
